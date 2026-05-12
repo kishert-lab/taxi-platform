@@ -26,7 +26,15 @@ go.work.sum
 
 # env file
 .env
+.env.*
+!.env.example
+
+# Build output
+bin/
+dist/
+tmp/
+coverage/
 
 # Editor/IDE
-# .idea/
-# .vscode/
+.idea/
+.vscode/

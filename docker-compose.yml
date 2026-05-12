@@ -2,7 +2,7 @@ services:
   postgres:
     image: postgis/postgis:16-3.4
     container_name: taxi_postgres
-    restart: always
+    restart: unless-stopped
     environment:
       POSTGRES_DB: taxi
       POSTGRES_USER: taxi
@@ -11,31 +11,82 @@ services:
       - "5432:5432"
     volumes:
       - taxi_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U taxi -d taxi"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
-    image: redis:7
+    image: redis:7.4-alpine
     container_name: taxi_redis
-    restart: always
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
     ports:
       - "6379:6379"
+    volumes:
+      - taxi_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  migrate:
+    image: migrate/migrate:v4.18.1
+    container_name: taxi_migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./migrations:/migrations:ro
+    command:
+      [
+        "-path",
+        "/migrations",
+        "-database",
+        "postgres://taxi:taxi_password@postgres:5432/taxi?sslmode=disable",
+        "up"
+      ]
+    restart: "no"
 
   backend:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: taxi_backend
-    restart: always
+    restart: unless-stopped
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     ports:
       - "8080:8080"
     environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_USER: taxi
-      DB_PASSWORD: taxi_password
-      DB_NAME: taxi
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
+      TAXI_APP_ENV: docker
+      TAXI_SERVER_HOST: 0.0.0.0
+      TAXI_SERVER_PORT: 8080
+      TAXI_SERVER_MODE: release
+      TAXI_DATABASE_HOST: postgres
+      TAXI_DATABASE_PORT: 5432
+      TAXI_DATABASE_USER: taxi
+      TAXI_DATABASE_PASSWORD: taxi_password
+      TAXI_DATABASE_NAME: taxi
+      TAXI_DATABASE_SSL_MODE: disable
+      TAXI_REDIS_HOST: redis
+      TAXI_REDIS_PORT: 6379
+      TAXI_JWT_ACCESS_SECRET: docker_access_secret_change_in_production_32_bytes
+      TAXI_JWT_REFRESH_SECRET: docker_refresh_secret_change_in_production_32_bytes
+      TAXI_LOGGER_LEVEL: info
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   taxi_pg_data:
+  taxi_redis_data:

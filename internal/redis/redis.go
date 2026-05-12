@@ -5,16 +5,24 @@ import (
 	"fmt"
 
 	goredis "github.com/redis/go-redis/v9"
+
+	"github.com/develoop/taxi-platform/configs"
 )
 
-func NewRedis(host string, port int) *goredis.Client {
-	addr := fmt.Sprintf("%s:%d", host, port)
-
+func New(ctx context.Context, config configs.RedisConfig) (*goredis.Client, error) {
 	client := goredis.NewClient(&goredis.Options{
-		Addr: addr,
+		Addr:         config.Address(),
+		Password:     config.Password,
+		DB:           config.DB,
+		DialTimeout:  config.DialTimeout,
+		ReadTimeout:  config.ReadTimeout,
+		WriteTimeout: config.WriteTimeout,
 	})
 
-	client.Ping(context.Background())
+	if err := client.Ping(ctx).Err(); err != nil {
+		_ = client.Close()
+		return nil, fmt.Errorf("ping redis: %w", err)
+	}
 
-	return client
+	return client, nil
 }

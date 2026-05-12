@@ -1,19 +1,91 @@
+app:
+  name: taxi-platform
+  env: local
+  version: 0.1.0
+  service_id: taxi-api
+  timezone: Asia/Yekaterinburg
+  metrics_path: /metrics
+
 server:
   host: 0.0.0.0
   port: 8080
+  mode: debug
+  read_header_timeout: 5s
+  read_timeout: 15s
+  write_timeout: 15s
+  idle_timeout: 60s
+  shutdown_timeout: 15s
+
+http:
+  cors:
+    allowed_origins:
+      - http://localhost:3000
+      - http://localhost:5173
 
 database:
   host: localhost
   port: 5432
   user: taxi
   password: taxi_password
-  dbname: taxi
-  sslmode: disable
+  name: taxi
+  ssl_mode: disable
+  max_conns: 20
+  min_conns: 2
+  max_conn_lifetime: 1h
+  max_conn_idle_time: 30m
 
 redis:
   host: localhost
   port: 6379
+  password: ""
+  db: 0
+  dial_timeout: 5s
+  read_timeout: 3s
+  write_timeout: 3s
 
 jwt:
-  secret: super_secret_key
-  access_ttl: 24h
+  access_secret: change_me_access_secret_32_bytes_minimum
+  refresh_secret: change_me_refresh_secret_32_bytes_minimum
+  access_ttl: 15m
+  refresh_ttl: 720h
+  device_access_ttl: 24h
+  signing_method: HS256
+  issuer: taxi-platform
+  refresh_cookie_name: taxi_refresh_token
+
+auth:
+  phone_code_ttl: 5m
+  email_code_ttl: 15m
+  code_length: 6
+  max_code_attempts: 5
+  resend_cooldown: 60s
+  require_email_verify: true
+  require_phone_verify: true
+
+logger:
+  level: info
+  encoding: json
+  development: false
+
+security:
+  bcrypt_cost: 12
+  rate_limit_per_minute: 120
+  login_attempt_ttl: 15m
+  max_login_attempts: 5
+  refresh_token_reuse_lock: 30s
+
+dispatch:
+  initial_radius_meters: 1000
+  max_radius_meters: 10000
+  radius_step_meters: 1000
+  radius_attempts_meters:
+    - 1000
+    - 3000
+    - 5000
+    - 10000
+  max_drivers_per_offer: 5
+  driver_location_max_age: 30s
+  offer_ttl: 15s
+  accept_lock_ttl: 30s
+  worker_poll_timeout: 5s
+  recovery_interval: 30s

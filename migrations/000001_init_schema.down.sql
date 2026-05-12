@@ -1,0 +1,41 @@
+DROP INDEX IF EXISTS idx_order_events_type_created_at;
+DROP INDEX IF EXISTS idx_order_events_order_created_at;
+DROP INDEX IF EXISTS idx_orders_one_active_per_passenger;
+DROP INDEX IF EXISTS idx_orders_destination_location_gist;
+DROP INDEX IF EXISTS idx_orders_pickup_location_gist;
+DROP INDEX IF EXISTS idx_orders_city_status;
+DROP INDEX IF EXISTS idx_orders_driver_created_at;
+DROP INDEX IF EXISTS idx_orders_passenger_created_at;
+DROP INDEX IF EXISTS idx_tariffs_city_active;
+DROP INDEX IF EXISTS idx_driver_locations_location_gist;
+DROP INDEX IF EXISTS idx_driver_locations_city_recorded_at;
+DROP INDEX IF EXISTS idx_cars_driver_active;
+DROP INDEX IF EXISTS idx_drivers_user_id;
+DROP INDEX IF EXISTS idx_drivers_city_status;
+DROP INDEX IF EXISTS idx_refresh_tokens_expires_at;
+DROP INDEX IF EXISTS idx_refresh_tokens_user_id;
+DROP INDEX IF EXISTS idx_users_role_active;
+DROP INDEX IF EXISTS idx_users_phone;
+DROP INDEX IF EXISTS idx_zones_polygon_gist;
+DROP INDEX IF EXISTS idx_zones_city_active;
+DROP INDEX IF EXISTS idx_cities_center_gist;
+DROP INDEX IF EXISTS idx_cities_active;
+
+DROP TABLE IF EXISTS order_events;
+DROP TABLE IF EXISTS orders;
+DROP TABLE IF EXISTS tariffs;
+DROP TABLE IF EXISTS driver_locations;
+DROP TABLE IF EXISTS cars;
+DROP TABLE IF EXISTS drivers;
+DROP TABLE IF EXISTS refresh_tokens;
+DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS zones;
+DROP TABLE IF EXISTS cities;
+
+DROP FUNCTION IF EXISTS set_updated_at();
+
+DROP TYPE IF EXISTS order_event_type;
+DROP TYPE IF EXISTS payment_method;
+DROP TYPE IF EXISTS order_status;
+DROP TYPE IF EXISTS driver_status;
+DROP TYPE IF EXISTS user_role;

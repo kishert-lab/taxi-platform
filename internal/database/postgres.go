@@ -5,35 +5,29 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/develoop/taxi-platform/configs"
 )
 
-func NewPostgres(
-	host string,
-	port int,
-	user string,
-	password string,
-	dbname string,
-	sslmode string,
-) (*pgxpool.Pool, error) {
-
-	dsn := fmt.Sprintf(
-		"postgres://%s:%s@%s:%d/%s?sslmode=%s",
-		user,
-		password,
-		host,
-		port,
-		dbname,
-		sslmode,
-	)
-
-	pool, err := pgxpool.New(context.Background(), dsn)
+func NewPostgres(ctx context.Context, config configs.DatabaseConfig) (*pgxpool.Pool, error) {
+	poolConfig, err := pgxpool.ParseConfig(config.DSN())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parse postgres config: %w", err)
 	}
 
-	err = pool.Ping(context.Background())
+	poolConfig.MaxConns = config.MaxConns
+	poolConfig.MinConns = config.MinConns
+	poolConfig.MaxConnLifetime = config.MaxConnLifetime
+	poolConfig.MaxConnIdleTime = config.MaxConnIdleTime
+
+	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create postgres pool: %w", err)
+	}
+
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("ping postgres: %w", err)
 	}
 
 	return pool, nil
