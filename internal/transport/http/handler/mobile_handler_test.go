@@ -276,6 +276,10 @@ func (useCase *fakePassengerProfileUseCase) UpdatePassengerProfile(_ context.Con
 	return responseBody, nil
 }
 
+func (useCase *fakePassengerProfileUseCase) UploadPassengerProfilePhoto(_ context.Context, _ uuid.UUID, _ dto.ProfilePhotoUploadRequest) (dto.ProfilePhotoUploadResponse, error) {
+	return dto.ProfilePhotoUploadResponse{PhotoURL: "https://cdn.example.com/passengers/photo.jpg"}, nil
+}
+
 type fakePassengerOrderUseCase struct {
 	estimateResult    dto.OrderEstimateResponse
 	createResult      dto.PassengerOrderResponse
@@ -331,6 +335,10 @@ func (useCase *fakeDriverMobileUseCase) UpdateDriverProfile(_ context.Context, d
 	return dto.DriverProfileResponse{ID: driverID, Status: domain.DriverStatusOnline}, nil
 }
 
+func (useCase *fakeDriverMobileUseCase) UploadDriverProfilePhoto(_ context.Context, _ uuid.UUID, _ dto.ProfilePhotoUploadRequest) (dto.ProfilePhotoUploadResponse, error) {
+	return dto.ProfilePhotoUploadResponse{PhotoURL: "https://cdn.example.com/drivers/photo.jpg"}, nil
+}
+
 func (useCase *fakeDriverMobileUseCase) MarkDriverOnline(_ context.Context, driverID uuid.UUID) (dto.DriverProfileResponse, error) {
 	return dto.DriverProfileResponse{ID: driverID, Status: domain.DriverStatusOnline}, nil
 }
@@ -377,5 +385,9 @@ func (useCase *fakeDriverMobileUseCase) StartDriverTrip(_ context.Context, _ uui
 }
 
 func (useCase *fakeDriverMobileUseCase) CompleteDriverTrip(_ context.Context, _ uuid.UUID, _ uuid.UUID, _ dto.CompleteOrderRequest) (dto.DriverOrderResponse, error) {
+	return dto.DriverOrderResponse{}, nil
+}
+
+func (useCase *fakeDriverMobileUseCase) RatePassenger(_ context.Context, _ uuid.UUID, _ uuid.UUID, _ dto.RateOrderRequest) (dto.DriverOrderResponse, error) {
 	return dto.DriverOrderResponse{}, nil
 }

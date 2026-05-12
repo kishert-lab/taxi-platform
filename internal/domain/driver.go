@@ -25,6 +25,7 @@ type Driver struct {
 	TaxiParkID            *uuid.UUID
 	Status                DriverStatus
 	Rating                float64
+	RatingsCount          int
 	CompletedOrdersCount  int
 	LicenseNumber         string
 	CommissionBasisPoints *int32

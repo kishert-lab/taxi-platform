@@ -132,9 +132,15 @@ definitions:
       phone:
         example: "+79990000001"
         type: string
+      photo_url:
+        example: https://cdn.example.com/drivers/555/photo.jpg
+        type: string
       rating:
         example: 4.95
         type: number
+      ratings_count:
+        example: 112
+        type: integer
     type: object
   github_com_kishert-lab_taxi-platform_internal_dto.AuthCodeSentResponse:
     properties:
@@ -411,6 +417,9 @@ definitions:
       name:
         example: Ivan
         type: string
+      photo_url:
+        example: https://cdn.example.com/drivers/222/photo.jpg
+        type: string
     type: object
   github_com_kishert-lab_taxi-platform_internal_dto.DriverProfileResponse:
     properties:
@@ -429,9 +438,15 @@ definitions:
       phone:
         example: "+79990000001"
         type: string
+      photo_url:
+        example: https://cdn.example.com/drivers/222/photo.jpg
+        type: string
       rating:
         example: 4.95
         type: number
+      ratings_count:
+        example: 112
+        type: integer
       status:
         allOf:
         - $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.DriverStatus'
@@ -611,6 +626,15 @@ definitions:
       phone:
         example: "+79990000000"
         type: string
+      photo_url:
+        example: https://cdn.example.com/passengers/666/photo.jpg
+        type: string
+      rating:
+        example: 4.92
+        type: number
+      ratings_count:
+        example: 37
+        type: integer
     type: object
   github_com_kishert-lab_taxi-platform_internal_dto.PassengerCreateOrderRequest:
     properties:
@@ -698,6 +722,9 @@ definitions:
       name:
         example: Irina
         type: string
+      photo_url:
+        example: https://cdn.example.com/passengers/111/photo.jpg
+        type: string
     type: object
   github_com_kishert-lab_taxi-platform_internal_dto.PassengerProfileRequest:
     properties:
@@ -706,6 +733,9 @@ definitions:
         type: string
       name:
         example: Irina
+        type: string
+      photo_url:
+        example: https://cdn.example.com/passengers/111/photo.jpg
         type: string
     required:
     - name
@@ -724,6 +754,15 @@ definitions:
       phone:
         example: "+79990000000"
         type: string
+      photo_url:
+        example: https://cdn.example.com/passengers/111/photo.jpg
+        type: string
+      rating:
+        example: 4.92
+        type: number
+      ratings_count:
+        example: 37
+        type: integer
     type: object
   github_com_kishert-lab_taxi-platform_internal_dto.PointDTO:
     properties:
@@ -732,6 +771,12 @@ definitions:
         type: string
       location:
         $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.CoordinatesResponse'
+    type: object
+  github_com_kishert-lab_taxi-platform_internal_dto.ProfilePhotoUploadResponse:
+    properties:
+      photo_url:
+        example: https://cdn.example.com/profiles/111/photo.jpg
+        type: string
     type: object
   github_com_kishert-lab_taxi-platform_internal_dto.RateOrderRequest:
     properties:
@@ -1044,6 +1089,13 @@ definitions:
     properties:
       data:
         $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.PassengerProfileResponse'
+      meta:
+        $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta'
+    type: object
+  internal_transport_http_handler.ProfilePhotoUploadSuccessResponse:
+    properties:
+      data:
+        $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.ProfilePhotoUploadResponse'
       meta:
         $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta'
     type: object
@@ -1615,6 +1667,54 @@ paths:
       summary: Complete driver trip
       tags:
       - driver-orders
+  /driver/orders/{id}/rate-passenger:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Order ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Passenger rating
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.RateOrderRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_handler.DriverOrderSuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+      security:
+      - BearerAuth: []
+      summary: Rate passenger after completed trip
+      tags:
+      - driver-orders
   /driver/orders/{id}/reject:
     post:
       consumes:
@@ -1795,6 +1895,42 @@ paths:
       security:
       - BearerAuth: []
       summary: Update driver profile
+      tags:
+      - driver
+  /driver/profile/photo:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Attaches driver avatar/photo. The file must be jpeg, png, or webp
+        and no larger than 5 MB.
+      parameters:
+      - description: Profile photo
+        in: formData
+        name: photo
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_handler.ProfilePhotoUploadSuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+      security:
+      - BearerAuth: []
+      summary: Upload driver profile photo
       tags:
       - driver
   /driver/transactions:
@@ -2232,6 +2368,42 @@ paths:
       security:
       - BearerAuth: []
       summary: Create passenger profile
+      tags:
+      - passenger
+  /passenger/profile/photo:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Attaches passenger avatar/photo. The file must be jpeg, png, or
+        webp and no larger than 5 MB.
+      parameters:
+      - description: Profile photo
+        in: formData
+        name: photo
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_handler.ProfilePhotoUploadSuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+      security:
+      - BearerAuth: []
+      summary: Upload passenger profile photo
       tags:
       - passenger
   /taxi-park/balance:

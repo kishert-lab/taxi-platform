@@ -57,6 +57,10 @@ func (useCase *UnavailableUseCase) UpdatePassengerProfile(context.Context, uuid.
 	return dto.PassengerProfileResponse{}, common.ErrNotImplemented
 }
 
+func (useCase *UnavailableUseCase) UploadPassengerProfilePhoto(context.Context, uuid.UUID, dto.ProfilePhotoUploadRequest) (dto.ProfilePhotoUploadResponse, error) {
+	return dto.ProfilePhotoUploadResponse{}, common.ErrNotImplemented
+}
+
 func (useCase *UnavailableUseCase) EstimatePassengerOrder(context.Context, uuid.UUID, dto.OrderEstimateRequest) (dto.OrderEstimateResponse, error) {
 	return dto.OrderEstimateResponse{}, common.ErrNotImplemented
 }
@@ -95,6 +99,10 @@ func (useCase *UnavailableUseCase) GetDriverProfile(context.Context, uuid.UUID) 
 
 func (useCase *UnavailableUseCase) UpdateDriverProfile(context.Context, uuid.UUID, dto.DriverProfilePatchRequest) (dto.DriverProfileResponse, error) {
 	return dto.DriverProfileResponse{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) UploadDriverProfilePhoto(context.Context, uuid.UUID, dto.ProfilePhotoUploadRequest) (dto.ProfilePhotoUploadResponse, error) {
+	return dto.ProfilePhotoUploadResponse{}, common.ErrNotImplemented
 }
 
 func (useCase *UnavailableUseCase) MarkDriverOnline(context.Context, uuid.UUID) (dto.DriverProfileResponse, error) {
@@ -138,6 +146,10 @@ func (useCase *UnavailableUseCase) StartDriverTrip(context.Context, uuid.UUID, u
 }
 
 func (useCase *UnavailableUseCase) CompleteDriverTrip(context.Context, uuid.UUID, uuid.UUID, dto.CompleteOrderRequest) (dto.DriverOrderResponse, error) {
+	return dto.DriverOrderResponse{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) RatePassenger(context.Context, uuid.UUID, uuid.UUID, dto.RateOrderRequest) (dto.DriverOrderResponse, error) {
 	return dto.DriverOrderResponse{}, common.ErrNotImplemented
 }
 

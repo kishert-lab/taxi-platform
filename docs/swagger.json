@@ -911,6 +911,81 @@
                 }
             }
         },
+        "/driver/orders/{id}/rate-passenger": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "driver-orders"
+                ],
+                "summary": "Rate passenger after completed trip",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Order ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Passenger rating",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.RateOrderRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_handler.DriverOrderSuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/driver/orders/{id}/reject": {
             "post": {
                 "security": [
@@ -1098,6 +1173,61 @@
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/internal_transport_http_handler.DriverProfileSuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/driver/profile/photo": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Attaches driver avatar/photo. The file must be jpeg, png, or webp and no larger than 5 MB.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "driver"
+                ],
+                "summary": "Upload driver profile photo",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "Profile photo",
+                        "name": "photo",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_handler.ProfilePhotoUploadSuccessResponse"
                         }
                     },
                     "400": {
@@ -1811,6 +1941,61 @@
                 }
             }
         },
+        "/passenger/profile/photo": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Attaches passenger avatar/photo. The file must be jpeg, png, or webp and no larger than 5 MB.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "passenger"
+                ],
+                "summary": "Upload passenger profile photo",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "Profile photo",
+                        "name": "photo",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_handler.ProfilePhotoUploadSuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/taxi-park/balance": {
             "get": {
                 "security": [
@@ -2191,9 +2376,17 @@
                     "type": "string",
                     "example": "+79990000001"
                 },
+                "photo_url": {
+                    "type": "string",
+                    "example": "https://cdn.example.com/drivers/555/photo.jpg"
+                },
                 "rating": {
                     "type": "number",
                     "example": 4.95
+                },
+                "ratings_count": {
+                    "type": "integer",
+                    "example": 112
                 }
             }
         },
@@ -2592,6 +2785,10 @@
                 "name": {
                     "type": "string",
                     "example": "Ivan"
+                },
+                "photo_url": {
+                    "type": "string",
+                    "example": "https://cdn.example.com/drivers/222/photo.jpg"
                 }
             }
         },
@@ -2618,9 +2815,17 @@
                     "type": "string",
                     "example": "+79990000001"
                 },
+                "photo_url": {
+                    "type": "string",
+                    "example": "https://cdn.example.com/drivers/222/photo.jpg"
+                },
                 "rating": {
                     "type": "number",
                     "example": 4.95
+                },
+                "ratings_count": {
+                    "type": "integer",
+                    "example": 112
                 },
                 "status": {
                     "allOf": [
@@ -2890,6 +3095,18 @@
                 "phone": {
                     "type": "string",
                     "example": "+79990000000"
+                },
+                "photo_url": {
+                    "type": "string",
+                    "example": "https://cdn.example.com/passengers/666/photo.jpg"
+                },
+                "rating": {
+                    "type": "number",
+                    "example": 4.92
+                },
+                "ratings_count": {
+                    "type": "integer",
+                    "example": 37
                 }
             }
         },
@@ -3016,6 +3233,10 @@
                 "name": {
                     "type": "string",
                     "example": "Irina"
+                },
+                "photo_url": {
+                    "type": "string",
+                    "example": "https://cdn.example.com/passengers/111/photo.jpg"
                 }
             }
         },
@@ -3032,6 +3253,10 @@
                 "name": {
                     "type": "string",
                     "example": "Irina"
+                },
+                "photo_url": {
+                    "type": "string",
+                    "example": "https://cdn.example.com/passengers/111/photo.jpg"
                 }
             }
         },
@@ -3053,6 +3278,18 @@
                 "phone": {
                     "type": "string",
                     "example": "+79990000000"
+                },
+                "photo_url": {
+                    "type": "string",
+                    "example": "https://cdn.example.com/passengers/111/photo.jpg"
+                },
+                "rating": {
+                    "type": "number",
+                    "example": 4.92
+                },
+                "ratings_count": {
+                    "type": "integer",
+                    "example": 37
                 }
             }
         },
@@ -3065,6 +3302,15 @@
                 },
                 "location": {
                     "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.CoordinatesResponse"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.ProfilePhotoUploadResponse": {
+            "type": "object",
+            "properties": {
+                "photo_url": {
+                    "type": "string",
+                    "example": "https://cdn.example.com/profiles/111/photo.jpg"
                 }
             }
         },
@@ -3521,6 +3767,17 @@
             "properties": {
                 "data": {
                     "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.PassengerProfileResponse"
+                },
+                "meta": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta"
+                }
+            }
+        },
+        "internal_transport_http_handler.ProfilePhotoUploadSuccessResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.ProfilePhotoUploadResponse"
                 },
                 "meta": {
                     "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta"

@@ -15,6 +15,11 @@ type DriverProfileSuccessResponse struct {
 	Meta response.Meta             `json:"meta"`
 }
 
+type ProfilePhotoUploadSuccessResponse struct {
+	Data dto.ProfilePhotoUploadResponse `json:"data"`
+	Meta response.Meta                  `json:"meta"`
+}
+
 type OrderEstimateSuccessResponse struct {
 	Data dto.OrderEstimateResponse `json:"data"`
 	Meta response.Meta             `json:"meta"`

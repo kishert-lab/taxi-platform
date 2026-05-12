@@ -16,6 +16,7 @@ type PassengerProfileUseCase interface {
 	CreatePassengerProfile(ctx context.Context, passengerID uuid.UUID, request dto.PassengerProfileRequest) (dto.PassengerProfileResponse, error)
 	GetPassengerProfile(ctx context.Context, passengerID uuid.UUID) (dto.PassengerProfileResponse, error)
 	UpdatePassengerProfile(ctx context.Context, passengerID uuid.UUID, request dto.PassengerProfilePatchRequest) (dto.PassengerProfileResponse, error)
+	UploadPassengerProfilePhoto(ctx context.Context, passengerID uuid.UUID, request dto.ProfilePhotoUploadRequest) (dto.ProfilePhotoUploadResponse, error)
 }
 
 type PassengerOrderUseCase interface {
@@ -42,6 +43,7 @@ func (handler *PassengerMobileHandler) RegisterRoutes(router gin.IRouter) {
 	passenger.POST("/profile", handler.CreateProfile)
 	passenger.GET("/profile", handler.GetProfile)
 	passenger.PATCH("/profile", handler.UpdateProfile)
+	passenger.POST("/profile/photo", handler.UploadProfilePhoto)
 	passenger.POST("/orders/estimate", handler.EstimateOrder)
 	passenger.POST("/orders", handler.CreateOrder)
 	passenger.GET("/orders/current", handler.CurrentOrder)
@@ -136,6 +138,41 @@ func (handler *PassengerMobileHandler) UpdateProfile(context *gin.Context) {
 	}
 
 	result, err := handler.profileUseCase.UpdatePassengerProfile(context.Request.Context(), passengerID, request)
+	if err != nil {
+		failByError(context, err)
+		return
+	}
+
+	response.OK(context, result)
+}
+
+// UploadProfilePhoto godoc
+// @Summary Upload passenger profile photo
+// @Description Attaches passenger avatar/photo. The file must be jpeg, png, or webp and no larger than 5 MB.
+// @Tags passenger
+// @Accept multipart/form-data
+// @Produce json
+// @Security BearerAuth
+// @Param photo formData file true "Profile photo"
+// @Success 200 {object} ProfilePhotoUploadSuccessResponse
+// @Failure 400 {object} response.Error
+// @Failure 401 {object} response.Error
+// @Failure 403 {object} response.Error
+// @Router /passenger/profile/photo [post]
+func (handler *PassengerMobileHandler) UploadProfilePhoto(context *gin.Context) {
+	passengerID, ok := userIDFromContext(context)
+	if !ok {
+		failUnauthorized(context, "User id is missing")
+		return
+	}
+
+	request, closeFile, ok := profilePhotoUploadRequest(context)
+	if !ok {
+		return
+	}
+	defer closeFile()
+
+	result, err := handler.profileUseCase.UploadPassengerProfilePhoto(context.Request.Context(), passengerID, request)
 	if err != nil {
 		failByError(context, err)
 		return

@@ -62,6 +62,9 @@ type User struct {
 	RegistrationType      RegistrationType
 	FirstName             string
 	LastName              string
+	ProfilePhotoURL       string
+	Rating                float64
+	RatingsCount          int
 	PasswordHash          string
 	IsPhoneConfirmed      bool
 	IsEmailConfirmed      bool

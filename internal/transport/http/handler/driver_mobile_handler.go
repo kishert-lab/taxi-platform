@@ -15,6 +15,7 @@ import (
 type DriverMobileUseCase interface {
 	GetDriverProfile(ctx context.Context, driverID uuid.UUID) (dto.DriverProfileResponse, error)
 	UpdateDriverProfile(ctx context.Context, driverID uuid.UUID, request dto.DriverProfilePatchRequest) (dto.DriverProfileResponse, error)
+	UploadDriverProfilePhoto(ctx context.Context, driverID uuid.UUID, request dto.ProfilePhotoUploadRequest) (dto.ProfilePhotoUploadResponse, error)
 	MarkDriverOnline(ctx context.Context, driverID uuid.UUID) (dto.DriverProfileResponse, error)
 	MarkDriverOffline(ctx context.Context, driverID uuid.UUID) (dto.DriverProfileResponse, error)
 	UpdateDriverLocation(ctx context.Context, driverID uuid.UUID, request dto.DriverLocationRequest) error
@@ -26,6 +27,7 @@ type DriverMobileUseCase interface {
 	MarkDriverArrived(ctx context.Context, driverID uuid.UUID, orderID uuid.UUID) (dto.DriverOrderResponse, error)
 	StartDriverTrip(ctx context.Context, driverID uuid.UUID, orderID uuid.UUID) (dto.DriverOrderResponse, error)
 	CompleteDriverTrip(ctx context.Context, driverID uuid.UUID, orderID uuid.UUID, request dto.CompleteOrderRequest) (dto.DriverOrderResponse, error)
+	RatePassenger(ctx context.Context, driverID uuid.UUID, orderID uuid.UUID, request dto.RateOrderRequest) (dto.DriverOrderResponse, error)
 }
 
 type DriverMobileHandler struct {
@@ -40,6 +42,7 @@ func (handler *DriverMobileHandler) RegisterRoutes(router gin.IRouter) {
 	driver := router.Group("/driver", middleware.RequireRole(domain.UserRoleDriver))
 	driver.GET("/profile", handler.GetProfile)
 	driver.PATCH("/profile", handler.UpdateProfile)
+	driver.POST("/profile/photo", handler.UploadProfilePhoto)
 	driver.POST("/online", handler.Online)
 	driver.POST("/offline", handler.Offline)
 	driver.POST("/location", handler.UpdateLocation)
@@ -51,6 +54,7 @@ func (handler *DriverMobileHandler) RegisterRoutes(router gin.IRouter) {
 	driver.POST("/orders/:id/arrived", handler.Arrived)
 	driver.POST("/orders/:id/start", handler.StartTrip)
 	driver.POST("/orders/:id/complete", handler.CompleteTrip)
+	driver.POST("/orders/:id/rate-passenger", handler.RatePassenger)
 }
 
 // GetProfile godoc
@@ -104,6 +108,41 @@ func (handler *DriverMobileHandler) UpdateProfile(context *gin.Context) {
 	}
 
 	result, err := handler.useCase.UpdateDriverProfile(context.Request.Context(), driverID, request)
+	if err != nil {
+		failByError(context, err)
+		return
+	}
+
+	response.OK(context, result)
+}
+
+// UploadProfilePhoto godoc
+// @Summary Upload driver profile photo
+// @Description Attaches driver avatar/photo. The file must be jpeg, png, or webp and no larger than 5 MB.
+// @Tags driver
+// @Accept multipart/form-data
+// @Produce json
+// @Security BearerAuth
+// @Param photo formData file true "Profile photo"
+// @Success 200 {object} ProfilePhotoUploadSuccessResponse
+// @Failure 400 {object} response.Error
+// @Failure 401 {object} response.Error
+// @Failure 403 {object} response.Error
+// @Router /driver/profile/photo [post]
+func (handler *DriverMobileHandler) UploadProfilePhoto(context *gin.Context) {
+	driverID, ok := userIDFromContext(context)
+	if !ok {
+		failUnauthorized(context, "User id is missing")
+		return
+	}
+
+	request, closeFile, ok := profilePhotoUploadRequest(context)
+	if !ok {
+		return
+	}
+	defer closeFile()
+
+	result, err := handler.useCase.UploadDriverProfilePhoto(context.Request.Context(), driverID, request)
 	if err != nil {
 		failByError(context, err)
 		return
@@ -425,6 +464,42 @@ func (handler *DriverMobileHandler) CompleteTrip(context *gin.Context) {
 	}
 
 	result, err := handler.useCase.CompleteDriverTrip(context.Request.Context(), driverID, orderID, request)
+	if err != nil {
+		failByError(context, err)
+		return
+	}
+
+	response.OK(context, result)
+}
+
+// RatePassenger godoc
+// @Summary Rate passenger after completed trip
+// @Tags driver-orders
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Order ID"
+// @Param request body dto.RateOrderRequest true "Passenger rating"
+// @Success 200 {object} DriverOrderSuccessResponse
+// @Failure 400 {object} response.Error
+// @Failure 401 {object} response.Error
+// @Failure 403 {object} response.Error
+// @Failure 404 {object} response.Error
+// @Failure 409 {object} response.Error
+// @Router /driver/orders/{id}/rate-passenger [post]
+func (handler *DriverMobileHandler) RatePassenger(context *gin.Context) {
+	driverID, orderID, ok := driverOrderIDs(context)
+	if !ok {
+		return
+	}
+
+	var request dto.RateOrderRequest
+	if err := context.ShouldBindJSON(&request); err != nil {
+		failValidation(context, "Invalid passenger rating request")
+		return
+	}
+
+	result, err := handler.useCase.RatePassenger(context.Request.Context(), driverID, orderID, request)
 	if err != nil {
 		failByError(context, err)
 		return

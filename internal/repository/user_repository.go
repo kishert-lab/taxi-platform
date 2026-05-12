@@ -152,6 +152,9 @@ const userSelectColumns = `
 	registration_type,
 	first_name,
 	last_name,
+	profile_photo_url,
+	rating::float8,
+	ratings_count,
 	password_hash,
 	is_phone_confirmed,
 	is_email_confirmed,
@@ -174,6 +177,7 @@ func scanUser(row pgx.Row) (domain.User, error) {
 	var email pgtype.Text
 	var firstName pgtype.Text
 	var lastName pgtype.Text
+	var profilePhotoURL pgtype.Text
 	var passwordHash pgtype.Text
 	var personalDataConsentAt pgtype.Timestamptz
 	var privacyPolicyVersion pgtype.Text
@@ -192,6 +196,9 @@ func scanUser(row pgx.Row) (domain.User, error) {
 		&user.RegistrationType,
 		&firstName,
 		&lastName,
+		&profilePhotoURL,
+		&user.Rating,
+		&user.RatingsCount,
 		&passwordHash,
 		&user.IsPhoneConfirmed,
 		&user.IsEmailConfirmed,
@@ -215,6 +222,7 @@ func scanUser(row pgx.Row) (domain.User, error) {
 	user.Email = email.String
 	user.FirstName = firstName.String
 	user.LastName = lastName.String
+	user.ProfilePhotoURL = profilePhotoURL.String
 	user.PasswordHash = passwordHash.String
 	user.PrivacyPolicyVersion = privacyPolicyVersion.String
 	user.TermsVersion = termsVersion.String

@@ -1,6 +1,7 @@
 package dto
 
 import (
+	"io"
 	"time"
 
 	"github.com/google/uuid"
@@ -9,25 +10,31 @@ import (
 )
 
 type PassengerProfileRequest struct {
-	Name  string `json:"name" binding:"required" example:"Irina"`
-	Email string `json:"email" binding:"omitempty,email" example:"irina@example.com"`
+	Name     string `json:"name" binding:"required" example:"Irina"`
+	Email    string `json:"email" binding:"omitempty,email" example:"irina@example.com"`
+	PhotoURL string `json:"photo_url,omitempty" binding:"omitempty,url" example:"https://cdn.example.com/passengers/111/photo.jpg"`
 }
 
 type PassengerProfilePatchRequest struct {
-	Name  *string `json:"name,omitempty" example:"Irina"`
-	Email *string `json:"email,omitempty" example:"irina@example.com"`
+	Name     *string `json:"name,omitempty" example:"Irina"`
+	Email    *string `json:"email,omitempty" example:"irina@example.com"`
+	PhotoURL *string `json:"photo_url,omitempty" binding:"omitempty,url" example:"https://cdn.example.com/passengers/111/photo.jpg"`
 }
 
 type PassengerProfileResponse struct {
-	ID    uuid.UUID `json:"id" example:"11111111-1111-1111-1111-111111111111"`
-	Phone string    `json:"phone" example:"+79990000000"`
-	Name  string    `json:"name" example:"Irina"`
-	Email string    `json:"email,omitempty" example:"irina@example.com"`
+	ID           uuid.UUID `json:"id" example:"11111111-1111-1111-1111-111111111111"`
+	Phone        string    `json:"phone" example:"+79990000000"`
+	Name         string    `json:"name" example:"Irina"`
+	Email        string    `json:"email,omitempty" example:"irina@example.com"`
+	PhotoURL     string    `json:"photo_url,omitempty" example:"https://cdn.example.com/passengers/111/photo.jpg"`
+	Rating       float64   `json:"rating" example:"4.92"`
+	RatingsCount int       `json:"ratings_count" example:"37"`
 }
 
 type DriverProfilePatchRequest struct {
 	Name          *string `json:"name,omitempty" example:"Ivan"`
 	LicenseNumber *string `json:"license_number,omitempty" example:"7700000000"`
+	PhotoURL      *string `json:"photo_url,omitempty" binding:"omitempty,url" example:"https://cdn.example.com/drivers/222/photo.jpg"`
 }
 
 type DriverProfileResponse struct {
@@ -35,10 +42,23 @@ type DriverProfileResponse struct {
 	UserID        uuid.UUID           `json:"user_id" example:"33333333-3333-3333-3333-333333333333"`
 	Phone         string              `json:"phone" example:"+79990000001"`
 	Name          string              `json:"name" example:"Ivan"`
+	PhotoURL      string              `json:"photo_url,omitempty" example:"https://cdn.example.com/drivers/222/photo.jpg"`
 	Status        domain.DriverStatus `json:"status" example:"online"`
 	Rating        float64             `json:"rating" example:"4.95"`
+	RatingsCount  int                 `json:"ratings_count" example:"112"`
 	LicenseNumber string              `json:"license_number,omitempty" example:"7700000000"`
 	IsVerified    bool                `json:"is_verified" example:"true"`
+}
+
+type ProfilePhotoUploadRequest struct {
+	FileName    string
+	ContentType string
+	Size        int64
+	Body        io.Reader
+}
+
+type ProfilePhotoUploadResponse struct {
+	PhotoURL string `json:"photo_url" example:"https://cdn.example.com/profiles/111/photo.jpg"`
 }
 
 type OrderEstimateRequest struct {
@@ -103,16 +123,21 @@ type PointDTO struct {
 }
 
 type AssignedDriverDTO struct {
-	ID     uuid.UUID `json:"id" example:"55555555-5555-5555-5555-555555555555"`
-	Name   string    `json:"name" example:"Ivan"`
-	Phone  string    `json:"phone" example:"+79990000001"`
-	Rating float64   `json:"rating" example:"4.95"`
+	ID           uuid.UUID `json:"id" example:"55555555-5555-5555-5555-555555555555"`
+	Name         string    `json:"name" example:"Ivan"`
+	Phone        string    `json:"phone" example:"+79990000001"`
+	PhotoURL     string    `json:"photo_url,omitempty" example:"https://cdn.example.com/drivers/555/photo.jpg"`
+	Rating       float64   `json:"rating" example:"4.95"`
+	RatingsCount int       `json:"ratings_count" example:"112"`
 }
 
 type PassengerBriefDTO struct {
-	ID    uuid.UUID `json:"id" example:"66666666-6666-6666-6666-666666666666"`
-	Name  string    `json:"name" example:"Irina"`
-	Phone string    `json:"phone" example:"+79990000000"`
+	ID           uuid.UUID `json:"id" example:"66666666-6666-6666-6666-666666666666"`
+	Name         string    `json:"name" example:"Irina"`
+	Phone        string    `json:"phone" example:"+79990000000"`
+	PhotoURL     string    `json:"photo_url,omitempty" example:"https://cdn.example.com/passengers/666/photo.jpg"`
+	Rating       float64   `json:"rating" example:"4.92"`
+	RatingsCount int       `json:"ratings_count" example:"37"`
 }
 
 type CarDTO struct {
