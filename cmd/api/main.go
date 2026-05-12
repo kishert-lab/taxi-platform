@@ -75,7 +75,8 @@ func main() {
 		}
 	}()
 
-	router := buildRouter(config, log)
+	routes := newApplicationRoutes(postgresPool, log)
+	router := buildRouter(config, log, routes)
 	server := &http.Server{
 		Addr:              config.Server.Address(),
 		Handler:           router,
@@ -102,7 +103,7 @@ func main() {
 	}
 }
 
-func buildRouter(config *configs.Config, log *zap.Logger) *gin.Engine {
+func buildRouter(config *configs.Config, log *zap.Logger, routes applicationRoutes) *gin.Engine {
 	if config.Server.Mode == gin.ReleaseMode {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -134,6 +135,7 @@ func buildRouter(config *configs.Config, log *zap.Logger) *gin.Engine {
 	api.GET("/health", func(context *gin.Context) {
 		handleAPIHealth(context, config)
 	})
+	routes.Register(api)
 
 	router.NoRoute(func(context *gin.Context) {
 		log.Debug("route not found", zap.String("path", context.Request.URL.Path))

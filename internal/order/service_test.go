@@ -79,6 +79,23 @@ func TestPassengerCancellationStopsDispatch(t *testing.T) {
 	}
 }
 
+func TestCompletedOrderTriggersFinanceSettlement(t *testing.T) {
+	t.Parallel()
+
+	order := testOrder(domain.OrderStatusInProgress)
+	repository := &fakeRepository{order: order}
+	financeProcessor := &fakeFinanceProcessor{}
+	service := NewService(NewServiceParams{Repository: repository, FinanceProcessor: financeProcessor})
+
+	_, err := service.Transition(context.Background(), TransitionCommand{OrderID: order.ID, ToStatus: domain.OrderStatusCompleted})
+	if err != nil {
+		t.Fatalf("complete order: %v", err)
+	}
+	if financeProcessor.settledOrderID != order.ID {
+		t.Fatalf("expected finance settlement for %s, got %s", order.ID, financeProcessor.settledOrderID)
+	}
+}
+
 func TestReconnectCurrentOrderRestoresState(t *testing.T) {
 	t.Parallel()
 
@@ -155,4 +172,13 @@ func (publisher *fakeRealtimePublisher) SendToDriver(_ context.Context, _ uuid.U
 func (publisher *fakeRealtimePublisher) SendToPassenger(_ context.Context, _ uuid.UUID, _ string, _ any) error {
 	publisher.sentToPassenger = true
 	return nil
+}
+
+type fakeFinanceProcessor struct {
+	settledOrderID uuid.UUID
+}
+
+func (processor *fakeFinanceProcessor) SettleCompletedOrder(_ context.Context, orderID uuid.UUID) (domain.OrderSettlement, error) {
+	processor.settledOrderID = orderID
+	return domain.OrderSettlement{OrderID: orderID}, nil
 }

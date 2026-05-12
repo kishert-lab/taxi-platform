@@ -155,6 +155,17 @@ type AuthLoginRequest struct {
 	Role  domain.UserRole `json:"role" binding:"required,oneof=passenger driver taxi_park admin dispatcher" example:"passenger"`
 }
 
+type AuthEmailCodeRequest struct {
+	Email string          `json:"email" binding:"required,email" example:"user@example.com"`
+	Role  domain.UserRole `json:"role" binding:"required,oneof=passenger driver taxi_park admin dispatcher" example:"passenger"`
+}
+
+type AuthEmailVerifyRequest struct {
+	Email string          `json:"email" binding:"required,email" example:"user@example.com"`
+	Role  domain.UserRole `json:"role" binding:"required,oneof=passenger driver taxi_park admin dispatcher" example:"passenger"`
+	Code  string          `json:"code" binding:"required,len=6" example:"123456"`
+}
+
 type AuthVerifyCodeRequest struct {
 	Phone string          `json:"phone,omitempty" example:"+79990000000"`
 	Email string          `json:"email,omitempty" example:"user@example.com"`

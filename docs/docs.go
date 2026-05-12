@@ -24,6 +24,160 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/admin/finance/overview": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "finance-admin"
+                ],
+                "summary": "Get admin finance overview",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Period start RFC3339",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Period end RFC3339",
+                        "name": "to",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_handler.AdminFinanceOverviewSuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/email/send-code": {
+            "post": {
+                "description": "Explicit mail endpoint for mobile clients that authorize by email.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Send email verification code",
+                "parameters": [
+                    {
+                        "description": "Email code request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.AuthEmailCodeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_handler.AuthCodeSentSuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/email/verify": {
+            "post": {
+                "description": "Explicit mail verification endpoint. Returns rotated access/refresh token pair.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Verify email code",
+                "parameters": [
+                    {
+                        "description": "Email verification request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.AuthEmailVerifyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_handler.AuthTokenSuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/auth/login": {
             "post": {
                 "description": "Sends verification code to phone or email. At least one of phone or email must be provided.",
@@ -44,7 +198,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/dto.AuthLoginRequest"
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.AuthLoginRequest"
                         }
                     }
                 ],
@@ -52,7 +206,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handler.AuthCodeSentSuccessResponse"
+                            "$ref": "#/definitions/internal_transport_http_handler.AuthCodeSentSuccessResponse"
                         }
                     },
                     "400": {
@@ -96,7 +250,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/dto.LogoutRequest"
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.LogoutRequest"
                         }
                     }
                 ],
@@ -104,7 +258,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handler.AcceptedSuccessResponse"
+                            "$ref": "#/definitions/internal_transport_http_handler.AcceptedSuccessResponse"
                         }
                     },
                     "400": {
@@ -142,7 +296,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/dto.RefreshTokenRequest"
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.RefreshTokenRequest"
                         }
                     }
                 ],
@@ -150,7 +304,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handler.AuthTokenSuccessResponse"
+                            "$ref": "#/definitions/internal_transport_http_handler.AuthTokenSuccessResponse"
                         }
                     },
                     "400": {
@@ -188,7 +342,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/dto.StartRegistrationRequest"
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.StartRegistrationRequest"
                         }
                     }
                 ],
@@ -234,7 +388,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/dto.AuthVerifyCodeRequest"
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.AuthVerifyCodeRequest"
                         }
                     }
                 ],
@@ -242,7 +396,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handler.AuthTokenSuccessResponse"
+                            "$ref": "#/definitions/internal_transport_http_handler.AuthTokenSuccessResponse"
                         }
                     },
                     "400": {
@@ -253,6 +407,42 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/driver/balance": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "finance-driver"
+                ],
+                "summary": "Get driver balance",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_handler.DriverBalanceSuccessResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
                         "schema": {
                             "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
                         }
@@ -285,7 +475,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/dto.DriverLocationRequest"
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.DriverLocationRequest"
                         }
                     }
                 ],
@@ -293,7 +483,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handler.AcceptedSuccessResponse"
+                            "$ref": "#/definitions/internal_transport_http_handler.AcceptedSuccessResponse"
                         }
                     },
                     "400": {
@@ -347,7 +537,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/dto.DriverLocationBatchRequest"
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.DriverLocationBatchRequest"
                         }
                     }
                 ],
@@ -355,7 +545,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handler.AcceptedSuccessResponse"
+                            "$ref": "#/definitions/internal_transport_http_handler.AcceptedSuccessResponse"
                         }
                     },
                     "400": {
@@ -397,7 +587,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handler.DriverProfileSuccessResponse"
+                            "$ref": "#/definitions/internal_transport_http_handler.DriverProfileSuccessResponse"
                         }
                     },
                     "401": {
@@ -433,7 +623,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handler.DriverProfileSuccessResponse"
+                            "$ref": "#/definitions/internal_transport_http_handler.DriverProfileSuccessResponse"
                         }
                     },
                     "401": {
@@ -476,7 +666,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handler.DriverOrderSuccessResponse"
+                            "$ref": "#/definitions/internal_transport_http_handler.DriverOrderSuccessResponse"
                         }
                     },
                     "401": {
@@ -518,7 +708,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handler.DriverOrderHistorySuccessResponse"
+                            "$ref": "#/definitions/internal_transport_http_handler.DriverOrderHistorySuccessResponse"
                         }
                     },
                     "401": {
@@ -563,7 +753,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handler.DriverOrderSuccessResponse"
+                            "$ref": "#/definitions/internal_transport_http_handler.DriverOrderSuccessResponse"
                         }
                     },
                     "400": {
@@ -620,7 +810,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handler.DriverOrderSuccessResponse"
+                            "$ref": "#/definitions/internal_transport_http_handler.DriverOrderSuccessResponse"
                         }
                     },
                     "401": {
@@ -681,7 +871,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/dto.CompleteOrderRequest"
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.CompleteOrderRequest"
                         }
                     }
                 ],
@@ -689,7 +879,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handler.DriverOrderSuccessResponse"
+                            "$ref": "#/definitions/internal_transport_http_handler.DriverOrderSuccessResponse"
                         }
                     },
                     "400": {
@@ -756,7 +946,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/dto.RejectOrderRequest"
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.RejectOrderRequest"
                         }
                     }
                 ],
@@ -764,7 +954,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handler.AcceptedSuccessResponse"
+                            "$ref": "#/definitions/internal_transport_http_handler.AcceptedSuccessResponse"
                         }
                     },
                     "400": {
@@ -815,7 +1005,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handler.DriverOrderSuccessResponse"
+                            "$ref": "#/definitions/internal_transport_http_handler.DriverOrderSuccessResponse"
                         }
                     },
                     "401": {
@@ -863,7 +1053,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handler.DriverProfileSuccessResponse"
+                            "$ref": "#/definitions/internal_transport_http_handler.DriverProfileSuccessResponse"
                         }
                     },
                     "401": {
@@ -903,7 +1093,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/dto.DriverProfilePatchRequest"
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.DriverProfilePatchRequest"
                         }
                     }
                 ],
@@ -911,13 +1101,57 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handler.DriverProfileSuccessResponse"
+                            "$ref": "#/definitions/internal_transport_http_handler.DriverProfileSuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
                             "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/driver/transactions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "finance-driver"
+                ],
+                "summary": "Get driver financial transactions",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Limit, max 100",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_handler.FinancialTransactionsSuccessResponse"
                         }
                     },
                     "401": {
@@ -1014,19 +1248,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/dto.CurrentOrderResponse"
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.CurrentOrderResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/handler.errorResponse"
+                            "$ref": "#/definitions/internal_transport_http_handler.errorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/handler.errorResponse"
+                            "$ref": "#/definitions/internal_transport_http_handler.errorResponse"
                         }
                     }
                 }
@@ -1056,7 +1290,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/dto.PassengerCreateOrderRequest"
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.PassengerCreateOrderRequest"
                         }
                     }
                 ],
@@ -1064,7 +1298,7 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/handler.PassengerOrderSuccessResponse"
+                            "$ref": "#/definitions/internal_transport_http_handler.PassengerOrderSuccessResponse"
                         }
                     },
                     "400": {
@@ -1113,7 +1347,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handler.PassengerOrderSuccessResponse"
+                            "$ref": "#/definitions/internal_transport_http_handler.PassengerOrderSuccessResponse"
                         }
                     },
                     "401": {
@@ -1162,7 +1396,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/dto.OrderEstimateRequest"
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.OrderEstimateRequest"
                         }
                     }
                 ],
@@ -1170,7 +1404,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handler.OrderEstimateSuccessResponse"
+                            "$ref": "#/definitions/internal_transport_http_handler.OrderEstimateSuccessResponse"
                         }
                     },
                     "400": {
@@ -1212,7 +1446,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handler.PassengerOrderHistorySuccessResponse"
+                            "$ref": "#/definitions/internal_transport_http_handler.PassengerOrderHistorySuccessResponse"
                         }
                     },
                     "401": {
@@ -1257,7 +1491,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handler.PassengerOrderSuccessResponse"
+                            "$ref": "#/definitions/internal_transport_http_handler.PassengerOrderSuccessResponse"
                         }
                     },
                     "400": {
@@ -1318,7 +1552,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/dto.CancelOrderRequest"
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.CancelOrderRequest"
                         }
                     }
                 ],
@@ -1326,7 +1560,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handler.PassengerOrderSuccessResponse"
+                            "$ref": "#/definitions/internal_transport_http_handler.PassengerOrderSuccessResponse"
                         }
                     },
                     "400": {
@@ -1393,7 +1627,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/dto.RateOrderRequest"
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.RateOrderRequest"
                         }
                     }
                 ],
@@ -1401,7 +1635,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handler.PassengerOrderSuccessResponse"
+                            "$ref": "#/definitions/internal_transport_http_handler.PassengerOrderSuccessResponse"
                         }
                     },
                     "400": {
@@ -1455,7 +1689,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handler.PassengerProfileSuccessResponse"
+                            "$ref": "#/definitions/internal_transport_http_handler.PassengerProfileSuccessResponse"
                         }
                     },
                     "401": {
@@ -1495,7 +1729,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/dto.PassengerProfileRequest"
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.PassengerProfileRequest"
                         }
                     }
                 ],
@@ -1503,7 +1737,7 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/handler.PassengerProfileSuccessResponse"
+                            "$ref": "#/definitions/internal_transport_http_handler.PassengerProfileSuccessResponse"
                         }
                     },
                     "400": {
@@ -1549,7 +1783,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/dto.PassengerProfilePatchRequest"
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.PassengerProfilePatchRequest"
                         }
                     }
                 ],
@@ -1557,13 +1791,181 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handler.PassengerProfileSuccessResponse"
+                            "$ref": "#/definitions/internal_transport_http_handler.PassengerProfileSuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
                             "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/taxi-park/balance": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "finance-taxi-park"
+                ],
+                "summary": "Get taxi park balance",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_handler.TaxiParkBalanceSuccessResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/taxi-park/drivers": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "finance-taxi-park"
+                ],
+                "summary": "Get taxi park drivers",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Limit, max 100",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_handler.TaxiParkDriversSuccessResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/taxi-park/orders": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "finance-taxi-park"
+                ],
+                "summary": "Get taxi park orders",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Limit, max 100",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_handler.TaxiParkOrdersSuccessResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/taxi-park/transactions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "finance-taxi-park"
+                ],
+                "summary": "Get taxi park financial transactions",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Limit, max 100",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_handler.FinancialTransactionsSuccessResponse"
                         }
                     },
                     "401": {
@@ -1644,876 +2046,6 @@ const docTemplate = `{
                 }
             }
         },
-        "dto.AssignedDriverDTO": {
-            "type": "object",
-            "properties": {
-                "id": {
-                    "type": "string",
-                    "example": "55555555-5555-5555-5555-555555555555"
-                },
-                "name": {
-                    "type": "string",
-                    "example": "Ivan"
-                },
-                "phone": {
-                    "type": "string",
-                    "example": "+79990000001"
-                },
-                "rating": {
-                    "type": "number",
-                    "example": 4.95
-                }
-            }
-        },
-        "dto.AuthCodeSentResponse": {
-            "type": "object",
-            "properties": {
-                "delivery_channel": {
-                    "type": "string",
-                    "example": "sms"
-                },
-                "message": {
-                    "type": "string",
-                    "example": "verification code sent"
-                }
-            }
-        },
-        "dto.AuthLoginRequest": {
-            "type": "object",
-            "required": [
-                "role"
-            ],
-            "properties": {
-                "email": {
-                    "type": "string",
-                    "example": "user@example.com"
-                },
-                "phone": {
-                    "type": "string",
-                    "example": "+79990000000"
-                },
-                "role": {
-                    "enum": [
-                        "passenger",
-                        "driver",
-                        "taxi_park",
-                        "admin",
-                        "dispatcher"
-                    ],
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.UserRole"
-                        }
-                    ],
-                    "example": "passenger"
-                }
-            }
-        },
-        "dto.AuthTokenResponse": {
-            "type": "object",
-            "properties": {
-                "access_token": {
-                    "type": "string",
-                    "example": "eyJhbGciOi..."
-                },
-                "expires_in": {
-                    "type": "integer",
-                    "example": 900
-                },
-                "refresh_token": {
-                    "type": "string",
-                    "example": "eyJhbGciOi..."
-                },
-                "token_type": {
-                    "type": "string",
-                    "example": "Bearer"
-                }
-            }
-        },
-        "dto.AuthVerifyCodeRequest": {
-            "type": "object",
-            "required": [
-                "code",
-                "role"
-            ],
-            "properties": {
-                "code": {
-                    "type": "string",
-                    "example": "123456"
-                },
-                "email": {
-                    "type": "string",
-                    "example": "user@example.com"
-                },
-                "phone": {
-                    "type": "string",
-                    "example": "+79990000000"
-                },
-                "role": {
-                    "enum": [
-                        "passenger",
-                        "driver",
-                        "taxi_park",
-                        "admin",
-                        "dispatcher"
-                    ],
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.UserRole"
-                        }
-                    ],
-                    "example": "passenger"
-                }
-            }
-        },
-        "dto.CancelOrderRequest": {
-            "type": "object",
-            "required": [
-                "reason"
-            ],
-            "properties": {
-                "reason": {
-                    "type": "string",
-                    "example": "Passenger changed plans"
-                }
-            }
-        },
-        "dto.CarDTO": {
-            "type": "object",
-            "properties": {
-                "brand": {
-                    "type": "string",
-                    "example": "Lada"
-                },
-                "color": {
-                    "type": "string",
-                    "example": "White"
-                },
-                "id": {
-                    "type": "string",
-                    "example": "77777777-7777-7777-7777-777777777777"
-                },
-                "model": {
-                    "type": "string",
-                    "example": "Vesta"
-                },
-                "plate_number": {
-                    "type": "string",
-                    "example": "A001AA196"
-                }
-            }
-        },
-        "dto.CompleteOrderRequest": {
-            "type": "object",
-            "required": [
-                "currency",
-                "final_price"
-            ],
-            "properties": {
-                "currency": {
-                    "type": "string",
-                    "example": "RUB"
-                },
-                "final_price": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "example": 260
-                }
-            }
-        },
-        "dto.CoordinatesRequest": {
-            "type": "object",
-            "required": [
-                "latitude",
-                "longitude"
-            ],
-            "properties": {
-                "latitude": {
-                    "type": "number",
-                    "maximum": 90,
-                    "minimum": -90,
-                    "example": 56.838011
-                },
-                "longitude": {
-                    "type": "number",
-                    "maximum": 180,
-                    "minimum": -180,
-                    "example": 60.597465
-                }
-            }
-        },
-        "dto.CoordinatesResponse": {
-            "type": "object",
-            "properties": {
-                "latitude": {
-                    "type": "number",
-                    "example": 56.838011
-                },
-                "longitude": {
-                    "type": "number",
-                    "example": 60.597465
-                }
-            }
-        },
-        "dto.CurrentOrderResponse": {
-            "type": "object",
-            "properties": {
-                "order": {
-                    "$ref": "#/definitions/dto.OrderResponse"
-                }
-            }
-        },
-        "dto.DriverLocationBatchRequest": {
-            "type": "object",
-            "required": [
-                "locations"
-            ],
-            "properties": {
-                "locations": {
-                    "type": "array",
-                    "maxItems": 50,
-                    "minItems": 1,
-                    "items": {
-                        "$ref": "#/definitions/dto.DriverLocationRequest"
-                    }
-                }
-            }
-        },
-        "dto.DriverLocationRequest": {
-            "type": "object",
-            "required": [
-                "location"
-            ],
-            "properties": {
-                "accuracy_meters": {
-                    "type": "number",
-                    "minimum": 0,
-                    "example": 12.5
-                },
-                "heading": {
-                    "type": "integer",
-                    "maximum": 359,
-                    "minimum": 0,
-                    "example": 90
-                },
-                "location": {
-                    "$ref": "#/definitions/dto.CoordinatesRequest"
-                },
-                "speed_mps": {
-                    "type": "number",
-                    "minimum": 0,
-                    "example": 8.3
-                }
-            }
-        },
-        "dto.DriverOrderHistoryResponse": {
-            "type": "object",
-            "properties": {
-                "orders": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/dto.DriverOrderResponse"
-                    }
-                }
-            }
-        },
-        "dto.DriverOrderResponse": {
-            "type": "object",
-            "properties": {
-                "allowed_actions": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "arrived",
-                        "call_passenger"
-                    ]
-                },
-                "comment": {
-                    "type": "string",
-                    "example": "Entrance 2"
-                },
-                "destination_point": {
-                    "$ref": "#/definitions/dto.PointDTO"
-                },
-                "order_id": {
-                    "type": "string",
-                    "example": "44444444-4444-4444-4444-444444444444"
-                },
-                "passenger": {
-                    "$ref": "#/definitions/dto.PassengerBriefDTO"
-                },
-                "pickup_point": {
-                    "$ref": "#/definitions/dto.PointDTO"
-                },
-                "price": {
-                    "$ref": "#/definitions/dto.MoneyResponse"
-                },
-                "status": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.OrderStatus"
-                        }
-                    ],
-                    "example": "driver_assigned"
-                },
-                "timeline": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/dto.OrderTimelineItem"
-                    }
-                },
-                "version": {
-                    "type": "integer",
-                    "example": 3
-                }
-            }
-        },
-        "dto.DriverProfilePatchRequest": {
-            "type": "object",
-            "properties": {
-                "license_number": {
-                    "type": "string",
-                    "example": "7700000000"
-                },
-                "name": {
-                    "type": "string",
-                    "example": "Ivan"
-                }
-            }
-        },
-        "dto.DriverProfileResponse": {
-            "type": "object",
-            "properties": {
-                "id": {
-                    "type": "string",
-                    "example": "22222222-2222-2222-2222-222222222222"
-                },
-                "is_verified": {
-                    "type": "boolean",
-                    "example": true
-                },
-                "license_number": {
-                    "type": "string",
-                    "example": "7700000000"
-                },
-                "name": {
-                    "type": "string",
-                    "example": "Ivan"
-                },
-                "phone": {
-                    "type": "string",
-                    "example": "+79990000001"
-                },
-                "rating": {
-                    "type": "number",
-                    "example": 4.95
-                },
-                "status": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.DriverStatus"
-                        }
-                    ],
-                    "example": "online"
-                },
-                "user_id": {
-                    "type": "string",
-                    "example": "33333333-3333-3333-3333-333333333333"
-                }
-            }
-        },
-        "dto.LogoutRequest": {
-            "type": "object",
-            "required": [
-                "refresh_token"
-            ],
-            "properties": {
-                "refresh_token": {
-                    "type": "string",
-                    "example": "eyJhbGciOi..."
-                }
-            }
-        },
-        "dto.MoneyResponse": {
-            "type": "object",
-            "properties": {
-                "amount": {
-                    "type": "integer",
-                    "example": 25000
-                },
-                "currency": {
-                    "type": "string",
-                    "example": "RUB"
-                }
-            }
-        },
-        "dto.OrderEstimateRequest": {
-            "type": "object",
-            "required": [
-                "city_id",
-                "destination_location",
-                "pickup_location",
-                "tariff_id"
-            ],
-            "properties": {
-                "city_id": {
-                    "type": "string",
-                    "example": "11111111-1111-1111-1111-111111111111"
-                },
-                "destination_location": {
-                    "$ref": "#/definitions/dto.CoordinatesRequest"
-                },
-                "pickup_location": {
-                    "$ref": "#/definitions/dto.CoordinatesRequest"
-                },
-                "tariff_id": {
-                    "type": "string",
-                    "example": "22222222-2222-2222-2222-222222222222"
-                }
-            }
-        },
-        "dto.OrderEstimateResponse": {
-            "type": "object",
-            "properties": {
-                "currency": {
-                    "type": "string",
-                    "example": "RUB"
-                },
-                "distance_km": {
-                    "type": "number",
-                    "example": 4.2
-                },
-                "duration_min": {
-                    "type": "integer",
-                    "example": 11
-                },
-                "price": {
-                    "type": "integer",
-                    "example": 250
-                },
-                "price_type": {
-                    "type": "string",
-                    "example": "estimated"
-                },
-                "tariff_id": {
-                    "type": "string",
-                    "example": "22222222-2222-2222-2222-222222222222"
-                },
-                "tariff_name": {
-                    "type": "string",
-                    "example": "Economy"
-                }
-            }
-        },
-        "dto.OrderHistoryResponse": {
-            "type": "object",
-            "properties": {
-                "orders": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/dto.PassengerOrderResponse"
-                    }
-                }
-            }
-        },
-        "dto.OrderResponse": {
-            "type": "object",
-            "properties": {
-                "city_id": {
-                    "type": "string"
-                },
-                "destination_address": {
-                    "type": "string"
-                },
-                "driver_id": {
-                    "type": "string"
-                },
-                "estimated_price": {
-                    "$ref": "#/definitions/dto.MoneyResponse"
-                },
-                "final_price": {
-                    "$ref": "#/definitions/dto.MoneyResponse"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "passenger_id": {
-                    "type": "string"
-                },
-                "payment_method": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.PaymentMethod"
-                        }
-                    ],
-                    "example": "cash"
-                },
-                "pickup_address": {
-                    "type": "string"
-                },
-                "pickup_location": {
-                    "$ref": "#/definitions/dto.CoordinatesResponse"
-                },
-                "status": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.OrderStatus"
-                        }
-                    ],
-                    "example": "searching"
-                },
-                "tariff_id": {
-                    "type": "string"
-                },
-                "version": {
-                    "type": "integer",
-                    "example": 2
-                }
-            }
-        },
-        "dto.OrderTimelineItem": {
-            "type": "object",
-            "properties": {
-                "occurred_at": {
-                    "type": "string",
-                    "example": "2026-05-12T12:00:00Z"
-                },
-                "status": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.OrderStatus"
-                        }
-                    ],
-                    "example": "driver_assigned"
-                }
-            }
-        },
-        "dto.PassengerBriefDTO": {
-            "type": "object",
-            "properties": {
-                "id": {
-                    "type": "string",
-                    "example": "66666666-6666-6666-6666-666666666666"
-                },
-                "name": {
-                    "type": "string",
-                    "example": "Irina"
-                },
-                "phone": {
-                    "type": "string",
-                    "example": "+79990000000"
-                }
-            }
-        },
-        "dto.PassengerCreateOrderRequest": {
-            "type": "object",
-            "required": [
-                "city_id",
-                "destination_address",
-                "destination_location",
-                "payment_type",
-                "pickup_address",
-                "pickup_location",
-                "tariff_id"
-            ],
-            "properties": {
-                "city_id": {
-                    "type": "string",
-                    "example": "11111111-1111-1111-1111-111111111111"
-                },
-                "comment": {
-                    "type": "string",
-                    "example": "Entrance 2"
-                },
-                "destination_address": {
-                    "type": "string",
-                    "example": "Mira 10"
-                },
-                "destination_location": {
-                    "$ref": "#/definitions/dto.CoordinatesRequest"
-                },
-                "passenger_phone": {
-                    "type": "string",
-                    "example": "+79990000000"
-                },
-                "payment_type": {
-                    "enum": [
-                        "cash",
-                        "card",
-                        "corporate"
-                    ],
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.PaymentMethod"
-                        }
-                    ],
-                    "example": "cash"
-                },
-                "pickup_address": {
-                    "type": "string",
-                    "example": "Lenina 1"
-                },
-                "pickup_location": {
-                    "$ref": "#/definitions/dto.CoordinatesRequest"
-                },
-                "tariff_id": {
-                    "type": "string",
-                    "example": "22222222-2222-2222-2222-222222222222"
-                }
-            }
-        },
-        "dto.PassengerOrderResponse": {
-            "type": "object",
-            "properties": {
-                "allowed_actions": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "cancel",
-                        "call_driver"
-                    ]
-                },
-                "car": {
-                    "$ref": "#/definitions/dto.CarDTO"
-                },
-                "destination_point": {
-                    "$ref": "#/definitions/dto.PointDTO"
-                },
-                "driver": {
-                    "$ref": "#/definitions/dto.AssignedDriverDTO"
-                },
-                "eta_seconds": {
-                    "type": "integer",
-                    "example": 420
-                },
-                "order_id": {
-                    "type": "string",
-                    "example": "44444444-4444-4444-4444-444444444444"
-                },
-                "pickup_point": {
-                    "$ref": "#/definitions/dto.PointDTO"
-                },
-                "price": {
-                    "$ref": "#/definitions/dto.MoneyResponse"
-                },
-                "status": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.OrderStatus"
-                        }
-                    ],
-                    "example": "driver_arriving"
-                },
-                "timeline": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/dto.OrderTimelineItem"
-                    }
-                },
-                "version": {
-                    "type": "integer",
-                    "example": 3
-                }
-            }
-        },
-        "dto.PassengerProfilePatchRequest": {
-            "type": "object",
-            "properties": {
-                "email": {
-                    "type": "string",
-                    "example": "irina@example.com"
-                },
-                "name": {
-                    "type": "string",
-                    "example": "Irina"
-                }
-            }
-        },
-        "dto.PassengerProfileRequest": {
-            "type": "object",
-            "required": [
-                "name"
-            ],
-            "properties": {
-                "email": {
-                    "type": "string",
-                    "example": "irina@example.com"
-                },
-                "name": {
-                    "type": "string",
-                    "example": "Irina"
-                }
-            }
-        },
-        "dto.PassengerProfileResponse": {
-            "type": "object",
-            "properties": {
-                "email": {
-                    "type": "string",
-                    "example": "irina@example.com"
-                },
-                "id": {
-                    "type": "string",
-                    "example": "11111111-1111-1111-1111-111111111111"
-                },
-                "name": {
-                    "type": "string",
-                    "example": "Irina"
-                },
-                "phone": {
-                    "type": "string",
-                    "example": "+79990000000"
-                }
-            }
-        },
-        "dto.PointDTO": {
-            "type": "object",
-            "properties": {
-                "address": {
-                    "type": "string",
-                    "example": "Lenina 1"
-                },
-                "location": {
-                    "$ref": "#/definitions/dto.CoordinatesResponse"
-                }
-            }
-        },
-        "dto.RateOrderRequest": {
-            "type": "object",
-            "required": [
-                "score"
-            ],
-            "properties": {
-                "comment": {
-                    "type": "string",
-                    "example": "Good driver"
-                },
-                "score": {
-                    "type": "integer",
-                    "maximum": 5,
-                    "minimum": 1,
-                    "example": 5
-                }
-            }
-        },
-        "dto.RefreshTokenRequest": {
-            "type": "object",
-            "required": [
-                "refresh_token"
-            ],
-            "properties": {
-                "refresh_token": {
-                    "type": "string",
-                    "example": "eyJhbGciOi..."
-                }
-            }
-        },
-        "dto.RejectOrderRequest": {
-            "type": "object",
-            "required": [
-                "reason"
-            ],
-            "properties": {
-                "reason": {
-                    "type": "string",
-                    "example": "Too far"
-                }
-            }
-        },
-        "dto.StartRegistrationRequest": {
-            "type": "object",
-            "required": [
-                "email",
-                "first_name",
-                "password",
-                "personal_data_consent",
-                "phone",
-                "privacy_policy_version",
-                "registration_type",
-                "terms_accepted",
-                "terms_version"
-            ],
-            "properties": {
-                "city_id": {
-                    "type": "string",
-                    "example": "11111111-1111-1111-1111-111111111111"
-                },
-                "email": {
-                    "type": "string",
-                    "example": "user@example.com"
-                },
-                "first_name": {
-                    "type": "string",
-                    "example": "Ivan"
-                },
-                "last_name": {
-                    "type": "string",
-                    "example": "Petrov"
-                },
-                "password": {
-                    "type": "string",
-                    "minLength": 8,
-                    "example": "strong-password"
-                },
-                "personal_data_consent": {
-                    "type": "boolean",
-                    "example": true
-                },
-                "phone": {
-                    "type": "string",
-                    "example": "+79990000000"
-                },
-                "privacy_policy_version": {
-                    "type": "string",
-                    "example": "1.0"
-                },
-                "registration_type": {
-                    "enum": [
-                        "passenger",
-                        "driver",
-                        "taxi_park"
-                    ],
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.RegistrationType"
-                        }
-                    ],
-                    "example": "passenger"
-                },
-                "taxi_park": {
-                    "$ref": "#/definitions/dto.TaxiParkRegistration"
-                },
-                "terms_accepted": {
-                    "type": "boolean",
-                    "example": true
-                },
-                "terms_version": {
-                    "type": "string",
-                    "example": "1.0"
-                }
-            }
-        },
-        "dto.TaxiParkRegistration": {
-            "type": "object",
-            "properties": {
-                "legal_name": {
-                    "type": "string",
-                    "example": "North Taxi Park LLC"
-                },
-                "name": {
-                    "type": "string",
-                    "example": "North Taxi Park"
-                },
-                "tax_id": {
-                    "type": "string",
-                    "example": "7700000000"
-                }
-            }
-        },
         "github_com_kishert-lab_taxi-platform_internal_domain.DriverStatus": {
             "type": "string",
             "enum": [
@@ -2582,6 +2114,23 @@ const docTemplate = `{
                 "RegistrationTypeTaxiPark"
             ]
         },
+        "github_com_kishert-lab_taxi-platform_internal_domain.TransactionType": {
+            "type": "string",
+            "enum": [
+                "commission",
+                "driver_income",
+                "refund",
+                "manual_adjustment",
+                "withdrawal"
+            ],
+            "x-enum-varnames": [
+                "TransactionTypeCommission",
+                "TransactionTypeDriverIncome",
+                "TransactionTypeRefund",
+                "TransactionTypeManualAdjustment",
+                "TransactionTypeWithdrawal"
+            ]
+        },
         "github_com_kishert-lab_taxi-platform_internal_domain.UserRole": {
             "type": "string",
             "enum": [
@@ -2598,6 +2147,1165 @@ const docTemplate = `{
                 "UserRoleAdmin",
                 "UserRoleDispatcher"
             ]
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.AdminFinanceOverviewResponse": {
+            "type": "object",
+            "properties": {
+                "average_commission_per_order": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.MoneyCentsResponse"
+                },
+                "completed_orders_count": {
+                    "type": "integer",
+                    "example": 120
+                },
+                "completed_orders_revenue": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.MoneyCentsResponse"
+                },
+                "driver_payouts": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.MoneyCentsResponse"
+                },
+                "period_from": {
+                    "type": "string",
+                    "example": "2026-05-01T00:00:00Z"
+                },
+                "period_to": {
+                    "type": "string",
+                    "example": "2026-06-01T00:00:00Z"
+                },
+                "taxi_park_revenue": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.MoneyCentsResponse"
+                },
+                "total_commissions": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.MoneyCentsResponse"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.AssignedDriverDTO": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "example": "55555555-5555-5555-5555-555555555555"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Ivan"
+                },
+                "phone": {
+                    "type": "string",
+                    "example": "+79990000001"
+                },
+                "rating": {
+                    "type": "number",
+                    "example": 4.95
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.AuthCodeSentResponse": {
+            "type": "object",
+            "properties": {
+                "delivery_channel": {
+                    "type": "string",
+                    "example": "sms"
+                },
+                "message": {
+                    "type": "string",
+                    "example": "verification code sent"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.AuthEmailCodeRequest": {
+            "type": "object",
+            "required": [
+                "email",
+                "role"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "user@example.com"
+                },
+                "role": {
+                    "enum": [
+                        "passenger",
+                        "driver",
+                        "taxi_park",
+                        "admin",
+                        "dispatcher"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.UserRole"
+                        }
+                    ],
+                    "example": "passenger"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.AuthEmailVerifyRequest": {
+            "type": "object",
+            "required": [
+                "code",
+                "email",
+                "role"
+            ],
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "example": "123456"
+                },
+                "email": {
+                    "type": "string",
+                    "example": "user@example.com"
+                },
+                "role": {
+                    "enum": [
+                        "passenger",
+                        "driver",
+                        "taxi_park",
+                        "admin",
+                        "dispatcher"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.UserRole"
+                        }
+                    ],
+                    "example": "passenger"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.AuthLoginRequest": {
+            "type": "object",
+            "required": [
+                "role"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "user@example.com"
+                },
+                "phone": {
+                    "type": "string",
+                    "example": "+79990000000"
+                },
+                "role": {
+                    "enum": [
+                        "passenger",
+                        "driver",
+                        "taxi_park",
+                        "admin",
+                        "dispatcher"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.UserRole"
+                        }
+                    ],
+                    "example": "passenger"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.AuthTokenResponse": {
+            "type": "object",
+            "properties": {
+                "access_token": {
+                    "type": "string",
+                    "example": "eyJhbGciOi..."
+                },
+                "expires_in": {
+                    "type": "integer",
+                    "example": 900
+                },
+                "refresh_token": {
+                    "type": "string",
+                    "example": "eyJhbGciOi..."
+                },
+                "token_type": {
+                    "type": "string",
+                    "example": "Bearer"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.AuthVerifyCodeRequest": {
+            "type": "object",
+            "required": [
+                "code",
+                "role"
+            ],
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "example": "123456"
+                },
+                "email": {
+                    "type": "string",
+                    "example": "user@example.com"
+                },
+                "phone": {
+                    "type": "string",
+                    "example": "+79990000000"
+                },
+                "role": {
+                    "enum": [
+                        "passenger",
+                        "driver",
+                        "taxi_park",
+                        "admin",
+                        "dispatcher"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.UserRole"
+                        }
+                    ],
+                    "example": "passenger"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.CancelOrderRequest": {
+            "type": "object",
+            "required": [
+                "reason"
+            ],
+            "properties": {
+                "reason": {
+                    "type": "string",
+                    "example": "Passenger changed plans"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.CarDTO": {
+            "type": "object",
+            "properties": {
+                "brand": {
+                    "type": "string",
+                    "example": "Lada"
+                },
+                "color": {
+                    "type": "string",
+                    "example": "White"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "77777777-7777-7777-7777-777777777777"
+                },
+                "model": {
+                    "type": "string",
+                    "example": "Vesta"
+                },
+                "plate_number": {
+                    "type": "string",
+                    "example": "A001AA196"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.CompleteOrderRequest": {
+            "type": "object",
+            "required": [
+                "currency",
+                "final_price"
+            ],
+            "properties": {
+                "currency": {
+                    "type": "string",
+                    "example": "RUB"
+                },
+                "final_price": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "example": 260
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.CoordinatesRequest": {
+            "type": "object",
+            "required": [
+                "latitude",
+                "longitude"
+            ],
+            "properties": {
+                "latitude": {
+                    "type": "number",
+                    "maximum": 90,
+                    "minimum": -90,
+                    "example": 56.838011
+                },
+                "longitude": {
+                    "type": "number",
+                    "maximum": 180,
+                    "minimum": -180,
+                    "example": 60.597465
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.CoordinatesResponse": {
+            "type": "object",
+            "properties": {
+                "latitude": {
+                    "type": "number",
+                    "example": 56.838011
+                },
+                "longitude": {
+                    "type": "number",
+                    "example": 60.597465
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.CurrentOrderResponse": {
+            "type": "object",
+            "properties": {
+                "order": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.OrderResponse"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.DriverBalanceResponse": {
+            "type": "object",
+            "properties": {
+                "available_balance": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.MoneyCentsResponse"
+                },
+                "driver_id": {
+                    "type": "string",
+                    "example": "22222222-2222-2222-2222-222222222222"
+                },
+                "pending_balance": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.MoneyCentsResponse"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-05-12T12:00:00Z"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.DriverLocationBatchRequest": {
+            "type": "object",
+            "required": [
+                "locations"
+            ],
+            "properties": {
+                "locations": {
+                    "type": "array",
+                    "maxItems": 50,
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.DriverLocationRequest"
+                    }
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.DriverLocationRequest": {
+            "type": "object",
+            "required": [
+                "location"
+            ],
+            "properties": {
+                "accuracy_meters": {
+                    "type": "number",
+                    "minimum": 0,
+                    "example": 12.5
+                },
+                "heading": {
+                    "type": "integer",
+                    "maximum": 359,
+                    "minimum": 0,
+                    "example": 90
+                },
+                "location": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.CoordinatesRequest"
+                },
+                "speed_mps": {
+                    "type": "number",
+                    "minimum": 0,
+                    "example": 8.3
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.DriverOrderHistoryResponse": {
+            "type": "object",
+            "properties": {
+                "orders": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.DriverOrderResponse"
+                    }
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.DriverOrderResponse": {
+            "type": "object",
+            "properties": {
+                "allowed_actions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "arrived",
+                        "call_passenger"
+                    ]
+                },
+                "comment": {
+                    "type": "string",
+                    "example": "Entrance 2"
+                },
+                "destination_point": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.PointDTO"
+                },
+                "order_id": {
+                    "type": "string",
+                    "example": "44444444-4444-4444-4444-444444444444"
+                },
+                "passenger": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.PassengerBriefDTO"
+                },
+                "pickup_point": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.PointDTO"
+                },
+                "price": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.MoneyResponse"
+                },
+                "status": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.OrderStatus"
+                        }
+                    ],
+                    "example": "driver_assigned"
+                },
+                "timeline": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.OrderTimelineItem"
+                    }
+                },
+                "version": {
+                    "type": "integer",
+                    "example": 3
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.DriverProfilePatchRequest": {
+            "type": "object",
+            "properties": {
+                "license_number": {
+                    "type": "string",
+                    "example": "7700000000"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Ivan"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.DriverProfileResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "example": "22222222-2222-2222-2222-222222222222"
+                },
+                "is_verified": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "license_number": {
+                    "type": "string",
+                    "example": "7700000000"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Ivan"
+                },
+                "phone": {
+                    "type": "string",
+                    "example": "+79990000001"
+                },
+                "rating": {
+                    "type": "number",
+                    "example": 4.95
+                },
+                "status": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.DriverStatus"
+                        }
+                    ],
+                    "example": "online"
+                },
+                "user_id": {
+                    "type": "string",
+                    "example": "33333333-3333-3333-3333-333333333333"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.FinancialTransactionResponse": {
+            "type": "object",
+            "properties": {
+                "commission_amount": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.MoneyCentsResponse"
+                },
+                "commission_basis_points": {
+                    "type": "integer",
+                    "example": 100
+                },
+                "commission_percent": {
+                    "type": "string",
+                    "example": "1.00"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-05-12T12:00:00Z"
+                },
+                "driver_id": {
+                    "type": "string",
+                    "example": "22222222-2222-2222-2222-222222222222"
+                },
+                "gross_amount": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.MoneyCentsResponse"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "44444444-4444-4444-4444-444444444444"
+                },
+                "net_amount": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.MoneyCentsResponse"
+                },
+                "order_id": {
+                    "type": "string",
+                    "example": "55555555-5555-5555-5555-555555555555"
+                },
+                "taxi_park_id": {
+                    "type": "string",
+                    "example": "33333333-3333-3333-3333-333333333333"
+                },
+                "transaction_type": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.TransactionType"
+                        }
+                    ],
+                    "example": "driver_income"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.FinancialTransactionsResponse": {
+            "type": "object",
+            "properties": {
+                "transactions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.FinancialTransactionResponse"
+                    }
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.LogoutRequest": {
+            "type": "object",
+            "required": [
+                "refresh_token"
+            ],
+            "properties": {
+                "refresh_token": {
+                    "type": "string",
+                    "example": "eyJhbGciOi..."
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.MoneyCentsResponse": {
+            "type": "object",
+            "properties": {
+                "amount_cents": {
+                    "type": "integer",
+                    "example": 49500
+                },
+                "currency": {
+                    "type": "string",
+                    "example": "RUB"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.MoneyResponse": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "integer",
+                    "example": 25000
+                },
+                "currency": {
+                    "type": "string",
+                    "example": "RUB"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.OrderEstimateRequest": {
+            "type": "object",
+            "required": [
+                "city_id",
+                "destination_location",
+                "pickup_location",
+                "tariff_id"
+            ],
+            "properties": {
+                "city_id": {
+                    "type": "string",
+                    "example": "11111111-1111-1111-1111-111111111111"
+                },
+                "destination_location": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.CoordinatesRequest"
+                },
+                "pickup_location": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.CoordinatesRequest"
+                },
+                "tariff_id": {
+                    "type": "string",
+                    "example": "22222222-2222-2222-2222-222222222222"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.OrderEstimateResponse": {
+            "type": "object",
+            "properties": {
+                "currency": {
+                    "type": "string",
+                    "example": "RUB"
+                },
+                "distance_km": {
+                    "type": "number",
+                    "example": 4.2
+                },
+                "duration_min": {
+                    "type": "integer",
+                    "example": 11
+                },
+                "price": {
+                    "type": "integer",
+                    "example": 250
+                },
+                "price_type": {
+                    "type": "string",
+                    "example": "estimated"
+                },
+                "tariff_id": {
+                    "type": "string",
+                    "example": "22222222-2222-2222-2222-222222222222"
+                },
+                "tariff_name": {
+                    "type": "string",
+                    "example": "Economy"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.OrderHistoryResponse": {
+            "type": "object",
+            "properties": {
+                "orders": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.PassengerOrderResponse"
+                    }
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.OrderResponse": {
+            "type": "object",
+            "properties": {
+                "city_id": {
+                    "type": "string"
+                },
+                "destination_address": {
+                    "type": "string"
+                },
+                "driver_id": {
+                    "type": "string"
+                },
+                "estimated_price": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.MoneyResponse"
+                },
+                "final_price": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.MoneyResponse"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "passenger_id": {
+                    "type": "string"
+                },
+                "payment_method": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.PaymentMethod"
+                        }
+                    ],
+                    "example": "cash"
+                },
+                "pickup_address": {
+                    "type": "string"
+                },
+                "pickup_location": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.CoordinatesResponse"
+                },
+                "status": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.OrderStatus"
+                        }
+                    ],
+                    "example": "searching"
+                },
+                "tariff_id": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer",
+                    "example": 2
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.OrderTimelineItem": {
+            "type": "object",
+            "properties": {
+                "occurred_at": {
+                    "type": "string",
+                    "example": "2026-05-12T12:00:00Z"
+                },
+                "status": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.OrderStatus"
+                        }
+                    ],
+                    "example": "driver_assigned"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.PassengerBriefDTO": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "example": "66666666-6666-6666-6666-666666666666"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Irina"
+                },
+                "phone": {
+                    "type": "string",
+                    "example": "+79990000000"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.PassengerCreateOrderRequest": {
+            "type": "object",
+            "required": [
+                "city_id",
+                "destination_address",
+                "destination_location",
+                "payment_type",
+                "pickup_address",
+                "pickup_location",
+                "tariff_id"
+            ],
+            "properties": {
+                "city_id": {
+                    "type": "string",
+                    "example": "11111111-1111-1111-1111-111111111111"
+                },
+                "comment": {
+                    "type": "string",
+                    "example": "Entrance 2"
+                },
+                "destination_address": {
+                    "type": "string",
+                    "example": "Mira 10"
+                },
+                "destination_location": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.CoordinatesRequest"
+                },
+                "passenger_phone": {
+                    "type": "string",
+                    "example": "+79990000000"
+                },
+                "payment_type": {
+                    "enum": [
+                        "cash",
+                        "card",
+                        "corporate"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.PaymentMethod"
+                        }
+                    ],
+                    "example": "cash"
+                },
+                "pickup_address": {
+                    "type": "string",
+                    "example": "Lenina 1"
+                },
+                "pickup_location": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.CoordinatesRequest"
+                },
+                "tariff_id": {
+                    "type": "string",
+                    "example": "22222222-2222-2222-2222-222222222222"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.PassengerOrderResponse": {
+            "type": "object",
+            "properties": {
+                "allowed_actions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "cancel",
+                        "call_driver"
+                    ]
+                },
+                "car": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.CarDTO"
+                },
+                "destination_point": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.PointDTO"
+                },
+                "driver": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.AssignedDriverDTO"
+                },
+                "eta_seconds": {
+                    "type": "integer",
+                    "example": 420
+                },
+                "order_id": {
+                    "type": "string",
+                    "example": "44444444-4444-4444-4444-444444444444"
+                },
+                "pickup_point": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.PointDTO"
+                },
+                "price": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.MoneyResponse"
+                },
+                "status": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.OrderStatus"
+                        }
+                    ],
+                    "example": "driver_arriving"
+                },
+                "timeline": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.OrderTimelineItem"
+                    }
+                },
+                "version": {
+                    "type": "integer",
+                    "example": 3
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.PassengerProfilePatchRequest": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "irina@example.com"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Irina"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.PassengerProfileRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "irina@example.com"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Irina"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.PassengerProfileResponse": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "irina@example.com"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "11111111-1111-1111-1111-111111111111"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Irina"
+                },
+                "phone": {
+                    "type": "string",
+                    "example": "+79990000000"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.PointDTO": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string",
+                    "example": "Lenina 1"
+                },
+                "location": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.CoordinatesResponse"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.RateOrderRequest": {
+            "type": "object",
+            "required": [
+                "score"
+            ],
+            "properties": {
+                "comment": {
+                    "type": "string",
+                    "example": "Good driver"
+                },
+                "score": {
+                    "type": "integer",
+                    "maximum": 5,
+                    "minimum": 1,
+                    "example": 5
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.RefreshTokenRequest": {
+            "type": "object",
+            "required": [
+                "refresh_token"
+            ],
+            "properties": {
+                "refresh_token": {
+                    "type": "string",
+                    "example": "eyJhbGciOi..."
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.RejectOrderRequest": {
+            "type": "object",
+            "required": [
+                "reason"
+            ],
+            "properties": {
+                "reason": {
+                    "type": "string",
+                    "example": "Too far"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.StartRegistrationRequest": {
+            "type": "object",
+            "required": [
+                "email",
+                "first_name",
+                "password",
+                "personal_data_consent",
+                "phone",
+                "privacy_policy_version",
+                "registration_type",
+                "terms_accepted",
+                "terms_version"
+            ],
+            "properties": {
+                "city_id": {
+                    "type": "string",
+                    "example": "11111111-1111-1111-1111-111111111111"
+                },
+                "email": {
+                    "type": "string",
+                    "example": "user@example.com"
+                },
+                "first_name": {
+                    "type": "string",
+                    "example": "Ivan"
+                },
+                "last_name": {
+                    "type": "string",
+                    "example": "Petrov"
+                },
+                "password": {
+                    "type": "string",
+                    "minLength": 8,
+                    "example": "strong-password"
+                },
+                "personal_data_consent": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "phone": {
+                    "type": "string",
+                    "example": "+79990000000"
+                },
+                "privacy_policy_version": {
+                    "type": "string",
+                    "example": "1.0"
+                },
+                "registration_type": {
+                    "enum": [
+                        "passenger",
+                        "driver",
+                        "taxi_park"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.RegistrationType"
+                        }
+                    ],
+                    "example": "passenger"
+                },
+                "taxi_park": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkRegistration"
+                },
+                "terms_accepted": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "terms_version": {
+                    "type": "string",
+                    "example": "1.0"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkBalanceResponse": {
+            "type": "object",
+            "properties": {
+                "available_balance": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.MoneyCentsResponse"
+                },
+                "taxi_park_id": {
+                    "type": "string",
+                    "example": "33333333-3333-3333-3333-333333333333"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-05-12T12:00:00Z"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkDriverResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-05-12T12:00:00Z"
+                },
+                "full_name": {
+                    "type": "string",
+                    "example": "Ivan Petrov"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "22222222-2222-2222-2222-222222222222"
+                },
+                "rating": {
+                    "type": "number",
+                    "example": 4.95
+                },
+                "status": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.DriverStatus"
+                        }
+                    ],
+                    "example": "online"
+                },
+                "user_id": {
+                    "type": "string",
+                    "example": "66666666-6666-6666-6666-666666666666"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkDriversResponse": {
+            "type": "object",
+            "properties": {
+                "drivers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkDriverResponse"
+                    }
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkOrderResponse": {
+            "type": "object",
+            "properties": {
+                "completed_at": {
+                    "type": "string",
+                    "example": "2026-05-12T12:30:00Z"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-05-12T12:00:00Z"
+                },
+                "driver_id": {
+                    "type": "string",
+                    "example": "22222222-2222-2222-2222-222222222222"
+                },
+                "gross_amount": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.MoneyCentsResponse"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "55555555-5555-5555-5555-555555555555"
+                },
+                "status": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.OrderStatus"
+                        }
+                    ],
+                    "example": "completed"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkOrdersResponse": {
+            "type": "object",
+            "properties": {
+                "orders": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkOrderResponse"
+                    }
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkRegistration": {
+            "type": "object",
+            "properties": {
+                "legal_name": {
+                    "type": "string",
+                    "example": "North Taxi Park LLC"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "North Taxi Park"
+                },
+                "tax_id": {
+                    "type": "string",
+                    "example": "7700000000"
+                }
+            }
         },
         "github_com_kishert-lab_taxi-platform_pkg_response.Error": {
             "type": "object",
@@ -2644,6 +3352,7 @@ const docTemplate = `{
                 "DISPATCH_IN_PROGRESS",
                 "RATE_LIMITED",
                 "CONSENT_REQUIRED",
+                "NOT_IMPLEMENTED",
                 "INTERNAL_ERROR"
             ],
             "x-enum-varnames": [
@@ -2657,6 +3366,7 @@ const docTemplate = `{
                 "CodeDispatchInProgress",
                 "CodeRateLimited",
                 "CodeConsentRequired",
+                "CodeNotImplemented",
                 "CodeInternalError"
             ]
         },
@@ -2678,117 +3388,183 @@ const docTemplate = `{
                 }
             }
         },
-        "handler.AcceptedSuccessResponse": {
+        "internal_transport_http_handler.AcceptedSuccessResponse": {
             "type": "object",
             "properties": {
                 "data": {
-                    "$ref": "#/definitions/handler.acceptedResponse"
+                    "$ref": "#/definitions/internal_transport_http_handler.acceptedResponse"
                 },
                 "meta": {
                     "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta"
                 }
             }
         },
-        "handler.AuthCodeSentSuccessResponse": {
+        "internal_transport_http_handler.AdminFinanceOverviewSuccessResponse": {
             "type": "object",
             "properties": {
                 "data": {
-                    "$ref": "#/definitions/dto.AuthCodeSentResponse"
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.AdminFinanceOverviewResponse"
                 },
                 "meta": {
                     "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta"
                 }
             }
         },
-        "handler.AuthTokenSuccessResponse": {
+        "internal_transport_http_handler.AuthCodeSentSuccessResponse": {
             "type": "object",
             "properties": {
                 "data": {
-                    "$ref": "#/definitions/dto.AuthTokenResponse"
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.AuthCodeSentResponse"
                 },
                 "meta": {
                     "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta"
                 }
             }
         },
-        "handler.DriverOrderHistorySuccessResponse": {
+        "internal_transport_http_handler.AuthTokenSuccessResponse": {
             "type": "object",
             "properties": {
                 "data": {
-                    "$ref": "#/definitions/dto.DriverOrderHistoryResponse"
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.AuthTokenResponse"
                 },
                 "meta": {
                     "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta"
                 }
             }
         },
-        "handler.DriverOrderSuccessResponse": {
+        "internal_transport_http_handler.DriverBalanceSuccessResponse": {
             "type": "object",
             "properties": {
                 "data": {
-                    "$ref": "#/definitions/dto.DriverOrderResponse"
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.DriverBalanceResponse"
                 },
                 "meta": {
                     "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta"
                 }
             }
         },
-        "handler.DriverProfileSuccessResponse": {
+        "internal_transport_http_handler.DriverOrderHistorySuccessResponse": {
             "type": "object",
             "properties": {
                 "data": {
-                    "$ref": "#/definitions/dto.DriverProfileResponse"
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.DriverOrderHistoryResponse"
                 },
                 "meta": {
                     "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta"
                 }
             }
         },
-        "handler.OrderEstimateSuccessResponse": {
+        "internal_transport_http_handler.DriverOrderSuccessResponse": {
             "type": "object",
             "properties": {
                 "data": {
-                    "$ref": "#/definitions/dto.OrderEstimateResponse"
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.DriverOrderResponse"
                 },
                 "meta": {
                     "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta"
                 }
             }
         },
-        "handler.PassengerOrderHistorySuccessResponse": {
+        "internal_transport_http_handler.DriverProfileSuccessResponse": {
             "type": "object",
             "properties": {
                 "data": {
-                    "$ref": "#/definitions/dto.OrderHistoryResponse"
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.DriverProfileResponse"
                 },
                 "meta": {
                     "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta"
                 }
             }
         },
-        "handler.PassengerOrderSuccessResponse": {
+        "internal_transport_http_handler.FinancialTransactionsSuccessResponse": {
             "type": "object",
             "properties": {
                 "data": {
-                    "$ref": "#/definitions/dto.PassengerOrderResponse"
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.FinancialTransactionsResponse"
                 },
                 "meta": {
                     "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta"
                 }
             }
         },
-        "handler.PassengerProfileSuccessResponse": {
+        "internal_transport_http_handler.OrderEstimateSuccessResponse": {
             "type": "object",
             "properties": {
                 "data": {
-                    "$ref": "#/definitions/dto.PassengerProfileResponse"
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.OrderEstimateResponse"
                 },
                 "meta": {
                     "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta"
                 }
             }
         },
-        "handler.acceptedResponse": {
+        "internal_transport_http_handler.PassengerOrderHistorySuccessResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.OrderHistoryResponse"
+                },
+                "meta": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta"
+                }
+            }
+        },
+        "internal_transport_http_handler.PassengerOrderSuccessResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.PassengerOrderResponse"
+                },
+                "meta": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta"
+                }
+            }
+        },
+        "internal_transport_http_handler.PassengerProfileSuccessResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.PassengerProfileResponse"
+                },
+                "meta": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta"
+                }
+            }
+        },
+        "internal_transport_http_handler.TaxiParkBalanceSuccessResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkBalanceResponse"
+                },
+                "meta": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta"
+                }
+            }
+        },
+        "internal_transport_http_handler.TaxiParkDriversSuccessResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkDriversResponse"
+                },
+                "meta": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta"
+                }
+            }
+        },
+        "internal_transport_http_handler.TaxiParkOrdersSuccessResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkOrdersResponse"
+                },
+                "meta": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta"
+                }
+            }
+        },
+        "internal_transport_http_handler.acceptedResponse": {
             "type": "object",
             "properties": {
                 "accepted": {
@@ -2797,7 +3573,7 @@ const docTemplate = `{
                 }
             }
         },
-        "handler.errorResponse": {
+        "internal_transport_http_handler.errorResponse": {
             "type": "object",
             "properties": {
                 "error": {

@@ -16,6 +16,7 @@ type Service struct {
 	repository         Repository
 	dispatchController DispatchController
 	realtimePublisher  RealtimePublisher
+	financeProcessor   FinanceProcessor
 	logger             *zap.Logger
 }
 
@@ -23,6 +24,7 @@ type NewServiceParams struct {
 	Repository         Repository
 	DispatchController DispatchController
 	RealtimePublisher  RealtimePublisher
+	FinanceProcessor   FinanceProcessor
 	Logger             *zap.Logger
 }
 
@@ -38,6 +40,7 @@ func NewService(params NewServiceParams) *Service {
 		repository:         params.Repository,
 		dispatchController: params.DispatchController,
 		realtimePublisher:  params.RealtimePublisher,
+		financeProcessor:   params.FinanceProcessor,
 		logger:             logger,
 	}
 }
@@ -97,6 +100,11 @@ func (service *Service) Transition(ctx context.Context, command TransitionComman
 	if command.ToStatus == domain.OrderStatusCancelled && service.dispatchController != nil {
 		if err := service.dispatchController.StopDispatch(ctx, updatedOrder.ID); err != nil {
 			return domain.Order{}, fmt.Errorf("stop dispatch after cancellation: %w", err)
+		}
+	}
+	if command.ToStatus == domain.OrderStatusCompleted && service.financeProcessor != nil {
+		if _, err := service.financeProcessor.SettleCompletedOrder(ctx, updatedOrder.ID); err != nil {
+			return domain.Order{}, fmt.Errorf("settle completed order: %w", err)
 		}
 	}
 

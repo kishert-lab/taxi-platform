@@ -19,18 +19,20 @@ const (
 )
 
 type Driver struct {
-	ID                   uuid.UUID
-	UserID               uuid.UUID
-	CityID               uuid.UUID
-	Status               DriverStatus
-	Rating               float64
-	CompletedOrdersCount int
-	LicenseNumber        string
-	IsVerified           bool
-	BlockedReason        string
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
-	DeletedAt            *time.Time
+	ID                    uuid.UUID
+	UserID                uuid.UUID
+	CityID                uuid.UUID
+	TaxiParkID            *uuid.UUID
+	Status                DriverStatus
+	Rating                float64
+	CompletedOrdersCount  int
+	LicenseNumber         string
+	CommissionBasisPoints *int32
+	IsVerified            bool
+	BlockedReason         string
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
+	DeletedAt             *time.Time
 }
 
 var (

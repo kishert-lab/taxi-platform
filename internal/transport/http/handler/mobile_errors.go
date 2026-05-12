@@ -6,8 +6,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/kishert-lab/taxi-platform/internal/common"
 	"github.com/kishert-lab/taxi-platform/internal/dispatch"
 	"github.com/kishert-lab/taxi-platform/internal/domain"
+	"github.com/kishert-lab/taxi-platform/internal/finance"
 	orderapp "github.com/kishert-lab/taxi-platform/internal/order"
 	"github.com/kishert-lab/taxi-platform/pkg/response"
 )
@@ -44,6 +46,10 @@ func failByError(context *gin.Context, err error) {
 		response.Fail(context, http.StatusConflict, response.CodeDispatchInProgress, "Dispatch is already in progress", nil)
 	case errors.Is(err, orderapp.ErrOrderConcurrentUpdate):
 		response.Fail(context, http.StatusConflict, response.CodeOrderInvalidState, "Order was changed concurrently", nil)
+	case errors.Is(err, finance.ErrFinancialSettlementDuplicate):
+		response.Fail(context, http.StatusConflict, response.CodeOrderInvalidState, "Financial settlement already exists", nil)
+	case errors.Is(err, common.ErrNotImplemented):
+		response.Fail(context, http.StatusNotImplemented, response.CodeNotImplemented, "Endpoint is registered but service is not implemented", nil)
 	default:
 		response.Fail(context, http.StatusInternalServerError, response.CodeInternalError, "Internal error", nil)
 	}

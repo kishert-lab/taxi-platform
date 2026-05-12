@@ -21,6 +21,8 @@ const (
 	PermissionDriverUpdateTripStatus   Permission = "driver.trips.status.update"
 	PermissionDriverCompleteOrder      Permission = "driver.orders.complete"
 	PermissionDriverViewEarnings       Permission = "driver.earnings.view"
+	PermissionDriverViewBalance        Permission = "driver.balance.view"
+	PermissionDriverViewTransactions   Permission = "driver.transactions.view"
 	PermissionDriverViewOrderHistory   Permission = "driver.orders.history.view"
 
 	PermissionAdminManageCities      Permission = "admin.cities.manage"
@@ -32,6 +34,7 @@ const (
 	PermissionAdminViewStatistics    Permission = "admin.statistics.view"
 	PermissionAdminAssignDriver      Permission = "admin.orders.driver.assign"
 	PermissionAdminManageCommissions Permission = "admin.commissions.manage"
+	PermissionAdminViewFinance       Permission = "admin.finance.view"
 	PermissionAdminViewComplaints    Permission = "admin.complaints.view"
 	PermissionAdminViewRatings       Permission = "admin.ratings.view"
 
@@ -47,6 +50,7 @@ const (
 	PermissionTaxiParkManageCars    Permission = "taxi_park.cars.manage"
 	PermissionTaxiParkViewOrders    Permission = "taxi_park.orders.view"
 	PermissionTaxiParkViewEarnings  Permission = "taxi_park.earnings.view"
+	PermissionTaxiParkViewFinance   Permission = "taxi_park.finance.view"
 )
 
 var rolePermissions = map[UserRole][]Permission{
@@ -70,6 +74,8 @@ var rolePermissions = map[UserRole][]Permission{
 		PermissionDriverUpdateTripStatus,
 		PermissionDriverCompleteOrder,
 		PermissionDriverViewEarnings,
+		PermissionDriverViewBalance,
+		PermissionDriverViewTransactions,
 		PermissionDriverViewOrderHistory,
 	},
 	UserRoleAdmin: {
@@ -82,6 +88,7 @@ var rolePermissions = map[UserRole][]Permission{
 		PermissionAdminViewStatistics,
 		PermissionAdminAssignDriver,
 		PermissionAdminManageCommissions,
+		PermissionAdminViewFinance,
 		PermissionAdminViewComplaints,
 		PermissionAdminViewRatings,
 	},
@@ -99,6 +106,7 @@ var rolePermissions = map[UserRole][]Permission{
 		PermissionTaxiParkManageCars,
 		PermissionTaxiParkViewOrders,
 		PermissionTaxiParkViewEarnings,
+		PermissionTaxiParkViewFinance,
 	},
 }
 

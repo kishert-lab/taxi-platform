@@ -25,6 +25,10 @@ type RealtimePublisher interface {
 	SendToPassenger(ctx context.Context, passengerID uuid.UUID, eventName string, payload any) error
 }
 
+type FinanceProcessor interface {
+	SettleCompletedOrder(ctx context.Context, orderID uuid.UUID) (domain.OrderSettlement, error)
+}
+
 type OrderEvent struct {
 	OrderID       uuid.UUID
 	ActorUserID   *uuid.UUID

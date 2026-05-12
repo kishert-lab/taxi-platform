@@ -19,6 +19,7 @@ const (
 	CodeDispatchInProgress   ErrorCode = "DISPATCH_IN_PROGRESS"
 	CodeRateLimited          ErrorCode = "RATE_LIMITED"
 	CodeConsentRequired      ErrorCode = "CONSENT_REQUIRED"
+	CodeNotImplemented       ErrorCode = "NOT_IMPLEMENTED"
 	CodeInternalError        ErrorCode = "INTERNAL_ERROR"
 )
 

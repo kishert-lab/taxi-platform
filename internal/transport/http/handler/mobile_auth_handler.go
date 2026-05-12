@@ -26,6 +26,8 @@ func NewMobileAuthHandler(useCase MobileAuthUseCase) *MobileAuthHandler {
 
 func (handler *MobileAuthHandler) RegisterRoutes(router gin.IRouter) {
 	router.POST("/auth/login", handler.Login)
+	router.POST("/auth/email/send-code", handler.SendEmailCode)
+	router.POST("/auth/email/verify", handler.VerifyEmailCode)
 	router.POST("/auth/verify-code", handler.VerifyCode)
 	router.POST("/auth/refresh", handler.Refresh)
 	router.POST("/auth/logout", handler.Logout)
@@ -55,6 +57,68 @@ func (handler *MobileAuthHandler) Login(context *gin.Context) {
 	}
 
 	result, err := handler.useCase.StartLogin(context.Request.Context(), request)
+	if err != nil {
+		failByError(context, err)
+		return
+	}
+
+	response.OK(context, result)
+}
+
+// SendEmailCode godoc
+// @Summary Send email verification code
+// @Description Explicit mail endpoint for mobile clients that authorize by email.
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param request body dto.AuthEmailCodeRequest true "Email code request"
+// @Success 200 {object} AuthCodeSentSuccessResponse
+// @Failure 400 {object} response.Error
+// @Failure 401 {object} response.Error
+// @Failure 429 {object} response.Error
+// @Router /auth/email/send-code [post]
+func (handler *MobileAuthHandler) SendEmailCode(context *gin.Context) {
+	var request dto.AuthEmailCodeRequest
+	if err := context.ShouldBindJSON(&request); err != nil {
+		failValidation(context, "Invalid email code request")
+		return
+	}
+
+	result, err := handler.useCase.StartLogin(context.Request.Context(), dto.AuthLoginRequest{
+		Email: request.Email,
+		Role:  request.Role,
+	})
+	if err != nil {
+		failByError(context, err)
+		return
+	}
+
+	response.OK(context, result)
+}
+
+// VerifyEmailCode godoc
+// @Summary Verify email code
+// @Description Explicit mail verification endpoint. Returns rotated access/refresh token pair.
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param request body dto.AuthEmailVerifyRequest true "Email verification request"
+// @Success 200 {object} AuthTokenSuccessResponse
+// @Failure 400 {object} response.Error
+// @Failure 401 {object} response.Error
+// @Router /auth/email/verify [post]
+func (handler *MobileAuthHandler) VerifyEmailCode(context *gin.Context) {
+	var request dto.AuthEmailVerifyRequest
+	if err := context.ShouldBindJSON(&request); err != nil {
+		failValidation(context, "Invalid email verification request")
+		return
+	}
+
+	result, err := handler.useCase.VerifyCode(context.Request.Context(), dto.AuthVerifyCodeRequest{
+		Email: request.Email,
+		Role:  request.Role,
+		Code:  request.Code,
+	})
 	if err != nil {
 		failByError(context, err)
 		return
