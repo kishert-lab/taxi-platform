@@ -1,4 +1,4 @@
-module github.com/develoop/taxi-platform
+module github.com/kishert-lab/taxi-platform
 
 go 1.24
 
