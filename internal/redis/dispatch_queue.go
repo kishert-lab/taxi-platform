@@ -8,7 +8,7 @@ import (
 
 	goredis "github.com/redis/go-redis/v9"
 
-	"github.com/develoop/taxi-platform/internal/dispatch"
+	"github.com/kishert-lab/taxi-platform/internal/dispatch"
 )
 
 const dispatchQueueKey = "dispatch:queue"

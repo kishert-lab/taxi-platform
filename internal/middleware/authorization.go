@@ -5,7 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/develoop/taxi-platform/internal/domain"
+	"github.com/kishert-lab/taxi-platform/internal/domain"
 )
 
 const UserRoleContextKey = "user_role"

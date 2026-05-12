@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	"github.com/develoop/taxi-platform/internal/domain"
+	"github.com/kishert-lab/taxi-platform/internal/domain"
 )
 
 type RegistrationService struct {

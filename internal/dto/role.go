@@ -1,6 +1,6 @@
 package dto
 
-import "github.com/develoop/taxi-platform/internal/domain"
+import "github.com/kishert-lab/taxi-platform/internal/domain"
 
 type RoleResponse struct {
 	Role        domain.UserRole     `json:"role" example:"passenger"`

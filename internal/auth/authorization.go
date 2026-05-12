@@ -3,7 +3,7 @@ package auth
 import (
 	"fmt"
 
-	"github.com/develoop/taxi-platform/internal/domain"
+	"github.com/kishert-lab/taxi-platform/internal/domain"
 )
 
 type Authorizer struct{}

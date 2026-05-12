@@ -7,7 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/develoop/taxi-platform/internal/domain"
+	"github.com/kishert-lab/taxi-platform/internal/domain"
 )
 
 func TestServiceRejectsInvalidTransition(t *testing.T) {

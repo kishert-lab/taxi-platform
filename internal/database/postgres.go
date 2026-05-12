@@ -6,7 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/develoop/taxi-platform/configs"
+	"github.com/kishert-lab/taxi-platform/configs"
 )
 
 func NewPostgres(ctx context.Context, config configs.DatabaseConfig) (*pgxpool.Pool, error) {

@@ -6,7 +6,7 @@ import (
 
 	goredis "github.com/redis/go-redis/v9"
 
-	"github.com/develoop/taxi-platform/configs"
+	"github.com/kishert-lab/taxi-platform/configs"
 )
 
 func New(ctx context.Context, config configs.RedisConfig) (*goredis.Client, error) {

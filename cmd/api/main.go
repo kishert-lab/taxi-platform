@@ -17,11 +17,11 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 	"go.uber.org/zap"
 
-	"github.com/develoop/taxi-platform/configs"
-	_ "github.com/develoop/taxi-platform/docs"
-	"github.com/develoop/taxi-platform/internal/database"
-	redisclient "github.com/develoop/taxi-platform/internal/redis"
-	"github.com/develoop/taxi-platform/pkg/logger"
+	"github.com/kishert-lab/taxi-platform/configs"
+	_ "github.com/kishert-lab/taxi-platform/docs"
+	"github.com/kishert-lab/taxi-platform/internal/database"
+	redisclient "github.com/kishert-lab/taxi-platform/internal/redis"
+	"github.com/kishert-lab/taxi-platform/pkg/logger"
 )
 
 // @title Taxi Platform API

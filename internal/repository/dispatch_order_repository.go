@@ -12,9 +12,9 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/develoop/taxi-platform/internal/dispatch"
-	"github.com/develoop/taxi-platform/internal/domain"
-	orderapp "github.com/develoop/taxi-platform/internal/order"
+	"github.com/kishert-lab/taxi-platform/internal/dispatch"
+	"github.com/kishert-lab/taxi-platform/internal/domain"
+	orderapp "github.com/kishert-lab/taxi-platform/internal/order"
 )
 
 type PostgresDispatchOrderRepository struct {

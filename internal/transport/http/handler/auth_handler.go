@@ -7,9 +7,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/develoop/taxi-platform/internal/auth"
-	"github.com/develoop/taxi-platform/internal/domain"
-	"github.com/develoop/taxi-platform/internal/dto"
+	"github.com/kishert-lab/taxi-platform/internal/auth"
+	"github.com/kishert-lab/taxi-platform/internal/domain"
+	"github.com/kishert-lab/taxi-platform/internal/dto"
 )
 
 type RegistrationUseCase interface {

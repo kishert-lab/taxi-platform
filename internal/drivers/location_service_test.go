@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/develoop/taxi-platform/internal/domain"
+	"github.com/kishert-lab/taxi-platform/internal/domain"
 )
 
 func TestLocationServiceThrottlesFrequentUpdates(t *testing.T) {

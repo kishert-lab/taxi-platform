@@ -7,7 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/develoop/taxi-platform/internal/drivers"
+	"github.com/kishert-lab/taxi-platform/internal/drivers"
 )
 
 type PostgresDriverLocationRepository struct {

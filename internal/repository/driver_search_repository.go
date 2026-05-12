@@ -7,8 +7,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/develoop/taxi-platform/internal/dispatch"
-	"github.com/develoop/taxi-platform/internal/domain"
+	"github.com/kishert-lab/taxi-platform/internal/dispatch"
+	"github.com/kishert-lab/taxi-platform/internal/domain"
 )
 
 type PostgresDriverSearchRepository struct {
