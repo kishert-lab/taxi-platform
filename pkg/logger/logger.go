@@ -6,7 +6,7 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
-	"github.com/develoop/taxi-platform/configs"
+	"github.com/kishert-lab/taxi-platform/configs"
 )
 
 func New(config configs.LoggerConfig) (*zap.Logger, error) {
