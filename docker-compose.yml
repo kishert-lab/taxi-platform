@@ -65,6 +65,9 @@ services:
         condition: service_completed_successfully
     ports:
       - "8080:8080"
+    links:
+      - redis
+      - postgres
     environment:
       TAXI_APP_ENV: docker
       TAXI_SERVER_HOST: 0.0.0.0
