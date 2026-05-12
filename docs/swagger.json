@@ -248,7 +248,7 @@
                 "payment_method": {
                     "allOf": [
                         {
-                            "$ref": "#/definitions/github_com_develoop_taxi-platform_internal_domain.PaymentMethod"
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.PaymentMethod"
                         }
                     ],
                     "example": "cash"
@@ -262,7 +262,7 @@
                 "status": {
                     "allOf": [
                         {
-                            "$ref": "#/definitions/github_com_develoop_taxi-platform_internal_domain.OrderStatus"
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.OrderStatus"
                         }
                     ],
                     "example": "searching"
@@ -331,7 +331,7 @@
                     ],
                     "allOf": [
                         {
-                            "$ref": "#/definitions/github_com_develoop_taxi-platform_internal_domain.RegistrationType"
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.RegistrationType"
                         }
                     ],
                     "example": "passenger"
@@ -367,7 +367,7 @@
                 "registration_type": {
                     "allOf": [
                         {
-                            "$ref": "#/definitions/github_com_develoop_taxi-platform_internal_domain.RegistrationType"
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.RegistrationType"
                         }
                     ],
                     "example": "passenger"
@@ -375,7 +375,7 @@
                 "role": {
                     "allOf": [
                         {
-                            "$ref": "#/definitions/github_com_develoop_taxi-platform_internal_domain.UserRole"
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.UserRole"
                         }
                     ],
                     "example": "passenger"
@@ -403,7 +403,7 @@
                 }
             }
         },
-        "github_com_develoop_taxi-platform_internal_domain.OrderStatus": {
+        "github_com_kishert-lab_taxi-platform_internal_domain.OrderStatus": {
             "type": "string",
             "enum": [
                 "created",
@@ -428,7 +428,7 @@
                 "OrderStatusFailed"
             ]
         },
-        "github_com_develoop_taxi-platform_internal_domain.PaymentMethod": {
+        "github_com_kishert-lab_taxi-platform_internal_domain.PaymentMethod": {
             "type": "string",
             "enum": [
                 "cash",
@@ -441,7 +441,7 @@
                 "PaymentMethodCorporate"
             ]
         },
-        "github_com_develoop_taxi-platform_internal_domain.RegistrationType": {
+        "github_com_kishert-lab_taxi-platform_internal_domain.RegistrationType": {
             "type": "string",
             "enum": [
                 "passenger",
@@ -454,7 +454,7 @@
                 "RegistrationTypeTaxiPark"
             ]
         },
-        "github_com_develoop_taxi-platform_internal_domain.UserRole": {
+        "github_com_kishert-lab_taxi-platform_internal_domain.UserRole": {
             "type": "string",
             "enum": [
                 "passenger",

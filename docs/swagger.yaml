@@ -56,7 +56,7 @@ definitions:
         type: string
       payment_method:
         allOf:
-        - $ref: '#/definitions/github_com_develoop_taxi-platform_internal_domain.PaymentMethod'
+        - $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.PaymentMethod'
         example: cash
       pickup_address:
         type: string
@@ -64,7 +64,7 @@ definitions:
         $ref: '#/definitions/dto.CoordinatesResponse'
       status:
         allOf:
-        - $ref: '#/definitions/github_com_develoop_taxi-platform_internal_domain.OrderStatus'
+        - $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.OrderStatus'
         example: searching
       tariff_id:
         type: string
@@ -101,7 +101,7 @@ definitions:
         type: string
       registration_type:
         allOf:
-        - $ref: '#/definitions/github_com_develoop_taxi-platform_internal_domain.RegistrationType'
+        - $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.RegistrationType'
         enum:
         - passenger
         - driver
@@ -139,11 +139,11 @@ definitions:
         type: string
       registration_type:
         allOf:
-        - $ref: '#/definitions/github_com_develoop_taxi-platform_internal_domain.RegistrationType'
+        - $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.RegistrationType'
         example: passenger
       role:
         allOf:
-        - $ref: '#/definitions/github_com_develoop_taxi-platform_internal_domain.UserRole'
+        - $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.UserRole'
         example: passenger
       user_id:
         example: 33333333-3333-3333-3333-333333333333
@@ -161,7 +161,7 @@ definitions:
         example: "7700000000"
         type: string
     type: object
-  github_com_develoop_taxi-platform_internal_domain.OrderStatus:
+  github_com_kishert-lab_taxi-platform_internal_domain.OrderStatus:
     enum:
     - created
     - searching
@@ -183,7 +183,7 @@ definitions:
     - OrderStatusCompleted
     - OrderStatusCancelled
     - OrderStatusFailed
-  github_com_develoop_taxi-platform_internal_domain.PaymentMethod:
+  github_com_kishert-lab_taxi-platform_internal_domain.PaymentMethod:
     enum:
     - cash
     - card
@@ -193,7 +193,7 @@ definitions:
     - PaymentMethodCash
     - PaymentMethodCard
     - PaymentMethodCorporate
-  github_com_develoop_taxi-platform_internal_domain.RegistrationType:
+  github_com_kishert-lab_taxi-platform_internal_domain.RegistrationType:
     enum:
     - passenger
     - driver
@@ -203,7 +203,7 @@ definitions:
     - RegistrationTypePassenger
     - RegistrationTypeDriver
     - RegistrationTypeTaxiPark
-  github_com_develoop_taxi-platform_internal_domain.UserRole:
+  github_com_kishert-lab_taxi-platform_internal_domain.UserRole:
     enum:
     - passenger
     - driver
