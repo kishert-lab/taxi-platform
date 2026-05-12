@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/kishert-lab/taxi-platform/internal/domain"
+	"github.com/kishert-lab/taxi-platform/pkg/response"
 )
 
 const UserRoleContextKey = "user_role"
@@ -14,7 +15,8 @@ func RequireRole(allowedRoles ...domain.UserRole) gin.HandlerFunc {
 	return func(context *gin.Context) {
 		role, ok := roleFromContext(context)
 		if !ok {
-			context.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "user role is missing"})
+			response.Fail(context, http.StatusUnauthorized, response.CodeUnauthorized, "User role is missing", nil)
+			context.Abort()
 			return
 		}
 
@@ -25,7 +27,8 @@ func RequireRole(allowedRoles ...domain.UserRole) gin.HandlerFunc {
 			}
 		}
 
-		context.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "role is not allowed"})
+		response.Fail(context, http.StatusForbidden, response.CodeForbidden, "Role is not allowed", nil)
+		context.Abort()
 	}
 }
 
@@ -33,12 +36,14 @@ func RequirePermission(requiredPermission domain.Permission) gin.HandlerFunc {
 	return func(context *gin.Context) {
 		role, ok := roleFromContext(context)
 		if !ok {
-			context.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "user role is missing"})
+			response.Fail(context, http.StatusUnauthorized, response.CodeUnauthorized, "User role is missing", nil)
+			context.Abort()
 			return
 		}
 
 		if !domain.RoleHasPermission(role, requiredPermission) {
-			context.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "permission is not allowed"})
+			response.Fail(context, http.StatusForbidden, response.CodeForbidden, "Permission is not allowed", nil)
+			context.Abort()
 			return
 		}
 

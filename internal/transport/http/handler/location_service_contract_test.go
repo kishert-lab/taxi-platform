@@ -1,4 +1,4 @@
-package geo
+package handler
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/kishert-lab/taxi-platform/internal/domain"
+	geoservice "github.com/kishert-lab/taxi-platform/internal/geo"
 )
 
 func TestLocationServiceThrottlesFrequentUpdates(t *testing.T) {
@@ -16,14 +17,14 @@ func TestLocationServiceThrottlesFrequentUpdates(t *testing.T) {
 
 	repository := &fakeLocationRepository{}
 	throttle := &fakeLocationThrottle{allowed: false}
-	service := NewLocationService(repository, throttle)
+	service := geoservice.NewLocationService(repository, throttle)
 
-	err := service.UpdateLocation(context.Background(), DriverLocationUpdate{
+	err := service.UpdateLocation(context.Background(), geoservice.DriverLocationUpdate{
 		DriverID: uuid.New(),
 		CityID:   uuid.New(),
 		Location: domain.Coordinates{Latitude: 56.8, Longitude: 60.5},
 	})
-	if !errors.Is(err, ErrLocationUpdateThrottled) {
+	if !errors.Is(err, geoservice.ErrLocationUpdateThrottled) {
 		t.Fatalf("expected throttled error, got %v", err)
 	}
 	if repository.updated {
@@ -35,7 +36,7 @@ type fakeLocationRepository struct {
 	updated bool
 }
 
-func (repository *fakeLocationRepository) UpdateDriverLocation(_ context.Context, _ DriverLocationUpdate) error {
+func (repository *fakeLocationRepository) UpdateDriverLocation(_ context.Context, _ geoservice.DriverLocationUpdate) error {
 	repository.updated = true
 	return nil
 }

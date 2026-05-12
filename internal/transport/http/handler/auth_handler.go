@@ -3,13 +3,13 @@ package handler
 import (
 	"context"
 	"errors"
-	"net/http"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/kishert-lab/taxi-platform/internal/auth"
 	"github.com/kishert-lab/taxi-platform/internal/domain"
 	"github.com/kishert-lab/taxi-platform/internal/dto"
+	"github.com/kishert-lab/taxi-platform/pkg/response"
 )
 
 type RegistrationUseCase interface {
@@ -35,14 +35,14 @@ func (handler *AuthHandler) RegisterRoutes(router gin.IRouter) {
 // @Accept json
 // @Produce json
 // @Param request body dto.StartRegistrationRequest true "Registration request"
-// @Success 201 {object} dto.StartRegistrationResponse
-// @Failure 400 {object} errorResponse
-// @Failure 500 {object} errorResponse
+// @Success 201 {object} response.Success
+// @Failure 400 {object} response.Error
+// @Failure 500 {object} response.Error
 // @Router /auth/register [post]
 func (handler *AuthHandler) Register(context *gin.Context) {
 	var request dto.StartRegistrationRequest
 	if err := context.ShouldBindJSON(&request); err != nil {
-		context.JSON(http.StatusBadRequest, errorResponse{Error: "invalid registration request"})
+		failValidation(context, "Invalid registration request")
 		return
 	}
 
@@ -52,7 +52,7 @@ func (handler *AuthHandler) Register(context *gin.Context) {
 		request.PrivacyPolicyVersion,
 		request.TermsVersion,
 	); err != nil {
-		context.JSON(http.StatusBadRequest, errorResponse{Error: domain.ErrConsentRequired.Error()})
+		response.Fail(context, 400, response.CodeConsentRequired, domain.ErrConsentRequired.Error(), nil)
 		return
 	}
 
@@ -80,14 +80,14 @@ func (handler *AuthHandler) Register(context *gin.Context) {
 	result, err := handler.registrationUseCase.StartRegistration(context.Request.Context(), command)
 	if err != nil {
 		if errors.Is(err, domain.ErrConsentRequired) {
-			context.JSON(http.StatusBadRequest, errorResponse{Error: domain.ErrConsentRequired.Error()})
+			response.Fail(context, 400, response.CodeConsentRequired, domain.ErrConsentRequired.Error(), nil)
 			return
 		}
-		context.JSON(http.StatusInternalServerError, errorResponse{Error: "registration failed"})
+		response.Fail(context, 500, response.CodeInternalError, "Registration failed", nil)
 		return
 	}
 
-	context.JSON(http.StatusCreated, dto.StartRegistrationResponse{
+	response.Created(context, dto.StartRegistrationResponse{
 		UserID:           result.UserID,
 		Role:             result.Role,
 		RegistrationType: result.RegistrationType,

@@ -20,8 +20,10 @@ import (
 	"github.com/kishert-lab/taxi-platform/configs"
 	_ "github.com/kishert-lab/taxi-platform/docs"
 	"github.com/kishert-lab/taxi-platform/internal/database"
+	"github.com/kishert-lab/taxi-platform/internal/middleware"
 	redisclient "github.com/kishert-lab/taxi-platform/internal/redis"
 	"github.com/kishert-lab/taxi-platform/pkg/logger"
+	"github.com/kishert-lab/taxi-platform/pkg/response"
 )
 
 // @title Taxi Platform API
@@ -106,6 +108,7 @@ func buildRouter(config *configs.Config, log *zap.Logger) *gin.Engine {
 	}
 
 	router := gin.New()
+	router.Use(middleware.RequestID())
 	router.Use(gin.Recovery())
 	router.Use(cors.New(cors.Config{
 		AllowOrigins:     config.HTTP.CORS.AllowedOrigins,
@@ -134,7 +137,7 @@ func buildRouter(config *configs.Config, log *zap.Logger) *gin.Engine {
 
 	router.NoRoute(func(context *gin.Context) {
 		log.Debug("route not found", zap.String("path", context.Request.URL.Path))
-		context.JSON(http.StatusNotFound, gin.H{"error": "route not found"})
+		response.Fail(context, http.StatusNotFound, response.CodeValidationError, "Route not found", nil)
 	})
 
 	return router
