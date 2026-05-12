@@ -33,6 +33,13 @@ type OfferStore interface {
 	RemoveOffers(ctx context.Context, orderID uuid.UUID) error
 }
 
+type DispatchStateStore interface {
+	BeginDispatch(ctx context.Context, orderID uuid.UUID, ttl time.Duration) (bool, error)
+	FinishDispatch(ctx context.Context, orderID uuid.UUID) error
+	MarkActiveOffer(ctx context.Context, orderID uuid.UUID, ttl time.Duration) error
+	MarkAcceptedDriver(ctx context.Context, orderID uuid.UUID, driverID uuid.UUID, ttl time.Duration) error
+}
+
 type TaskQueue interface {
 	Publish(ctx context.Context, task DispatchTask) error
 	Consume(ctx context.Context, timeout time.Duration) (DispatchTask, bool, error)
@@ -53,7 +60,12 @@ type Metrics interface {
 	ObserveDriverAcceptTime(duration time.Duration)
 	ObserveDispatchRadiusAttempt(radiusMeters int)
 	IncrementFailedDispatches()
+	IncrementDispatchTimeouts()
 	SetActiveSearches(count int)
+	SetActiveOrders(count int)
+	SetStaleDrivers(count int)
+	SetWSConnections(count int)
+	IncrementReconnects()
 }
 
 type LockManager interface {

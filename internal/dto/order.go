@@ -42,12 +42,17 @@ type OrderResponse struct {
 	CityID             uuid.UUID            `json:"city_id"`
 	TariffID           *uuid.UUID           `json:"tariff_id,omitempty"`
 	Status             domain.OrderStatus   `json:"status" example:"searching"`
+	Version            int                  `json:"version" example:"2"`
 	PickupAddress      string               `json:"pickup_address"`
 	PickupLocation     CoordinatesResponse  `json:"pickup_location"`
 	DestinationAddress string               `json:"destination_address"`
 	EstimatedPrice     *MoneyResponse       `json:"estimated_price,omitempty"`
 	FinalPrice         *MoneyResponse       `json:"final_price,omitempty"`
 	PaymentMethod      domain.PaymentMethod `json:"payment_method" example:"cash"`
+}
+
+type CurrentOrderResponse struct {
+	Order OrderResponse `json:"order"`
 }
 
 type CoordinatesResponse struct {

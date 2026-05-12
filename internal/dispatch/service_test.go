@@ -53,6 +53,27 @@ func TestProcessTaskOffersInitialRadiusToMaxFiveNearestDrivers(t *testing.T) {
 	}
 }
 
+func TestEnqueueOrderBlocksDuplicateDispatch(t *testing.T) {
+	t.Parallel()
+
+	order := testOrder()
+	orderRepository := &fakeOrderRepository{order: order}
+	taskQueue := &fakeTaskQueue{}
+	dispatchStateStore := &fakeDispatchStateStore{beginResults: []bool{true, false}}
+	service := newTestService(orderRepository, &fakeDriverSearchRepository{}, newFakeOfferStore(), taskQueue, &fakeTimeoutQueue{}, &fakeRealtimeGateway{})
+	service.dispatchStateStore = dispatchStateStore
+
+	if err := service.EnqueueOrder(context.Background(), order.ID); err != nil {
+		t.Fatalf("first enqueue: %v", err)
+	}
+	if err := service.EnqueueOrder(context.Background(), order.ID); err != nil {
+		t.Fatalf("duplicate enqueue: %v", err)
+	}
+	if len(taskQueue.published) != 1 {
+		t.Fatalf("expected one dispatch task, got %d", len(taskQueue.published))
+	}
+}
+
 func TestHandleOfferTimeoutPublishesNextRadiusAttempt(t *testing.T) {
 	t.Parallel()
 
@@ -392,6 +413,31 @@ func (lock fakeLock) Release(_ context.Context) error {
 type fakeRealtimeGateway struct {
 	driverEvents    []fakeRealtimeEvent
 	passengerEvents []fakeRealtimeEvent
+}
+
+type fakeDispatchStateStore struct {
+	beginResults []bool
+}
+
+func (store *fakeDispatchStateStore) BeginDispatch(_ context.Context, _ uuid.UUID, _ time.Duration) (bool, error) {
+	if len(store.beginResults) == 0 {
+		return false, nil
+	}
+	result := store.beginResults[0]
+	store.beginResults = store.beginResults[1:]
+	return result, nil
+}
+
+func (store *fakeDispatchStateStore) FinishDispatch(_ context.Context, _ uuid.UUID) error {
+	return nil
+}
+
+func (store *fakeDispatchStateStore) MarkActiveOffer(_ context.Context, _ uuid.UUID, _ time.Duration) error {
+	return nil
+}
+
+func (store *fakeDispatchStateStore) MarkAcceptedDriver(_ context.Context, _ uuid.UUID, _ uuid.UUID, _ time.Duration) error {
+	return nil
 }
 
 type fakeRealtimeEvent struct {

@@ -129,6 +129,43 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/orders/current": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns current active trip state for reconnect recovery.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "orders"
+                ],
+                "summary": "Get current order",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.CurrentOrderResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -151,6 +188,95 @@ const docTemplate = `{
                 "status": {
                     "type": "string",
                     "example": "ok"
+                }
+            }
+        },
+        "dto.CoordinatesResponse": {
+            "type": "object",
+            "properties": {
+                "latitude": {
+                    "type": "number",
+                    "example": 56.838011
+                },
+                "longitude": {
+                    "type": "number",
+                    "example": 60.597465
+                }
+            }
+        },
+        "dto.CurrentOrderResponse": {
+            "type": "object",
+            "properties": {
+                "order": {
+                    "$ref": "#/definitions/dto.OrderResponse"
+                }
+            }
+        },
+        "dto.MoneyResponse": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "integer",
+                    "example": 25000
+                },
+                "currency": {
+                    "type": "string",
+                    "example": "RUB"
+                }
+            }
+        },
+        "dto.OrderResponse": {
+            "type": "object",
+            "properties": {
+                "city_id": {
+                    "type": "string"
+                },
+                "destination_address": {
+                    "type": "string"
+                },
+                "driver_id": {
+                    "type": "string"
+                },
+                "estimated_price": {
+                    "$ref": "#/definitions/dto.MoneyResponse"
+                },
+                "final_price": {
+                    "$ref": "#/definitions/dto.MoneyResponse"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "passenger_id": {
+                    "type": "string"
+                },
+                "payment_method": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_develoop_taxi-platform_internal_domain.PaymentMethod"
+                        }
+                    ],
+                    "example": "cash"
+                },
+                "pickup_address": {
+                    "type": "string"
+                },
+                "pickup_location": {
+                    "$ref": "#/definitions/dto.CoordinatesResponse"
+                },
+                "status": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_develoop_taxi-platform_internal_domain.OrderStatus"
+                        }
+                    ],
+                    "example": "searching"
+                },
+                "tariff_id": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer",
+                    "example": 2
                 }
             }
         },
@@ -280,6 +406,44 @@ const docTemplate = `{
                     "example": "7700000000"
                 }
             }
+        },
+        "github_com_develoop_taxi-platform_internal_domain.OrderStatus": {
+            "type": "string",
+            "enum": [
+                "created",
+                "searching",
+                "driver_assigned",
+                "driver_arriving",
+                "driver_waiting",
+                "in_progress",
+                "completed",
+                "cancelled",
+                "failed"
+            ],
+            "x-enum-varnames": [
+                "OrderStatusCreated",
+                "OrderStatusSearching",
+                "OrderStatusDriverAssigned",
+                "OrderStatusDriverArriving",
+                "OrderStatusDriverWaiting",
+                "OrderStatusInProgress",
+                "OrderStatusCompleted",
+                "OrderStatusCancelled",
+                "OrderStatusFailed"
+            ]
+        },
+        "github_com_develoop_taxi-platform_internal_domain.PaymentMethod": {
+            "type": "string",
+            "enum": [
+                "cash",
+                "card",
+                "corporate"
+            ],
+            "x-enum-varnames": [
+                "PaymentMethodCash",
+                "PaymentMethodCard",
+                "PaymentMethodCorporate"
+            ]
         },
         "github_com_develoop_taxi-platform_internal_domain.RegistrationType": {
             "type": "string",

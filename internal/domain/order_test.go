@@ -43,6 +43,34 @@ func TestEnsureOrderStatusTransitionRejectsInvalidTransition(t *testing.T) {
 	}
 }
 
+func TestEnsureOrderStatusTransitionRejectsForbiddenProductionTransitions(t *testing.T) {
+	t.Parallel()
+
+	transitions := []struct {
+		from OrderStatus
+		to   OrderStatus
+	}{
+		{from: OrderStatusCompleted, to: OrderStatusSearching},
+		{from: OrderStatusCancelled, to: OrderStatusSearching},
+		{from: OrderStatusFailed, to: OrderStatusSearching},
+		{from: OrderStatusInProgress, to: OrderStatusSearching},
+		{from: OrderStatusDriverAssigned, to: OrderStatusCompleted},
+		{from: OrderStatusInProgress, to: OrderStatusCancelled},
+	}
+
+	for _, transition := range transitions {
+		transition := transition
+		t.Run(string(transition.from)+" to "+string(transition.to), func(t *testing.T) {
+			t.Parallel()
+
+			err := EnsureOrderStatusTransition(transition.from, transition.to)
+			if !errors.Is(err, ErrInvalidOrderStatusTransition) {
+				t.Fatalf("expected invalid transition error, got %v", err)
+			}
+		})
+	}
+}
+
 func TestOrderStatusIsTerminal(t *testing.T) {
 	t.Parallel()
 

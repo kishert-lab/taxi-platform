@@ -68,6 +68,7 @@ type Order struct {
 	PaymentMethod       PaymentMethod
 	PassengerComment    string
 	DispatchAttempt     int
+	Version             int
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
 	DeletedAt           *time.Time
@@ -97,15 +98,26 @@ var terminalOrderStatuses = map[OrderStatus]struct{}{
 }
 
 var allowedOrderStatusTransitions = map[OrderStatus][]OrderStatus{
-	OrderStatusCreated:        {OrderStatusSearching, OrderStatusCancelled, OrderStatusFailed},
+	OrderStatusCreated:        {OrderStatusSearching},
 	OrderStatusSearching:      {OrderStatusDriverAssigned, OrderStatusCancelled, OrderStatusFailed},
-	OrderStatusDriverAssigned: {OrderStatusDriverArriving, OrderStatusCancelled, OrderStatusFailed},
-	OrderStatusDriverArriving: {OrderStatusDriverWaiting, OrderStatusCancelled, OrderStatusFailed},
-	OrderStatusDriverWaiting:  {OrderStatusInProgress, OrderStatusCancelled, OrderStatusFailed},
-	OrderStatusInProgress:     {OrderStatusCompleted, OrderStatusCancelled, OrderStatusFailed},
+	OrderStatusDriverAssigned: {OrderStatusDriverArriving, OrderStatusCancelled},
+	OrderStatusDriverArriving: {OrderStatusDriverWaiting, OrderStatusCancelled},
+	OrderStatusDriverWaiting:  {OrderStatusInProgress, OrderStatusCancelled},
+	OrderStatusInProgress:     {OrderStatusCompleted},
 	OrderStatusCompleted:      {},
 	OrderStatusCancelled:      {},
 	OrderStatusFailed:         {},
+}
+
+type OrderTransition struct {
+	OrderID         uuid.UUID
+	FromStatus      OrderStatus
+	ToStatus        OrderStatus
+	ExpectedVersion int
+	ActorUserID     *uuid.UUID
+	ActorDriverID   *uuid.UUID
+	Reason          string
+	OccurredAt      time.Time
 }
 
 func (status OrderStatus) Validate() error {
@@ -156,6 +168,47 @@ func EnsureOrderStatusTransition(from OrderStatus, to OrderStatus) error {
 	}
 
 	return nil
+}
+
+func NewOrderTransition(order Order, toStatus OrderStatus, actorUserID *uuid.UUID, actorDriverID *uuid.UUID, reason string, occurredAt time.Time) (OrderTransition, error) {
+	if err := EnsureOrderStatusTransition(order.Status, toStatus); err != nil {
+		return OrderTransition{}, err
+	}
+	if occurredAt.IsZero() {
+		occurredAt = time.Now().UTC()
+	}
+
+	return OrderTransition{
+		OrderID:         order.ID,
+		FromStatus:      order.Status,
+		ToStatus:        toStatus,
+		ExpectedVersion: order.Version,
+		ActorUserID:     actorUserID,
+		ActorDriverID:   actorDriverID,
+		Reason:          reason,
+		OccurredAt:      occurredAt,
+	}, nil
+}
+
+func EventTypeForOrderStatus(status OrderStatus) OrderEventType {
+	switch status {
+	case OrderStatusSearching:
+		return OrderEventSearching
+	case OrderStatusDriverAssigned:
+		return OrderEventAccepted
+	case OrderStatusDriverWaiting:
+		return OrderEventArrived
+	case OrderStatusInProgress:
+		return OrderEventTripStarted
+	case OrderStatusCompleted:
+		return OrderEventCompleted
+	case OrderStatusCancelled:
+		return OrderEventCancelled
+	case OrderStatusFailed:
+		return OrderEventFailed
+	default:
+		return OrderEventCreated
+	}
 }
 
 func (paymentMethod PaymentMethod) Validate() error {

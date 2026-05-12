@@ -15,6 +15,63 @@ definitions:
         example: ok
         type: string
     type: object
+  dto.CoordinatesResponse:
+    properties:
+      latitude:
+        example: 56.838011
+        type: number
+      longitude:
+        example: 60.597465
+        type: number
+    type: object
+  dto.CurrentOrderResponse:
+    properties:
+      order:
+        $ref: '#/definitions/dto.OrderResponse'
+    type: object
+  dto.MoneyResponse:
+    properties:
+      amount:
+        example: 25000
+        type: integer
+      currency:
+        example: RUB
+        type: string
+    type: object
+  dto.OrderResponse:
+    properties:
+      city_id:
+        type: string
+      destination_address:
+        type: string
+      driver_id:
+        type: string
+      estimated_price:
+        $ref: '#/definitions/dto.MoneyResponse'
+      final_price:
+        $ref: '#/definitions/dto.MoneyResponse'
+      id:
+        type: string
+      passenger_id:
+        type: string
+      payment_method:
+        allOf:
+        - $ref: '#/definitions/github_com_develoop_taxi-platform_internal_domain.PaymentMethod'
+        example: cash
+      pickup_address:
+        type: string
+      pickup_location:
+        $ref: '#/definitions/dto.CoordinatesResponse'
+      status:
+        allOf:
+        - $ref: '#/definitions/github_com_develoop_taxi-platform_internal_domain.OrderStatus'
+        example: searching
+      tariff_id:
+        type: string
+      version:
+        example: 2
+        type: integer
+    type: object
   dto.StartRegistrationRequest:
     properties:
       city_id:
@@ -104,6 +161,38 @@ definitions:
         example: "7700000000"
         type: string
     type: object
+  github_com_develoop_taxi-platform_internal_domain.OrderStatus:
+    enum:
+    - created
+    - searching
+    - driver_assigned
+    - driver_arriving
+    - driver_waiting
+    - in_progress
+    - completed
+    - cancelled
+    - failed
+    type: string
+    x-enum-varnames:
+    - OrderStatusCreated
+    - OrderStatusSearching
+    - OrderStatusDriverAssigned
+    - OrderStatusDriverArriving
+    - OrderStatusDriverWaiting
+    - OrderStatusInProgress
+    - OrderStatusCompleted
+    - OrderStatusCancelled
+    - OrderStatusFailed
+  github_com_develoop_taxi-platform_internal_domain.PaymentMethod:
+    enum:
+    - cash
+    - card
+    - corporate
+    type: string
+    x-enum-varnames:
+    - PaymentMethodCash
+    - PaymentMethodCard
+    - PaymentMethodCorporate
   github_com_develoop_taxi-platform_internal_domain.RegistrationType:
     enum:
     - passenger
@@ -216,6 +305,29 @@ paths:
       summary: Readiness probe
       tags:
       - health
+  /orders/current:
+    get:
+      description: Returns current active trip state for reconnect recovery.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.CurrentOrderResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get current order
+      tags:
+      - orders
 schemes:
 - http
 - https

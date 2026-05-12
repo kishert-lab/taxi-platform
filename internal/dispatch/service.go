@@ -17,6 +17,7 @@ type Service struct {
 	driverSearchRepository DriverSearchRepository
 	driverStateRepository  DriverStateRepository
 	offerStore             OfferStore
+	dispatchStateStore     DispatchStateStore
 	taskQueue              TaskQueue
 	timeoutQueue           TimeoutQueue
 	lockManager            LockManager
@@ -31,6 +32,7 @@ type NewServiceParams struct {
 	DriverSearchRepository DriverSearchRepository
 	DriverStateRepository  DriverStateRepository
 	OfferStore             OfferStore
+	DispatchStateStore     DispatchStateStore
 	TaskQueue              TaskQueue
 	TimeoutQueue           TimeoutQueue
 	LockManager            LockManager
@@ -52,6 +54,7 @@ func NewService(params NewServiceParams) *Service {
 		driverSearchRepository: params.DriverSearchRepository,
 		driverStateRepository:  params.DriverStateRepository,
 		offerStore:             params.OfferStore,
+		dispatchStateStore:     params.DispatchStateStore,
 		taskQueue:              params.TaskQueue,
 		timeoutQueue:           params.TimeoutQueue,
 		lockManager:            params.LockManager,
@@ -63,6 +66,16 @@ func NewService(params NewServiceParams) *Service {
 }
 
 func (service *Service) EnqueueOrder(ctx context.Context, orderID uuid.UUID) error {
+	if service.dispatchStateStore != nil {
+		started, err := service.dispatchStateStore.BeginDispatch(ctx, orderID, 30*time.Minute)
+		if err != nil {
+			return fmt.Errorf("begin dispatch state: %w", err)
+		}
+		if !started {
+			service.logger.Info("duplicate dispatch ignored", zap.String("order_id", orderID.String()))
+			return nil
+		}
+	}
 	if err := service.orderRepository.MarkOrderSearching(ctx, orderID); err != nil {
 		return fmt.Errorf("mark order searching before enqueue dispatch: %w", err)
 	}
@@ -131,6 +144,11 @@ func (service *Service) ProcessTask(ctx context.Context, task DispatchTask) (Dis
 	if err := service.timeoutQueue.Schedule(ctx, task, time.Now().UTC().Add(service.config.OfferTTL)); err != nil {
 		return DispatchResult{}, fmt.Errorf("schedule offer timeout: %w", err)
 	}
+	if service.dispatchStateStore != nil {
+		if err := service.dispatchStateStore.MarkActiveOffer(ctx, task.OrderID, service.config.OfferTTL); err != nil {
+			return DispatchResult{}, fmt.Errorf("mark active dispatch offer: %w", err)
+		}
+	}
 
 	return DispatchResult{
 		OrderID:          task.OrderID,
@@ -171,6 +189,9 @@ func (service *Service) HandleOfferTimeout(ctx context.Context, task DispatchTas
 	}
 
 	service.logger.Info("offer timeout", zap.String("order_id", task.OrderID.String()), zap.Int("attempt", task.Attempt))
+	if service.metrics != nil {
+		service.metrics.IncrementDispatchTimeouts()
+	}
 	return service.scheduleNextAttempt(ctx, task)
 }
 
@@ -215,6 +236,11 @@ func (service *Service) AcceptOffer(ctx context.Context, orderID uuid.UUID, driv
 	if service.metrics != nil {
 		service.metrics.ObserveDriverAcceptTime(acceptedAt.Sub(offer.CreatedAt))
 	}
+	if service.dispatchStateStore != nil {
+		if err := service.dispatchStateStore.MarkAcceptedDriver(ctx, orderID, driverID, 24*time.Hour); err != nil {
+			return fmt.Errorf("mark accepted driver in dispatch state: %w", err)
+		}
+	}
 	if err := service.driverStateRepository.MarkDriverBusy(ctx, driverID); err != nil {
 		return fmt.Errorf("mark driver busy after accept: %w", err)
 	}
@@ -234,6 +260,27 @@ func (service *Service) AcceptOffer(ctx context.Context, orderID uuid.UUID, driv
 	}
 
 	service.logger.Info("offer accepted", zap.String("order_id", orderID.String()), zap.String("driver_id", driverID.String()))
+	return nil
+}
+
+func (service *Service) StopDispatch(ctx context.Context, orderID uuid.UUID) error {
+	offeredDriverIDs, err := service.offerStore.ListOfferedDriverIDs(ctx, orderID)
+	if err != nil {
+		return fmt.Errorf("list offered drivers before stop dispatch: %w", err)
+	}
+	for _, driverID := range offeredDriverIDs {
+		if err := service.realtimeGateway.SendToDriver(ctx, driverID, EventOrderCancelled, map[string]any{"order_id": orderID}); err != nil {
+			return fmt.Errorf("send order cancelled event to offered driver: %w", err)
+		}
+	}
+	if err := service.offerStore.RemoveOffers(ctx, orderID); err != nil {
+		return fmt.Errorf("remove offers on stop dispatch: %w", err)
+	}
+	if service.dispatchStateStore != nil {
+		if err := service.dispatchStateStore.FinishDispatch(ctx, orderID); err != nil {
+			return fmt.Errorf("finish dispatch state: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -308,6 +355,11 @@ func (service *Service) cancelRemainingOffers(ctx context.Context, orderID uuid.
 	if err := service.offerStore.RemoveOffers(ctx, orderID); err != nil {
 		return fmt.Errorf("remove accepted order offers: %w", err)
 	}
+	if service.dispatchStateStore != nil {
+		if err := service.dispatchStateStore.FinishDispatch(ctx, orderID); err != nil {
+			return fmt.Errorf("finish dispatch state after accept: %w", err)
+		}
+	}
 
 	return nil
 }
@@ -338,6 +390,11 @@ func (service *Service) failNoDriversFound(ctx context.Context, order domain.Ord
 	}
 	if service.metrics != nil {
 		service.metrics.IncrementFailedDispatches()
+	}
+	if service.dispatchStateStore != nil {
+		if err := service.dispatchStateStore.FinishDispatch(ctx, order.ID); err != nil {
+			return DispatchResult{}, fmt.Errorf("finish dispatch state after failure: %w", err)
+		}
 	}
 	service.logger.Info("no drivers found", zap.String("order_id", order.ID.String()), zap.Int("radius_meters", radiusMeters))
 	return DispatchResult{OrderID: order.ID, Status: domain.OrderStatusFailed, RadiusMeters: radiusMeters, NoDriversAvailable: true}, nil
