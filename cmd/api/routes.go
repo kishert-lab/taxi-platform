@@ -6,8 +6,10 @@ import (
 	"go.uber.org/zap"
 
 	financeapp "github.com/kishert-lab/taxi-platform/internal/finance"
+	legalapp "github.com/kishert-lab/taxi-platform/internal/legal"
 	"github.com/kishert-lab/taxi-platform/internal/repository"
 	"github.com/kishert-lab/taxi-platform/internal/service"
+	taxiparkapp "github.com/kishert-lab/taxi-platform/internal/taxipark"
 	"github.com/kishert-lab/taxi-platform/internal/transport/http/handler"
 )
 
@@ -18,6 +20,8 @@ type applicationRoutes struct {
 	passenger  *handler.PassengerMobileHandler
 	driver     *handler.DriverMobileHandler
 	finance    *handler.FinanceHandler
+	taxiPark   *handler.TaxiParkSettingsHandler
+	legal      *handler.LegalHandler
 	websocket  *handler.WebSocketHandler
 }
 
@@ -26,6 +30,10 @@ func newApplicationRoutes(postgresPool *pgxpool.Pool, logger *zap.Logger) applic
 
 	financeRepository := repository.NewPostgresFinanceRepository(postgresPool)
 	financeService := financeapp.NewService(financeRepository, logger)
+	taxiParkSettingsRepository := repository.NewPostgresTaxiParkSettingsRepository(postgresPool)
+	taxiParkSettingsService := taxiparkapp.NewService(taxiParkSettingsRepository)
+	legalRepository := repository.NewPostgresLegalRepository(postgresPool)
+	legalService := legalapp.NewService(legalRepository)
 
 	return applicationRoutes{
 		auth:       handler.NewAuthHandler(unavailableUseCase),
@@ -34,6 +42,8 @@ func newApplicationRoutes(postgresPool *pgxpool.Pool, logger *zap.Logger) applic
 		passenger:  handler.NewPassengerMobileHandler(unavailableUseCase, unavailableUseCase),
 		driver:     handler.NewDriverMobileHandler(unavailableUseCase),
 		finance:    handler.NewFinanceHandler(financeService),
+		taxiPark:   handler.NewTaxiParkSettingsHandler(taxiParkSettingsService),
+		legal:      handler.NewLegalHandler(legalService),
 		websocket:  handler.NewWebSocketHandler(unavailableUseCase),
 	}
 }
@@ -45,5 +55,7 @@ func (routes applicationRoutes) Register(api gin.IRouter) {
 	routes.passenger.RegisterRoutes(api)
 	routes.driver.RegisterRoutes(api)
 	routes.finance.RegisterRoutes(api)
+	routes.taxiPark.RegisterRoutes(api)
+	routes.legal.RegisterRoutes(api)
 	routes.websocket.RegisterRoutes(api)
 }

@@ -23,6 +23,8 @@ func TestMobileAndFinanceRoutesAreRegistered(t *testing.T) {
 		passenger:  handler.NewPassengerMobileHandler(unavailableUseCase, unavailableUseCase),
 		driver:     handler.NewDriverMobileHandler(unavailableUseCase),
 		finance:    handler.NewFinanceHandler(unavailableUseCase),
+		taxiPark:   handler.NewTaxiParkSettingsHandler(unavailableUseCase),
+		legal:      handler.NewLegalHandler(unavailableUseCase),
 		websocket:  handler.NewWebSocketHandler(unavailableUseCase),
 	}
 	router := buildRouter(testConfig(), zap.NewNop(), routes)
@@ -72,7 +74,19 @@ func TestMobileAndFinanceRoutesAreRegistered(t *testing.T) {
 		http.MethodGet + " /api/v1/taxi-park/drivers",
 		http.MethodGet + " /api/v1/taxi-park/orders",
 		http.MethodGet + " /api/v1/taxi-park/transactions",
+		http.MethodGet + " /api/v1/taxi-park/settings",
+		http.MethodPatch + " /api/v1/taxi-park/settings",
+		http.MethodGet + " /api/v1/taxi-park/tariffs",
+		http.MethodPost + " /api/v1/taxi-park/tariffs",
+		http.MethodPatch + " /api/v1/taxi-park/tariffs/:id",
 		http.MethodGet + " /api/v1/admin/finance/overview",
+		http.MethodGet + " /api/v1/public/legal/privacy-policy",
+		http.MethodGet + " /api/v1/public/legal/terms",
+		http.MethodGet + " /api/v1/public/legal/consent",
+		http.MethodGet + " /api/v1/admin/legal/documents",
+		http.MethodPost + " /api/v1/admin/legal/documents",
+		http.MethodPost + " /api/v1/admin/legal/documents/:id/activate",
+		http.MethodPost + " /api/v1/admin/legal/documents/:id/deactivate",
 		http.MethodGet + " /api/v1/ws",
 		http.MethodGet + " /api/v1/orders/current",
 	}

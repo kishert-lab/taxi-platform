@@ -180,3 +180,47 @@ func (useCase *UnavailableUseCase) ListTaxiParkTransactions(context.Context, uui
 func (useCase *UnavailableUseCase) GetAdminOverview(context.Context, time.Time, time.Time) (finance.AdminOverview, error) {
 	return finance.AdminOverview{}, common.ErrNotImplemented
 }
+
+func (useCase *UnavailableUseCase) GetSettings(context.Context, uuid.UUID) (domain.TaxiParkSettings, error) {
+	return domain.TaxiParkSettings{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) UpdateSettings(context.Context, uuid.UUID, dto.TaxiParkSettingsPatchRequest) (domain.TaxiParkSettings, error) {
+	return domain.TaxiParkSettings{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) ListTariffs(context.Context, uuid.UUID) ([]domain.TaxiParkTariff, error) {
+	return nil, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) CreateTariff(context.Context, uuid.UUID, dto.TaxiParkTariffRequest) (domain.TaxiParkTariff, error) {
+	return domain.TaxiParkTariff{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) UpdateTariff(context.Context, uuid.UUID, uuid.UUID, dto.TaxiParkTariffPatchRequest) (domain.TaxiParkTariff, error) {
+	return domain.TaxiParkTariff{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) GetActiveDocument(context.Context, domain.LegalDocumentType, string) (domain.LegalDocument, error) {
+	return domain.LegalDocument{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) ListDocuments(context.Context, *domain.LegalDocumentType, string) ([]domain.LegalDocument, error) {
+	return nil, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) CreateDocument(context.Context, domain.LegalDocument, bool) (domain.LegalDocument, error) {
+	return domain.LegalDocument{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) ActivateDocument(context.Context, uuid.UUID) (domain.LegalDocument, error) {
+	return domain.LegalDocument{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) DeactivateDocument(context.Context, uuid.UUID) (domain.LegalDocument, error) {
+	return domain.LegalDocument{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) AcceptActiveDocument(context.Context, uuid.UUID, domain.LegalDocumentType, string, string, string) (domain.UserDocumentAcceptance, error) {
+	return domain.UserDocumentAcceptance{}, common.ErrNotImplemented
+}

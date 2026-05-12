@@ -76,6 +76,213 @@
                 }
             }
         },
+        "/admin/legal/documents": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-legal"
+                ],
+                "summary": "List legal document versions",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Document type",
+                        "name": "document_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "default": "ru",
+                        "description": "Language",
+                        "name": "language",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_handler.LegalDocumentsSuccessResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-legal"
+                ],
+                "summary": "Create new immutable legal document version",
+                "parameters": [
+                    {
+                        "description": "Legal document",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.LegalDocumentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_handler.LegalDocumentSuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/legal/documents/{id}/activate": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-legal"
+                ],
+                "summary": "Activate legal document version",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Document ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_handler.LegalDocumentSuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/legal/documents/{id}/deactivate": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-legal"
+                ],
+                "summary": "Deactivate legal document version",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Document ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_handler.LegalDocumentSuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/auth/email/send-code": {
             "post": {
                 "description": "Explicit mail endpoint for mobile clients that authorize by email.",
@@ -1996,6 +2203,108 @@
                 }
             }
         },
+        "/public/legal/consent": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "public-legal"
+                ],
+                "summary": "Get active personal data consent",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "ru",
+                        "description": "Language",
+                        "name": "language",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_handler.LegalDocumentSuccessResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/public/legal/privacy-policy": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "public-legal"
+                ],
+                "summary": "Get active privacy policy",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "ru",
+                        "description": "Language",
+                        "name": "language",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_handler.LegalDocumentSuccessResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/public/legal/terms": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "public-legal"
+                ],
+                "summary": "Get active terms of service",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "ru",
+                        "description": "Language",
+                        "name": "language",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_handler.LegalDocumentSuccessResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/taxi-park/balance": {
             "get": {
                 "security": [
@@ -2103,6 +2412,249 @@
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/internal_transport_http_handler.TaxiParkOrdersSuccessResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/taxi-park/settings": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "taxi-park-settings"
+                ],
+                "summary": "Get taxi park settings",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_handler.TaxiParkSettingsSuccessResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "taxi-park-settings"
+                ],
+                "summary": "Update taxi park settings and branding",
+                "parameters": [
+                    {
+                        "description": "Taxi park settings patch",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkSettingsPatchRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_handler.TaxiParkSettingsSuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/taxi-park/tariffs": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "taxi-park-tariffs"
+                ],
+                "summary": "List taxi park tariffs",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_handler.TaxiParkTariffsSuccessResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "taxi-park-tariffs"
+                ],
+                "summary": "Create taxi park tariff",
+                "parameters": [
+                    {
+                        "description": "Taxi park tariff",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkTariffRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_handler.TaxiParkTariffSuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/taxi-park/tariffs/{id}": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "taxi-park-tariffs"
+                ],
+                "summary": "Update taxi park tariff",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tariff ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Taxi park tariff patch",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkTariffPatchRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_handler.TaxiParkTariffSuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
                         }
                     },
                     "401": {
@@ -2242,6 +2794,23 @@
                 "DriverStatusBusy",
                 "DriverStatusPaused",
                 "DriverStatusBlocked"
+            ]
+        },
+        "github_com_kishert-lab_taxi-platform_internal_domain.LegalDocumentType": {
+            "type": "string",
+            "enum": [
+                "privacy_policy",
+                "terms_of_service",
+                "driver_agreement",
+                "taxi_park_agreement",
+                "consent_personal_data"
+            ],
+            "x-enum-varnames": [
+                "LegalDocumentPrivacyPolicy",
+                "LegalDocumentTermsOfService",
+                "LegalDocumentDriverAgreement",
+                "LegalDocumentTaxiParkAgreement",
+                "LegalDocumentConsentPersonalData"
             ]
         },
         "github_com_kishert-lab_taxi-platform_internal_domain.OrderStatus": {
@@ -2902,6 +3471,97 @@
                 }
             }
         },
+        "github_com_kishert-lab_taxi-platform_internal_dto.LegalDocumentRequest": {
+            "type": "object",
+            "required": [
+                "content",
+                "document_type",
+                "title",
+                "version"
+            ],
+            "properties": {
+                "activate": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "content": {
+                    "type": "string",
+                    "example": "# Политика обработки персональных данных"
+                },
+                "document_type": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.LegalDocumentType"
+                        }
+                    ],
+                    "example": "privacy_policy"
+                },
+                "language": {
+                    "type": "string",
+                    "example": "ru"
+                },
+                "title": {
+                    "type": "string",
+                    "example": "Политика обработки персональных данных"
+                },
+                "version": {
+                    "type": "string",
+                    "example": "1.1"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.LegalDocumentResponse": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string",
+                    "example": "# Политика обработки персональных данных"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-05-12T12:00:00Z"
+                },
+                "document_type": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.LegalDocumentType"
+                        }
+                    ],
+                    "example": "privacy_policy"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "44444444-4444-4444-4444-444444444444"
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "language": {
+                    "type": "string",
+                    "example": "ru"
+                },
+                "title": {
+                    "type": "string",
+                    "example": "Политика обработки персональных данных"
+                },
+                "version": {
+                    "type": "string",
+                    "example": "1.0"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.LegalDocumentsResponse": {
+            "type": "object",
+            "properties": {
+                "documents": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.LegalDocumentResponse"
+                    }
+                }
+            }
+        },
         "github_com_kishert-lab_taxi-platform_internal_dto.LogoutRequest": {
             "type": "object",
             "required": [
@@ -3549,6 +4209,351 @@
                 }
             }
         },
+        "github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkSettingsPatchRequest": {
+            "type": "object",
+            "properties": {
+                "allow_card_payment": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "allow_cash_payment": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "allow_transfer_payment": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "cancellation_timeout_sec": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 300
+                },
+                "commission_basis_points": {
+                    "type": "integer",
+                    "maximum": 10000,
+                    "minimum": 0,
+                    "example": 100
+                },
+                "display_name": {
+                    "type": "string",
+                    "example": "North Taxi"
+                },
+                "driver_arrival_timeout_sec": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 900
+                },
+                "inn": {
+                    "type": "string",
+                    "example": "7700000000"
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "legal_address": {
+                    "type": "string",
+                    "example": "Екатеринбург, Ленина 1"
+                },
+                "legal_name": {
+                    "type": "string",
+                    "example": "ООО Северное такси"
+                },
+                "logo_url": {
+                    "type": "string",
+                    "example": "https://cdn.example.com/logo.png"
+                },
+                "minimum_order_price_cents": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "example": 25000
+                },
+                "ogrn": {
+                    "type": "string",
+                    "example": "1027700000000"
+                },
+                "primary_color": {
+                    "type": "string",
+                    "example": "#111827"
+                },
+                "secondary_color": {
+                    "type": "string",
+                    "example": "#F59E0B"
+                },
+                "short_name": {
+                    "type": "string",
+                    "example": "North"
+                },
+                "support_email": {
+                    "type": "string",
+                    "example": "support@example.com"
+                },
+                "support_phone": {
+                    "type": "string",
+                    "example": "+79990000000"
+                },
+                "website": {
+                    "type": "string",
+                    "example": "https://taxi.example.com"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkSettingsResponse": {
+            "type": "object",
+            "properties": {
+                "allow_card_payment": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "allow_cash_payment": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "allow_transfer_payment": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "cancellation_timeout_sec": {
+                    "type": "integer",
+                    "example": 300
+                },
+                "commission_basis_points": {
+                    "type": "integer",
+                    "example": 100
+                },
+                "commission_percent": {
+                    "type": "string",
+                    "example": "1.00"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-05-12T12:00:00Z"
+                },
+                "display_name": {
+                    "type": "string",
+                    "example": "North Taxi"
+                },
+                "driver_arrival_timeout_sec": {
+                    "type": "integer",
+                    "example": 900
+                },
+                "id": {
+                    "type": "string",
+                    "example": "11111111-1111-1111-1111-111111111111"
+                },
+                "inn": {
+                    "type": "string",
+                    "example": "7700000000"
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "legal_address": {
+                    "type": "string",
+                    "example": "Екатеринбург, Ленина 1"
+                },
+                "legal_name": {
+                    "type": "string",
+                    "example": "ООО Северное такси"
+                },
+                "logo_url": {
+                    "type": "string",
+                    "example": "https://cdn.example.com/logo.png"
+                },
+                "minimum_order_price": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.MoneyCentsResponse"
+                },
+                "ogrn": {
+                    "type": "string",
+                    "example": "1027700000000"
+                },
+                "primary_color": {
+                    "type": "string",
+                    "example": "#111827"
+                },
+                "secondary_color": {
+                    "type": "string",
+                    "example": "#F59E0B"
+                },
+                "short_name": {
+                    "type": "string",
+                    "example": "North"
+                },
+                "support_email": {
+                    "type": "string",
+                    "example": "support@example.com"
+                },
+                "support_phone": {
+                    "type": "string",
+                    "example": "+79990000000"
+                },
+                "taxi_park_id": {
+                    "type": "string",
+                    "example": "22222222-2222-2222-2222-222222222222"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-05-12T12:00:00Z"
+                },
+                "website": {
+                    "type": "string",
+                    "example": "https://taxi.example.com"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkTariffPatchRequest": {
+            "type": "object",
+            "properties": {
+                "base_price_cents": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "example": 10000
+                },
+                "description": {
+                    "type": "string",
+                    "example": "Local economy tariff"
+                },
+                "fixed_routes": {
+                    "type": "array",
+                    "items": {
+                        "type": "object"
+                    }
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "minimum_price_cents": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "example": 18000
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Park Economy"
+                },
+                "price_per_km_cents": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "example": 2500
+                },
+                "price_per_minute_cents": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "example": 500
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkTariffRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "base_price_cents": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "example": 10000
+                },
+                "description": {
+                    "type": "string",
+                    "example": "Local economy tariff"
+                },
+                "fixed_routes": {
+                    "type": "array",
+                    "items": {
+                        "type": "object"
+                    }
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "minimum_price_cents": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "example": 18000
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Park Economy"
+                },
+                "price_per_km_cents": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "example": 2500
+                },
+                "price_per_minute_cents": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "example": 500
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkTariffResponse": {
+            "type": "object",
+            "properties": {
+                "base_price": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.MoneyCentsResponse"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-05-12T12:00:00Z"
+                },
+                "description": {
+                    "type": "string",
+                    "example": "Local economy tariff"
+                },
+                "fixed_routes": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "id": {
+                    "type": "string",
+                    "example": "33333333-3333-3333-3333-333333333333"
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "minimum_price": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.MoneyCentsResponse"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Park Economy"
+                },
+                "price_per_km": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.MoneyCentsResponse"
+                },
+                "price_per_minute": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.MoneyCentsResponse"
+                },
+                "taxi_park_id": {
+                    "type": "string",
+                    "example": "22222222-2222-2222-2222-222222222222"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-05-12T12:00:00Z"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkTariffsResponse": {
+            "type": "object",
+            "properties": {
+                "tariffs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkTariffResponse"
+                    }
+                }
+            }
+        },
         "github_com_kishert-lab_taxi-platform_pkg_response.Error": {
             "type": "object",
             "properties": {
@@ -3729,6 +4734,28 @@
                 }
             }
         },
+        "internal_transport_http_handler.LegalDocumentSuccessResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.LegalDocumentResponse"
+                },
+                "meta": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta"
+                }
+            }
+        },
+        "internal_transport_http_handler.LegalDocumentsSuccessResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.LegalDocumentsResponse"
+                },
+                "meta": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta"
+                }
+            }
+        },
         "internal_transport_http_handler.OrderEstimateSuccessResponse": {
             "type": "object",
             "properties": {
@@ -3811,6 +4838,39 @@
             "properties": {
                 "data": {
                     "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkOrdersResponse"
+                },
+                "meta": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta"
+                }
+            }
+        },
+        "internal_transport_http_handler.TaxiParkSettingsSuccessResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkSettingsResponse"
+                },
+                "meta": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta"
+                }
+            }
+        },
+        "internal_transport_http_handler.TaxiParkTariffSuccessResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkTariffResponse"
+                },
+                "meta": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta"
+                }
+            }
+        },
+        "internal_transport_http_handler.TaxiParkTariffsSuccessResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkTariffsResponse"
                 },
                 "meta": {
                     "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta"

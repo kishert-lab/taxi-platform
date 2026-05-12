@@ -15,6 +15,8 @@ Production-grade backend for a taxi platform focused on small cities and rural a
 - Swagger/OpenAPI via swaggo
 - zap logger
 - Docker / Docker Compose
+- Immutable legal document versioning
+- Taxi park branding, settings, and park tariffs
 
 ## Run With Docker Compose
 
@@ -56,6 +58,95 @@ make lint
 make swagger
 ```
 
+Swagger is served at:
+
+```text
+http://localhost:8080/swagger/index.html
+```
+
+## API Surface
+
+All application endpoints are mounted under `/api/v1`.
+
+### Auth and Legal
+
+- `POST /auth/register`
+- `POST /auth/login`
+- `POST /auth/email/send-code`
+- `POST /auth/email/verify`
+- `POST /auth/verify-code`
+- `POST /auth/refresh`
+- `POST /auth/logout`
+- `GET /public/legal/privacy-policy`
+- `GET /public/legal/terms`
+- `GET /public/legal/consent`
+
+### Passenger Mobile API
+
+- `POST /passenger/profile`
+- `GET /passenger/profile`
+- `PATCH /passenger/profile`
+- `POST /passenger/profile/photo`
+- `POST /passenger/orders/estimate`
+- `POST /passenger/orders`
+- `GET /passenger/orders/current`
+- `GET /passenger/orders/history`
+- `GET /passenger/orders/{id}`
+- `POST /passenger/orders/{id}/cancel`
+- `POST /passenger/orders/{id}/rate`
+
+Passenger and driver profile responses include `photo_url`, `rating`, and `ratings_count`.
+
+### Driver Mobile API
+
+- `GET /driver/profile`
+- `PATCH /driver/profile`
+- `POST /driver/profile/photo`
+- `POST /driver/online`
+- `POST /driver/offline`
+- `POST /driver/location`
+- `POST /driver/location/batch`
+- `GET /driver/orders/current`
+- `GET /driver/orders/history`
+- `POST /driver/orders/{id}/accept`
+- `POST /driver/orders/{id}/reject`
+- `POST /driver/orders/{id}/arrived`
+- `POST /driver/orders/{id}/start`
+- `POST /driver/orders/{id}/complete`
+- `POST /driver/orders/{id}/rate-passenger`
+- `GET /driver/balance`
+- `GET /driver/transactions`
+
+### Taxi Park API
+
+- `GET /taxi-park/settings`
+- `PATCH /taxi-park/settings`
+- `GET /taxi-park/tariffs`
+- `POST /taxi-park/tariffs`
+- `PATCH /taxi-park/tariffs/{id}`
+- `GET /taxi-park/balance`
+- `GET /taxi-park/drivers`
+- `GET /taxi-park/orders`
+- `GET /taxi-park/transactions`
+
+Taxi park settings include branding fields such as display name, logo URL, primary/secondary colors, support contacts, legal details, payment toggles, commission override, and timeout settings.
+
+### Admin API
+
+- `GET /admin/finance/overview`
+- `GET /admin/legal/documents`
+- `POST /admin/legal/documents`
+- `POST /admin/legal/documents/{id}/activate`
+- `POST /admin/legal/documents/{id}/deactivate`
+
+Legal documents are append-only versions. Publishing a new legal text creates a new row; accepted versions remain auditable.
+
+### Realtime
+
+- `GET /ws`
+
+The WebSocket endpoint accepts JWT through the `Authorization` header or `token` query parameter for mobile fallback.
+
 ## Environment Variables
 
 Use `.env.example` as the documented baseline.
@@ -92,9 +183,12 @@ internal/auth           auth, registration, consent, authorization application l
 internal/dispatch       asynchronous dispatch service and workers
 internal/domain         pure domain models, statuses, permissions, value objects
 internal/dto            request/response DTOs
+internal/finance        commission settlement, financial transactions, balances
+internal/legal          legal documents and user document acceptance
 internal/middleware     HTTP middleware
 internal/repository     PostgreSQL repositories
 internal/redis          Redis queues, locks, offers, presence
+internal/taxipark       taxi park settings, branding, and tariffs
 internal/transport      HTTP handlers
 pkg/logger              zap logger factory
 ```
@@ -144,3 +238,39 @@ Registration requires explicit consent under Russian Federal Law No. 152-FZ:
 - User-Agent
 
 The backend validates consent even if the frontend sends malformed data. Consent audit events are persisted in `user_consent_events` for later audit, revocation, document version updates, and personal data deletion workflows.
+
+## Legal Documents
+
+Legal text is stored in PostgreSQL in `legal_documents` with immutable versions and active-version selection per document type and language.
+
+Supported document types:
+
+- `privacy_policy`
+- `terms_of_service`
+- `driver_agreement`
+- `taxi_park_agreement`
+- `consent_personal_data`
+
+User acceptance is stored in `user_document_acceptance` with:
+
+- `user_id`
+- `document_id`
+- `document_version`
+- `accepted_at`
+- `ip`
+- `user_agent`
+
+This keeps old accepted versions available for audit even after a new active document version is published.
+
+## Taxi Park Settings
+
+Taxi parks can maintain own settings in `taxi_park_settings`:
+
+- branding: display name, short name, logo, colors
+- support contacts: phone, email, website
+- legal information: legal name, address, INN, OGRN
+- commercial settings: commission override, minimum order price
+- operations: cancellation and driver arrival timeout
+- payment toggles: cash, card, transfer
+
+Park-owned tariff customization is stored in `taxi_park_tariffs`, including base price, per-km price, per-minute price, minimum price, and future-ready fixed routes JSON.

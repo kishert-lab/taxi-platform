@@ -29,6 +29,20 @@ definitions:
     - DriverStatusBusy
     - DriverStatusPaused
     - DriverStatusBlocked
+  github_com_kishert-lab_taxi-platform_internal_domain.LegalDocumentType:
+    enum:
+    - privacy_policy
+    - terms_of_service
+    - driver_agreement
+    - taxi_park_agreement
+    - consent_personal_data
+    type: string
+    x-enum-varnames:
+    - LegalDocumentPrivacyPolicy
+    - LegalDocumentTermsOfService
+    - LegalDocumentDriverAgreement
+    - LegalDocumentTaxiParkAgreement
+    - LegalDocumentConsentPersonalData
   github_com_kishert-lab_taxi-platform_internal_domain.OrderStatus:
     enum:
     - created
@@ -496,6 +510,68 @@ definitions:
           $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.FinancialTransactionResponse'
         type: array
     type: object
+  github_com_kishert-lab_taxi-platform_internal_dto.LegalDocumentRequest:
+    properties:
+      activate:
+        example: false
+        type: boolean
+      content:
+        example: '# Политика обработки персональных данных'
+        type: string
+      document_type:
+        allOf:
+        - $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.LegalDocumentType'
+        example: privacy_policy
+      language:
+        example: ru
+        type: string
+      title:
+        example: Политика обработки персональных данных
+        type: string
+      version:
+        example: "1.1"
+        type: string
+    required:
+    - content
+    - document_type
+    - title
+    - version
+    type: object
+  github_com_kishert-lab_taxi-platform_internal_dto.LegalDocumentResponse:
+    properties:
+      content:
+        example: '# Политика обработки персональных данных'
+        type: string
+      created_at:
+        example: "2026-05-12T12:00:00Z"
+        type: string
+      document_type:
+        allOf:
+        - $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.LegalDocumentType'
+        example: privacy_policy
+      id:
+        example: 44444444-4444-4444-4444-444444444444
+        type: string
+      is_active:
+        example: true
+        type: boolean
+      language:
+        example: ru
+        type: string
+      title:
+        example: Политика обработки персональных данных
+        type: string
+      version:
+        example: "1.0"
+        type: string
+    type: object
+  github_com_kishert-lab_taxi-platform_internal_dto.LegalDocumentsResponse:
+    properties:
+      documents:
+        items:
+          $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.LegalDocumentResponse'
+        type: array
+    type: object
   github_com_kishert-lab_taxi-platform_internal_dto.LogoutRequest:
     properties:
       refresh_token:
@@ -941,6 +1017,260 @@ definitions:
         example: "7700000000"
         type: string
     type: object
+  github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkSettingsPatchRequest:
+    properties:
+      allow_card_payment:
+        example: true
+        type: boolean
+      allow_cash_payment:
+        example: true
+        type: boolean
+      allow_transfer_payment:
+        example: false
+        type: boolean
+      cancellation_timeout_sec:
+        example: 300
+        minimum: 1
+        type: integer
+      commission_basis_points:
+        example: 100
+        maximum: 10000
+        minimum: 0
+        type: integer
+      display_name:
+        example: North Taxi
+        type: string
+      driver_arrival_timeout_sec:
+        example: 900
+        minimum: 1
+        type: integer
+      inn:
+        example: "7700000000"
+        type: string
+      is_active:
+        example: true
+        type: boolean
+      legal_address:
+        example: Екатеринбург, Ленина 1
+        type: string
+      legal_name:
+        example: ООО Северное такси
+        type: string
+      logo_url:
+        example: https://cdn.example.com/logo.png
+        type: string
+      minimum_order_price_cents:
+        example: 25000
+        minimum: 0
+        type: integer
+      ogrn:
+        example: "1027700000000"
+        type: string
+      primary_color:
+        example: '#111827'
+        type: string
+      secondary_color:
+        example: '#F59E0B'
+        type: string
+      short_name:
+        example: North
+        type: string
+      support_email:
+        example: support@example.com
+        type: string
+      support_phone:
+        example: "+79990000000"
+        type: string
+      website:
+        example: https://taxi.example.com
+        type: string
+    type: object
+  github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkSettingsResponse:
+    properties:
+      allow_card_payment:
+        example: true
+        type: boolean
+      allow_cash_payment:
+        example: true
+        type: boolean
+      allow_transfer_payment:
+        example: false
+        type: boolean
+      cancellation_timeout_sec:
+        example: 300
+        type: integer
+      commission_basis_points:
+        example: 100
+        type: integer
+      commission_percent:
+        example: "1.00"
+        type: string
+      created_at:
+        example: "2026-05-12T12:00:00Z"
+        type: string
+      display_name:
+        example: North Taxi
+        type: string
+      driver_arrival_timeout_sec:
+        example: 900
+        type: integer
+      id:
+        example: 11111111-1111-1111-1111-111111111111
+        type: string
+      inn:
+        example: "7700000000"
+        type: string
+      is_active:
+        example: true
+        type: boolean
+      legal_address:
+        example: Екатеринбург, Ленина 1
+        type: string
+      legal_name:
+        example: ООО Северное такси
+        type: string
+      logo_url:
+        example: https://cdn.example.com/logo.png
+        type: string
+      minimum_order_price:
+        $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.MoneyCentsResponse'
+      ogrn:
+        example: "1027700000000"
+        type: string
+      primary_color:
+        example: '#111827'
+        type: string
+      secondary_color:
+        example: '#F59E0B'
+        type: string
+      short_name:
+        example: North
+        type: string
+      support_email:
+        example: support@example.com
+        type: string
+      support_phone:
+        example: "+79990000000"
+        type: string
+      taxi_park_id:
+        example: 22222222-2222-2222-2222-222222222222
+        type: string
+      updated_at:
+        example: "2026-05-12T12:00:00Z"
+        type: string
+      website:
+        example: https://taxi.example.com
+        type: string
+    type: object
+  github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkTariffPatchRequest:
+    properties:
+      base_price_cents:
+        example: 10000
+        minimum: 0
+        type: integer
+      description:
+        example: Local economy tariff
+        type: string
+      fixed_routes:
+        items:
+          type: object
+        type: array
+      is_active:
+        example: true
+        type: boolean
+      minimum_price_cents:
+        example: 18000
+        minimum: 0
+        type: integer
+      name:
+        example: Park Economy
+        type: string
+      price_per_km_cents:
+        example: 2500
+        minimum: 0
+        type: integer
+      price_per_minute_cents:
+        example: 500
+        minimum: 0
+        type: integer
+    type: object
+  github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkTariffRequest:
+    properties:
+      base_price_cents:
+        example: 10000
+        minimum: 0
+        type: integer
+      description:
+        example: Local economy tariff
+        type: string
+      fixed_routes:
+        items:
+          type: object
+        type: array
+      is_active:
+        example: true
+        type: boolean
+      minimum_price_cents:
+        example: 18000
+        minimum: 0
+        type: integer
+      name:
+        example: Park Economy
+        type: string
+      price_per_km_cents:
+        example: 2500
+        minimum: 0
+        type: integer
+      price_per_minute_cents:
+        example: 500
+        minimum: 0
+        type: integer
+    required:
+    - name
+    type: object
+  github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkTariffResponse:
+    properties:
+      base_price:
+        $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.MoneyCentsResponse'
+      created_at:
+        example: "2026-05-12T12:00:00Z"
+        type: string
+      description:
+        example: Local economy tariff
+        type: string
+      fixed_routes:
+        additionalProperties:
+          type: string
+        type: object
+      id:
+        example: 33333333-3333-3333-3333-333333333333
+        type: string
+      is_active:
+        example: true
+        type: boolean
+      minimum_price:
+        $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.MoneyCentsResponse'
+      name:
+        example: Park Economy
+        type: string
+      price_per_km:
+        $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.MoneyCentsResponse'
+      price_per_minute:
+        $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.MoneyCentsResponse'
+      taxi_park_id:
+        example: 22222222-2222-2222-2222-222222222222
+        type: string
+      updated_at:
+        example: "2026-05-12T12:00:00Z"
+        type: string
+    type: object
+  github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkTariffsResponse:
+    properties:
+      tariffs:
+        items:
+          $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkTariffResponse'
+        type: array
+    type: object
   github_com_kishert-lab_taxi-platform_pkg_response.Error:
     properties:
       error:
@@ -1064,6 +1394,20 @@ definitions:
       meta:
         $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta'
     type: object
+  internal_transport_http_handler.LegalDocumentSuccessResponse:
+    properties:
+      data:
+        $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.LegalDocumentResponse'
+      meta:
+        $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta'
+    type: object
+  internal_transport_http_handler.LegalDocumentsSuccessResponse:
+    properties:
+      data:
+        $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.LegalDocumentsResponse'
+      meta:
+        $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta'
+    type: object
   internal_transport_http_handler.OrderEstimateSuccessResponse:
     properties:
       data:
@@ -1117,6 +1461,27 @@ definitions:
     properties:
       data:
         $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkOrdersResponse'
+      meta:
+        $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta'
+    type: object
+  internal_transport_http_handler.TaxiParkSettingsSuccessResponse:
+    properties:
+      data:
+        $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkSettingsResponse'
+      meta:
+        $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta'
+    type: object
+  internal_transport_http_handler.TaxiParkTariffSuccessResponse:
+    properties:
+      data:
+        $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkTariffResponse'
+      meta:
+        $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta'
+    type: object
+  internal_transport_http_handler.TaxiParkTariffsSuccessResponse:
+    properties:
+      data:
+        $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkTariffsResponse'
       meta:
         $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta'
     type: object
@@ -1179,6 +1544,136 @@ paths:
       summary: Get admin finance overview
       tags:
       - finance-admin
+  /admin/legal/documents:
+    get:
+      parameters:
+      - description: Document type
+        in: query
+        name: document_type
+        type: string
+      - default: ru
+        description: Language
+        in: query
+        name: language
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_handler.LegalDocumentsSuccessResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+      security:
+      - BearerAuth: []
+      summary: List legal document versions
+      tags:
+      - admin-legal
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Legal document
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.LegalDocumentRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_transport_http_handler.LegalDocumentSuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+      security:
+      - BearerAuth: []
+      summary: Create new immutable legal document version
+      tags:
+      - admin-legal
+  /admin/legal/documents/{id}/activate:
+    post:
+      parameters:
+      - description: Document ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_handler.LegalDocumentSuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+      security:
+      - BearerAuth: []
+      summary: Activate legal document version
+      tags:
+      - admin-legal
+  /admin/legal/documents/{id}/deactivate:
+    post:
+      parameters:
+      - description: Document ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_handler.LegalDocumentSuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+      security:
+      - BearerAuth: []
+      summary: Deactivate legal document version
+      tags:
+      - admin-legal
   /auth/email/send-code:
     post:
       consumes:
@@ -2406,6 +2901,72 @@ paths:
       summary: Upload passenger profile photo
       tags:
       - passenger
+  /public/legal/consent:
+    get:
+      parameters:
+      - default: ru
+        description: Language
+        in: query
+        name: language
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_handler.LegalDocumentSuccessResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+      summary: Get active personal data consent
+      tags:
+      - public-legal
+  /public/legal/privacy-policy:
+    get:
+      parameters:
+      - default: ru
+        description: Language
+        in: query
+        name: language
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_handler.LegalDocumentSuccessResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+      summary: Get active privacy policy
+      tags:
+      - public-legal
+  /public/legal/terms:
+    get:
+      parameters:
+      - default: ru
+        description: Language
+        in: query
+        name: language
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_handler.LegalDocumentSuccessResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+      summary: Get active terms of service
+      tags:
+      - public-legal
   /taxi-park/balance:
     get:
       produces:
@@ -2482,6 +3043,158 @@ paths:
       summary: Get taxi park orders
       tags:
       - finance-taxi-park
+  /taxi-park/settings:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_handler.TaxiParkSettingsSuccessResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+      security:
+      - BearerAuth: []
+      summary: Get taxi park settings
+      tags:
+      - taxi-park-settings
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Taxi park settings patch
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkSettingsPatchRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_handler.TaxiParkSettingsSuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+      security:
+      - BearerAuth: []
+      summary: Update taxi park settings and branding
+      tags:
+      - taxi-park-settings
+  /taxi-park/tariffs:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_handler.TaxiParkTariffsSuccessResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+      security:
+      - BearerAuth: []
+      summary: List taxi park tariffs
+      tags:
+      - taxi-park-tariffs
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Taxi park tariff
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkTariffRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_transport_http_handler.TaxiParkTariffSuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+      security:
+      - BearerAuth: []
+      summary: Create taxi park tariff
+      tags:
+      - taxi-park-tariffs
+  /taxi-park/tariffs/{id}:
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Tariff ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Taxi park tariff patch
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkTariffPatchRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_handler.TaxiParkTariffSuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+      security:
+      - BearerAuth: []
+      summary: Update taxi park tariff
+      tags:
+      - taxi-park-tariffs
   /taxi-park/transactions:
     get:
       parameters:
