@@ -2,7 +2,6 @@
 .gitignore
 bin
 tmp
-docs
 *.log
 .env
 .idea

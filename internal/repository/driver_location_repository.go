@@ -7,7 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/kishert-lab/taxi-platform/internal/drivers"
+	"github.com/kishert-lab/taxi-platform/internal/geo"
 )
 
 type PostgresDriverLocationRepository struct {
@@ -18,7 +18,7 @@ func NewPostgresDriverLocationRepository(pool *pgxpool.Pool) *PostgresDriverLoca
 	return &PostgresDriverLocationRepository{pool: pool}
 }
 
-func (repository *PostgresDriverLocationRepository) UpdateDriverLocation(ctx context.Context, update drivers.LocationUpdate) error {
+func (repository *PostgresDriverLocationRepository) UpdateDriverLocation(ctx context.Context, update geo.DriverLocationUpdate) error {
 	const query = `
 		INSERT INTO driver_locations (
 			driver_id,

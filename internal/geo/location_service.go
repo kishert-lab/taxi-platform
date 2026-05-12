@@ -1,4 +1,4 @@
-package drivers
+package geo
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 )
 
 type LocationRepository interface {
-	UpdateDriverLocation(ctx context.Context, update LocationUpdate) error
+	UpdateDriverLocation(ctx context.Context, update DriverLocationUpdate) error
 	MarkStaleDriversOffline(ctx context.Context, staleBefore time.Time, limit int) (int, error)
 }
 
@@ -27,7 +27,7 @@ type LocationService struct {
 	staleAfter         time.Duration
 }
 
-type LocationUpdate struct {
+type DriverLocationUpdate struct {
 	DriverID       uuid.UUID
 	CityID         uuid.UUID
 	Location       domain.Coordinates
@@ -48,7 +48,7 @@ func NewLocationService(locationRepository LocationRepository, locationThrottle 
 	}
 }
 
-func (service *LocationService) UpdateLocation(ctx context.Context, update LocationUpdate) error {
+func (service *LocationService) UpdateLocation(ctx context.Context, update DriverLocationUpdate) error {
 	if update.RecordedAt.IsZero() {
 		update.RecordedAt = time.Now().UTC()
 	}
@@ -67,7 +67,7 @@ func (service *LocationService) UpdateLocation(ctx context.Context, update Locat
 	return nil
 }
 
-func (service *LocationService) UpdateLocationBatch(ctx context.Context, updates []LocationUpdate) error {
+func (service *LocationService) UpdateLocationBatch(ctx context.Context, updates []DriverLocationUpdate) error {
 	for _, update := range updates {
 		if err := service.UpdateLocation(ctx, update); err != nil && !errors.Is(err, ErrLocationUpdateThrottled) {
 			return err

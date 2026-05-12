@@ -1,4 +1,4 @@
-package drivers
+package geo
 
 import (
 	"context"
@@ -18,7 +18,7 @@ func TestLocationServiceThrottlesFrequentUpdates(t *testing.T) {
 	throttle := &fakeLocationThrottle{allowed: false}
 	service := NewLocationService(repository, throttle)
 
-	err := service.UpdateLocation(context.Background(), LocationUpdate{
+	err := service.UpdateLocation(context.Background(), DriverLocationUpdate{
 		DriverID: uuid.New(),
 		CityID:   uuid.New(),
 		Location: domain.Coordinates{Latitude: 56.8, Longitude: 60.5},
@@ -35,7 +35,7 @@ type fakeLocationRepository struct {
 	updated bool
 }
 
-func (repository *fakeLocationRepository) UpdateDriverLocation(_ context.Context, _ LocationUpdate) error {
+func (repository *fakeLocationRepository) UpdateDriverLocation(_ context.Context, _ DriverLocationUpdate) error {
 	repository.updated = true
 	return nil
 }
