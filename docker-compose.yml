@@ -16,7 +16,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-
+    networks:
+      - network-taxi-api 
   redis:
     image: redis:7.4-alpine
     container_name: taxi_redis
@@ -31,7 +32,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-
+    networks:
+      - network-taxi-api 
   migrate:
     image: migrate/migrate:v4.18.1
     container_name: taxi_migrate
@@ -49,7 +51,8 @@ services:
         "up"
       ]
     restart: "no"
-
+    networks:
+      - network-taxi-api 
   backend:
     build:
       context: .
@@ -89,7 +92,12 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-
+    networks:
+      - network-taxi-api 
 volumes:
   taxi_pg_data:
   taxi_redis_data:
+
+networks:
+  network-taxi-api:
+    driver: bridge
