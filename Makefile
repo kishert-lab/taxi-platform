@@ -1,14 +1,21 @@
 APP_NAME := taxi-api
+ADMIN_APP_NAME := taxi-admin
 MIGRATIONS_DIR := migrations
 DATABASE_URL ?= postgres://taxi:taxi_password@localhost:5432/taxi?sslmode=disable
 
-.PHONY: run build test tidy fmt lint docker-up docker-down migrate-up migrate-down migrate-create swagger
+.PHONY: run admin build build-admin test tidy fmt lint docker-up docker-down migrate-up migrate-down migrate-create swagger
 
 run:
 	go run ./cmd/api
 
+admin:
+	go run ./cmd/admin $(CMD)
+
 build:
 	go build -o bin/$(APP_NAME) ./cmd/api
+
+build-admin:
+	go build -o bin/$(ADMIN_APP_NAME) ./cmd/admin
 
 test:
 	go test ./...
