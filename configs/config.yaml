@@ -63,7 +63,7 @@ auth:
   require_phone_verify: true
 
 logger:
-  level: info
+  level: debug
   encoding: json
   development: false
 

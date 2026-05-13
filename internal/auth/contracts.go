@@ -30,6 +30,12 @@ type VerificationCodeRepository interface {
 	ConsumeCode(ctx context.Context, codeID uuid.UUID, consumedAt time.Time) error
 }
 
+type RefreshTokenRepository interface {
+	StoreRefreshToken(ctx context.Context, userID uuid.UUID, tokenHash string, expiresAt time.Time) error
+	RotateRefreshToken(ctx context.Context, oldTokenHash string, userID uuid.UUID, newTokenHash string, newExpiresAt time.Time) error
+	RevokeRefreshToken(ctx context.Context, tokenHash string) error
+}
+
 type UserConsentEventRepository interface {
 	CreateUserConsentEvent(ctx context.Context, event domain.UserConsentEvent) error
 }

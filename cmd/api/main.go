@@ -75,7 +75,7 @@ func main() {
 		}
 	}()
 
-	routes := newApplicationRoutes(postgresPool, log)
+	routes := newApplicationRoutes(postgresPool, config, log)
 	router := buildRouter(config, log, routes)
 	server := &http.Server{
 		Addr:              config.Server.Address(),
@@ -111,6 +111,7 @@ func buildRouter(config *configs.Config, log *zap.Logger, routes applicationRout
 	router := gin.New()
 	router.Use(middleware.RequestID())
 	router.Use(gin.Recovery())
+
 	router.Use(cors.New(cors.Config{
 		AllowOrigins:     config.HTTP.CORS.AllowedOrigins,
 		AllowMethods:     []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions},

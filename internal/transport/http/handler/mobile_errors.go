@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/kishert-lab/taxi-platform/internal/auth"
 	"github.com/kishert-lab/taxi-platform/internal/common"
 	"github.com/kishert-lab/taxi-platform/internal/dispatch"
 	"github.com/kishert-lab/taxi-platform/internal/domain"
@@ -34,6 +35,10 @@ func failForbidden(context *gin.Context, message string) {
 
 func failByError(context *gin.Context, err error) {
 	switch {
+	case errors.Is(err, auth.ErrInvalidCredentials), errors.Is(err, auth.ErrInvalidCode), errors.Is(err, auth.ErrInvalidToken), errors.Is(err, auth.ErrInactiveUser):
+		response.Fail(context, http.StatusUnauthorized, response.CodeUnauthorized, "Unauthorized", nil)
+	case errors.Is(err, domain.ErrInvalidPhone), errors.Is(err, domain.ErrInvalidEmail), errors.Is(err, domain.ErrInvalidUserRole):
+		response.Fail(context, http.StatusBadRequest, response.CodeValidationError, "Invalid auth request", nil)
 	case errors.Is(err, ErrMobileOrderNotFound):
 		response.Fail(context, http.StatusNotFound, response.CodeOrderNotFound, "Order not found", nil)
 	case errors.Is(err, domain.ErrInvalidOrderStatusTransition):

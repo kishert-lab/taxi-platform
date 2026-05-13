@@ -201,6 +201,7 @@ type AuthVerifyCodeRequest struct {
 type AuthCodeSentResponse struct {
 	DeliveryChannel string `json:"delivery_channel" example:"sms"`
 	Message         string `json:"message" example:"verification code sent"`
+	DebugCode       string `json:"debug_code,omitempty" example:"123456"`
 }
 
 type AuthTokenResponse struct {
