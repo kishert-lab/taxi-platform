@@ -2962,6 +2962,10 @@
         "github_com_kishert-lab_taxi-platform_internal_dto.AuthCodeSentResponse": {
             "type": "object",
             "properties": {
+                "debug_code": {
+                    "type": "string",
+                    "example": "123456"
+                },
                 "delivery_channel": {
                     "type": "string",
                     "example": "sms"

@@ -158,6 +158,9 @@ definitions:
     type: object
   github_com_kishert-lab_taxi-platform_internal_dto.AuthCodeSentResponse:
     properties:
+      debug_code:
+        example: "123456"
+        type: string
       delivery_channel:
         example: sms
         type: string
