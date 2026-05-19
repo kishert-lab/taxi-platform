@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/kishert-lab/taxi-platform/internal/auth"
 	"github.com/kishert-lab/taxi-platform/internal/domain"
 )
 
@@ -108,6 +109,39 @@ func (repository *PostgresUserRepository) GetUserByEmail(ctx context.Context, em
 	return user, nil
 }
 
+func (repository *PostgresUserRepository) GetDriverLoginAccess(ctx context.Context, userID uuid.UUID) (auth.DriverLoginAccess, error) {
+	const query = `
+		SELECT
+			d.id,
+			d.taxi_park_id,
+			d.verification_status,
+			COALESCE(tp.deleted_at IS NULL AND tps.is_active = true, false)
+		FROM drivers d
+		LEFT JOIN taxi_parks tp ON tp.id = d.taxi_park_id
+		LEFT JOIN taxi_park_settings tps ON tps.taxi_park_id = tp.id
+		WHERE d.user_id = $1 AND d.deleted_at IS NULL`
+
+	var access auth.DriverLoginAccess
+	var taxiParkID pgtype.UUID
+	if err := repository.pool.QueryRow(ctx, query, userID).Scan(
+		&access.DriverID,
+		&taxiParkID,
+		&access.VerificationStatus,
+		&access.TaxiParkActive,
+	); err != nil {
+		return auth.DriverLoginAccess{}, fmt.Errorf("select driver login access: %w", err)
+	}
+	if taxiParkID.Valid {
+		value, err := uuid.FromBytes(taxiParkID.Bytes[:])
+		if err != nil {
+			return auth.DriverLoginAccess{}, fmt.Errorf("parse driver taxi park id: %w", err)
+		}
+		access.TaxiParkID = &value
+	}
+
+	return access, nil
+}
+
 func (repository *PostgresUserRepository) MarkPhoneConfirmed(ctx context.Context, userID uuid.UUID, confirmedAt time.Time) error {
 	const query = `
 		UPDATE users
@@ -156,6 +190,7 @@ const userSelectColumns = `
 	rating::float8,
 	ratings_count,
 	password_hash,
+	must_change_password,
 	is_phone_confirmed,
 	is_email_confirmed,
 	personal_data_consent,
@@ -200,6 +235,7 @@ func scanUser(row pgx.Row) (domain.User, error) {
 		&user.Rating,
 		&user.RatingsCount,
 		&passwordHash,
+		&user.MustChangePassword,
 		&user.IsPhoneConfirmed,
 		&user.IsEmailConfirmed,
 		&user.PersonalDataConsent,

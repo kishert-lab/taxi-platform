@@ -79,7 +79,7 @@ func newApplicationRoutes(postgresPool *pgxpool.Pool, config *configs.Config, lo
 	financeRepository := repository.NewPostgresFinanceRepository(postgresPool)
 	financeService := financeapp.NewService(financeRepository, logger)
 	taxiParkSettingsRepository := repository.NewPostgresTaxiParkSettingsRepository(postgresPool)
-	taxiParkSettingsService := taxiparkapp.NewService(taxiParkSettingsRepository)
+	taxiParkSettingsService := taxiparkapp.NewService(taxiParkSettingsRepository, passwordHasher)
 	legalRepository := repository.NewPostgresLegalRepository(postgresPool)
 	legalService := legalapp.NewService(legalRepository)
 
@@ -92,7 +92,7 @@ func newApplicationRoutes(postgresPool *pgxpool.Pool, config *configs.Config, lo
 		finance:    handler.NewFinanceHandler(financeService),
 		taxiPark:   handler.NewTaxiParkSettingsHandler(taxiParkSettingsService),
 		legal:      handler.NewLegalHandler(legalService),
-		websocket:  handler.NewWebSocketHandler(mobileAuthService),
+		websocket:  handler.NewWebSocketHandler(mobileAuthService, config.HTTP.CORS.AllowedOrigins),
 	}
 }
 

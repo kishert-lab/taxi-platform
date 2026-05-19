@@ -19,6 +19,7 @@ import (
 
 	"github.com/kishert-lab/taxi-platform/configs"
 	_ "github.com/kishert-lab/taxi-platform/docs"
+	authapp "github.com/kishert-lab/taxi-platform/internal/auth"
 	"github.com/kishert-lab/taxi-platform/internal/database"
 	"github.com/kishert-lab/taxi-platform/internal/middleware"
 	redisclient "github.com/kishert-lab/taxi-platform/internal/redis"
@@ -136,6 +137,18 @@ func buildRouter(config *configs.Config, log *zap.Logger, routes applicationRout
 	api.GET("/health", func(context *gin.Context) {
 		handleAPIHealth(context, config)
 	})
+	api.Use(middleware.AuthenticateAccessToken(
+		authapp.NewTokenManager(authapp.TokenManagerConfig{
+			AccessSecret:  config.JWT.AccessSecret,
+			RefreshSecret: config.JWT.RefreshSecret,
+			Issuer:        config.JWT.Issuer,
+			AccessTTL:     config.JWT.AccessTTL,
+			RefreshTTL:    config.JWT.RefreshTTL,
+		}),
+		"/api/v1/auth",
+		"/api/v1/public",
+		"/api/v1/ws",
+	))
 	routes.Register(api)
 
 	router.NoRoute(func(context *gin.Context) {

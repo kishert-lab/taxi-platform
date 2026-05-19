@@ -41,6 +41,18 @@ func TestRoleHasPermission(t *testing.T) {
 			requiredPermission: PermissionAdminManageCommissions,
 			expected:           true,
 		},
+		{
+			name:               "taxi park can create drivers",
+			role:               UserRoleTaxiPark,
+			requiredPermission: PermissionTaxiParkCreateDrivers,
+			expected:           true,
+		},
+		{
+			name:               "taxi park can view finance",
+			role:               UserRoleTaxiPark,
+			requiredPermission: PermissionTaxiParkViewFinance,
+			expected:           true,
+		},
 	}
 
 	for _, test := range tests {

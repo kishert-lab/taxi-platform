@@ -12,6 +12,7 @@ import (
 	"github.com/kishert-lab/taxi-platform/internal/domain"
 	"github.com/kishert-lab/taxi-platform/internal/finance"
 	orderapp "github.com/kishert-lab/taxi-platform/internal/order"
+	taxiparkapp "github.com/kishert-lab/taxi-platform/internal/taxipark"
 	"github.com/kishert-lab/taxi-platform/pkg/response"
 )
 
@@ -37,7 +38,9 @@ func failByError(context *gin.Context, err error) {
 	switch {
 	case errors.Is(err, auth.ErrInvalidCredentials), errors.Is(err, auth.ErrInvalidCode), errors.Is(err, auth.ErrInvalidToken), errors.Is(err, auth.ErrInactiveUser):
 		response.Fail(context, http.StatusUnauthorized, response.CodeUnauthorized, "Unauthorized", nil)
-	case errors.Is(err, domain.ErrInvalidPhone), errors.Is(err, domain.ErrInvalidEmail), errors.Is(err, domain.ErrInvalidUserRole):
+	case errors.Is(err, auth.ErrDriverAccessDenied):
+		response.Fail(context, http.StatusForbidden, response.CodeForbidden, "Driver access is blocked", nil)
+	case errors.Is(err, domain.ErrInvalidPhone), errors.Is(err, domain.ErrInvalidEmail), errors.Is(err, domain.ErrInvalidUserRole), errors.Is(err, domain.ErrInvalidVerificationStatus):
 		response.Fail(context, http.StatusBadRequest, response.CodeValidationError, "Invalid auth request", nil)
 	case errors.Is(err, ErrMobileOrderNotFound):
 		response.Fail(context, http.StatusNotFound, response.CodeOrderNotFound, "Order not found", nil)
@@ -53,6 +56,10 @@ func failByError(context *gin.Context, err error) {
 		response.Fail(context, http.StatusConflict, response.CodeOrderInvalidState, "Order was changed concurrently", nil)
 	case errors.Is(err, finance.ErrFinancialSettlementDuplicate):
 		response.Fail(context, http.StatusConflict, response.CodeOrderInvalidState, "Financial settlement already exists", nil)
+	case errors.Is(err, taxiparkapp.ErrTaxiParkNotFound):
+		response.Fail(context, http.StatusForbidden, response.CodeForbidden, "Taxi park account is not available", nil)
+	case errors.Is(err, taxiparkapp.ErrDriverPhoneAlreadyExists):
+		response.Fail(context, http.StatusConflict, response.CodeValidationError, "Driver with this phone already exists", nil)
 	case errors.Is(err, common.ErrNotImplemented):
 		response.Fail(context, http.StatusNotImplemented, response.CodeNotImplemented, "Endpoint is registered but service is not implemented", nil)
 	default:

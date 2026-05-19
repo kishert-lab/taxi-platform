@@ -25,7 +25,7 @@ func TestMobileAndFinanceRoutesAreRegistered(t *testing.T) {
 		finance:    handler.NewFinanceHandler(unavailableUseCase),
 		taxiPark:   handler.NewTaxiParkSettingsHandler(unavailableUseCase),
 		legal:      handler.NewLegalHandler(unavailableUseCase),
-		websocket:  handler.NewWebSocketHandler(unavailableUseCase),
+		websocket:  handler.NewWebSocketHandler(unavailableUseCase, []string{"*"}),
 	}
 	router := buildRouter(testConfig(), zap.NewNop(), routes)
 
@@ -73,6 +73,13 @@ func TestMobileAndFinanceRoutesAreRegistered(t *testing.T) {
 		http.MethodGet + " /api/v1/driver/transactions",
 		http.MethodGet + " /api/v1/taxi-park/balance",
 		http.MethodGet + " /api/v1/taxi-park/drivers",
+		http.MethodPost + " /api/v1/taxi-park/drivers",
+		http.MethodPatch + " /api/v1/taxi-park/drivers/:id",
+		http.MethodPost + " /api/v1/taxi-park/drivers/:id/block",
+		http.MethodDelete + " /api/v1/taxi-park/drivers/:id",
+		http.MethodGet + " /api/v1/taxi-park/cars",
+		http.MethodPost + " /api/v1/taxi-park/cars",
+		http.MethodPatch + " /api/v1/taxi-park/cars/:id",
 		http.MethodGet + " /api/v1/taxi-park/orders",
 		http.MethodGet + " /api/v1/taxi-park/transactions",
 		http.MethodGet + " /api/v1/taxi-park/settings",

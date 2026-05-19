@@ -66,6 +66,7 @@ type User struct {
 	Rating                float64
 	RatingsCount          int
 	PasswordHash          string
+	MustChangePassword    bool
 	IsPhoneConfirmed      bool
 	IsEmailConfirmed      bool
 	PersonalDataConsent   bool

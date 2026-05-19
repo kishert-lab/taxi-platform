@@ -23,12 +23,13 @@ type WebSocketHandler struct {
 	upgrader    websocket.Upgrader
 }
 
-func NewWebSocketHandler(authUseCase WebSocketAuthUseCase) *WebSocketHandler {
+func NewWebSocketHandler(authUseCase WebSocketAuthUseCase, allowedOrigins []string) *WebSocketHandler {
 	return &WebSocketHandler{
 		authUseCase: authUseCase,
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
+			CheckOrigin:     websocketOriginChecker(allowedOrigins),
 		},
 	}
 }
@@ -68,7 +69,6 @@ func (handler *WebSocketHandler) Connect(context *gin.Context) {
 
 	connection, err := handler.upgrader.Upgrade(context.Writer, context.Request, nil)
 	if err != nil {
-		response.Fail(context, http.StatusInternalServerError, response.CodeInternalError, "WebSocket upgrade failed", nil)
 		return
 	}
 	defer connection.Close()
@@ -93,4 +93,29 @@ func websocketToken(context *gin.Context) string {
 	}
 
 	return strings.TrimSpace(context.Query("token"))
+}
+
+func websocketOriginChecker(allowedOrigins []string) func(request *http.Request) bool {
+	allowed := make(map[string]struct{}, len(allowedOrigins))
+	allowAny := false
+	for _, origin := range allowedOrigins {
+		origin = strings.TrimSpace(origin)
+		if origin == "" {
+			continue
+		}
+		if origin == "*" {
+			allowAny = true
+			continue
+		}
+		allowed[origin] = struct{}{}
+	}
+
+	return func(request *http.Request) bool {
+		origin := strings.TrimSpace(request.Header.Get("Origin"))
+		if origin == "" || allowAny {
+			return true
+		}
+		_, ok := allowed[origin]
+		return ok
+	}
 }

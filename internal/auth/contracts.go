@@ -14,8 +14,16 @@ type UserRepository interface {
 	GetUserByID(ctx context.Context, userID uuid.UUID) (domain.User, error)
 	GetUserByPhoneAndRole(ctx context.Context, phone string, role domain.UserRole) (domain.User, error)
 	GetUserByEmail(ctx context.Context, email string) (domain.User, error)
+	GetDriverLoginAccess(ctx context.Context, userID uuid.UUID) (DriverLoginAccess, error)
 	MarkPhoneConfirmed(ctx context.Context, userID uuid.UUID, confirmedAt time.Time) error
 	MarkEmailConfirmed(ctx context.Context, userID uuid.UUID, confirmedAt time.Time) error
+}
+
+type DriverLoginAccess struct {
+	DriverID           uuid.UUID
+	TaxiParkID         *uuid.UUID
+	VerificationStatus domain.VerificationLifecycleStatus
+	TaxiParkActive     bool
 }
 
 type TaxiParkRepository interface {

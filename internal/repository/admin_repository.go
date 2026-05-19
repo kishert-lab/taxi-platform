@@ -28,6 +28,10 @@ func (repository *PostgresAdminRepository) CreateTaxiParkOwner(ctx context.Conte
 	}
 	defer rollbackTx(ctx, transaction)
 
+	if err := ensureTaxiParkRolePermissions(ctx, transaction); err != nil {
+		return admin.CreateTaxiParkOwnerResult{}, err
+	}
+
 	const insertUserQuery = `
 		INSERT INTO users (
 			phone,
@@ -271,6 +275,37 @@ func (repository *PostgresAdminRepository) ListTaxiParkAccounts(ctx context.Cont
 	}
 
 	return accounts, nil
+}
+
+func ensureTaxiParkRolePermissions(ctx context.Context, transaction pgx.Tx) error {
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO permissions (code, description)
+		VALUES
+			('taxi_park.profile.manage', 'Taxi park can manage own profile'),
+			('taxi_park.drivers.create', 'Taxi park can create own drivers'),
+			('taxi_park.drivers.manage', 'Taxi park can manage own drivers'),
+			('taxi_park.cars.manage', 'Taxi park can manage own cars'),
+			('taxi_park.orders.view', 'Taxi park can view own fleet orders'),
+			('taxi_park.earnings.view', 'Taxi park can view own fleet earnings'),
+			('taxi_park.finance.view', 'Taxi park can view own finance')
+		ON CONFLICT (code) DO NOTHING`); err != nil {
+		return fmt.Errorf("ensure taxi park permissions: %w", err)
+	}
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO role_permissions (role, permission_code)
+		VALUES
+			('taxi_park', 'taxi_park.profile.manage'),
+			('taxi_park', 'taxi_park.drivers.create'),
+			('taxi_park', 'taxi_park.drivers.manage'),
+			('taxi_park', 'taxi_park.cars.manage'),
+			('taxi_park', 'taxi_park.orders.view'),
+			('taxi_park', 'taxi_park.earnings.view'),
+			('taxi_park', 'taxi_park.finance.view')
+		ON CONFLICT (role, permission_code) DO NOTHING`); err != nil {
+		return fmt.Errorf("ensure taxi park role permissions: %w", err)
+	}
+
+	return nil
 }
 
 func insertConsoleConsentEvents(ctx context.Context, transaction pgx.Tx, userID uuid.UUID, record admin.CreateTaxiParkOwnerRecord) error {

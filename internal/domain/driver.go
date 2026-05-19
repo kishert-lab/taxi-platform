@@ -9,6 +9,7 @@ import (
 )
 
 type DriverStatus string
+type VerificationLifecycleStatus string
 
 const (
 	DriverStatusOffline DriverStatus = "offline"
@@ -16,6 +17,13 @@ const (
 	DriverStatusBusy    DriverStatus = "busy"
 	DriverStatusPaused  DriverStatus = "paused"
 	DriverStatusBlocked DriverStatus = "blocked"
+
+	ComplianceStatusDraft               VerificationLifecycleStatus = "draft"
+	ComplianceStatusPendingVerification VerificationLifecycleStatus = "pending_verification"
+	ComplianceStatusVerified            VerificationLifecycleStatus = "verified"
+	ComplianceStatusRejected            VerificationLifecycleStatus = "rejected"
+	ComplianceStatusBlocked             VerificationLifecycleStatus = "blocked"
+	ComplianceStatusArchived            VerificationLifecycleStatus = "archived"
 )
 
 type Driver struct {
@@ -24,13 +32,31 @@ type Driver struct {
 	CityID                uuid.UUID
 	TaxiParkID            *uuid.UUID
 	Status                DriverStatus
+	VerificationStatus    VerificationLifecycleStatus
 	Rating                float64
 	RatingsCount          int
 	CompletedOrdersCount  int
+	BirthDate             *time.Time
+	LicenseSeries         string
 	LicenseNumber         string
+	LicenseCategory       string
+	LicenseIssuedAt       *time.Time
+	LicenseExpiresAt      *time.Time
+	DrivingExperienceFrom *time.Time
+	HasNoTaxiWorkRestrictions bool
+	FederalLaw580Compliant    bool
+	RegionalRequirementsCompliant bool
+	MedicalCheckPassed        bool
+	PretripControlRequired    bool
+	PretripControlPassed      bool
+	NoTransportBan            bool
+	VerificationCheckedAt     *time.Time
+	VerificationCheckedBy     *uuid.UUID
 	CommissionBasisPoints *int32
 	IsVerified            bool
 	BlockedReason         string
+	TaxiParkComment       string
+	MustChangePassword    bool
 	CreatedAt             time.Time
 	UpdatedAt             time.Time
 	DeletedAt             *time.Time
@@ -39,6 +65,7 @@ type Driver struct {
 var (
 	ErrInvalidDriverStatus           = errors.New("invalid driver status")
 	ErrInvalidDriverStatusTransition = errors.New("invalid driver status transition")
+	ErrInvalidVerificationStatus     = errors.New("invalid verification status")
 )
 
 var allowedDriverStatusTransitions = map[DriverStatus][]DriverStatus{
@@ -55,6 +82,20 @@ func (status DriverStatus) Validate() error {
 		return nil
 	default:
 		return ErrInvalidDriverStatus
+	}
+}
+
+func (status VerificationLifecycleStatus) Validate() error {
+	switch status {
+	case ComplianceStatusDraft,
+		ComplianceStatusPendingVerification,
+		ComplianceStatusVerified,
+		ComplianceStatusRejected,
+		ComplianceStatusBlocked,
+		ComplianceStatusArchived:
+		return nil
+	default:
+		return ErrInvalidVerificationStatus
 	}
 }
 

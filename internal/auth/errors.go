@@ -7,4 +7,5 @@ var (
 	ErrInvalidCode        = errors.New("invalid verification code")
 	ErrInvalidToken       = errors.New("invalid token")
 	ErrInactiveUser       = errors.New("inactive user")
+	ErrDriverAccessDenied = errors.New("driver access denied")
 )

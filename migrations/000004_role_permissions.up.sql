@@ -32,6 +32,8 @@ VALUES
     ('driver.trips.status.update', 'Driver can update trip status'),
     ('driver.orders.complete', 'Driver can complete order'),
     ('driver.earnings.view', 'Driver can view earnings'),
+    ('driver.balance.view', 'Driver can view balance'),
+    ('driver.transactions.view', 'Driver can view financial transactions'),
     ('driver.orders.history.view', 'Driver can view order history'),
 
     ('admin.cities.manage', 'Admin can manage cities'),
@@ -43,6 +45,7 @@ VALUES
     ('admin.statistics.view', 'Admin can view statistics'),
     ('admin.orders.driver.assign', 'Admin can manually assign drivers'),
     ('admin.commissions.manage', 'Admin can manage commissions'),
+    ('admin.finance.view', 'Admin can view finance overview'),
     ('admin.complaints.view', 'Admin can view complaints'),
     ('admin.ratings.view', 'Admin can view ratings'),
 
@@ -54,10 +57,12 @@ VALUES
     ('dispatcher.drivers.contact', 'Dispatcher can contact driver'),
 
     ('taxi_park.profile.manage', 'Taxi park can manage own profile'),
+    ('taxi_park.drivers.create', 'Taxi park can create own drivers'),
     ('taxi_park.drivers.manage', 'Taxi park can manage own drivers'),
     ('taxi_park.cars.manage', 'Taxi park can manage own cars'),
     ('taxi_park.orders.view', 'Taxi park can view own fleet orders'),
-    ('taxi_park.earnings.view', 'Taxi park can view own fleet earnings')
+    ('taxi_park.earnings.view', 'Taxi park can view own fleet earnings'),
+    ('taxi_park.finance.view', 'Taxi park can view own finance')
 ON CONFLICT (code) DO NOTHING;
 
 INSERT INTO role_permissions (role, permission_code)
@@ -80,6 +85,8 @@ VALUES
     ('driver', 'driver.trips.status.update'),
     ('driver', 'driver.orders.complete'),
     ('driver', 'driver.earnings.view'),
+    ('driver', 'driver.balance.view'),
+    ('driver', 'driver.transactions.view'),
     ('driver', 'driver.orders.history.view'),
 
     ('admin', 'admin.cities.manage'),
@@ -91,6 +98,7 @@ VALUES
     ('admin', 'admin.statistics.view'),
     ('admin', 'admin.orders.driver.assign'),
     ('admin', 'admin.commissions.manage'),
+    ('admin', 'admin.finance.view'),
     ('admin', 'admin.complaints.view'),
     ('admin', 'admin.ratings.view'),
 
@@ -102,10 +110,12 @@ VALUES
     ('dispatcher', 'dispatcher.drivers.contact'),
 
     ('taxi_park', 'taxi_park.profile.manage'),
+    ('taxi_park', 'taxi_park.drivers.create'),
     ('taxi_park', 'taxi_park.drivers.manage'),
     ('taxi_park', 'taxi_park.cars.manage'),
     ('taxi_park', 'taxi_park.orders.view'),
-    ('taxi_park', 'taxi_park.earnings.view')
+    ('taxi_park', 'taxi_park.earnings.view'),
+    ('taxi_park', 'taxi_park.finance.view')
 ON CONFLICT (role, permission_code) DO NOTHING;
 
 CREATE INDEX idx_role_permissions_permission_code

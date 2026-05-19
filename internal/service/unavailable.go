@@ -11,6 +11,7 @@ import (
 	"github.com/kishert-lab/taxi-platform/internal/domain"
 	"github.com/kishert-lab/taxi-platform/internal/dto"
 	"github.com/kishert-lab/taxi-platform/internal/finance"
+	taxiparkapp "github.com/kishert-lab/taxi-platform/internal/taxipark"
 )
 
 // UnavailableUseCase is used only to expose routes while a concrete application
@@ -207,6 +208,34 @@ func (useCase *UnavailableUseCase) CreateTariff(context.Context, uuid.UUID, dto.
 
 func (useCase *UnavailableUseCase) UpdateTariff(context.Context, uuid.UUID, uuid.UUID, dto.TaxiParkTariffPatchRequest) (domain.TaxiParkTariff, error) {
 	return domain.TaxiParkTariff{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) CreateDriver(context.Context, uuid.UUID, dto.TaxiParkCreateDriverRequest) (taxiparkapp.CreateDriverResult, error) {
+	return taxiparkapp.CreateDriverResult{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) UpdateDriver(context.Context, uuid.UUID, uuid.UUID, dto.TaxiParkUpdateDriverRequest) (taxiparkapp.CreateDriverResult, error) {
+	return taxiparkapp.CreateDriverResult{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) BlockDriver(context.Context, uuid.UUID, uuid.UUID, string) error {
+	return common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) ArchiveDriver(context.Context, uuid.UUID, uuid.UUID) error {
+	return common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) ListCars(context.Context, uuid.UUID) ([]domain.Car, error) {
+	return nil, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) CreateCar(context.Context, uuid.UUID, dto.TaxiParkCarRequest) (domain.Car, error) {
+	return domain.Car{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) UpdateCar(context.Context, uuid.UUID, uuid.UUID, dto.TaxiParkCarPatchRequest) (domain.Car, error) {
+	return domain.Car{}, common.ErrNotImplemented
 }
 
 func (useCase *UnavailableUseCase) GetActiveDocument(context.Context, domain.LegalDocumentType, string) (domain.LegalDocument, error) {

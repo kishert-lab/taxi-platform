@@ -113,6 +113,22 @@ definitions:
     - UserRoleTaxiPark
     - UserRoleAdmin
     - UserRoleDispatcher
+  github_com_kishert-lab_taxi-platform_internal_domain.VerificationLifecycleStatus:
+    enum:
+    - draft
+    - pending_verification
+    - verified
+    - rejected
+    - blocked
+    - archived
+    type: string
+    x-enum-varnames:
+    - ComplianceStatusDraft
+    - ComplianceStatusPendingVerification
+    - ComplianceStatusVerified
+    - ComplianceStatusRejected
+    - ComplianceStatusBlocked
+    - ComplianceStatusArchived
   github_com_kishert-lab_taxi-platform_internal_dto.AdminFinanceOverviewResponse:
     properties:
       average_commission_per_order:
@@ -212,8 +228,8 @@ definitions:
     type: object
   github_com_kishert-lab_taxi-platform_internal_dto.AuthLoginRequest:
     properties:
-      email:
-        example: user@example.com
+      password:
+        example: strong-password
         type: string
       phone:
         example: "+79990000000"
@@ -229,6 +245,8 @@ definitions:
         - dispatcher
         example: passenger
     required:
+    - password
+    - phone
     - role
     type: object
   github_com_kishert-lab_taxi-platform_internal_dto.AuthTokenResponse:
@@ -309,6 +327,27 @@ definitions:
     required:
     - currency
     - final_price
+    type: object
+  github_com_kishert-lab_taxi-platform_internal_dto.ConfirmPhoneRequest:
+    properties:
+      code:
+        example: "123456"
+        type: string
+      phone:
+        example: "+79990000000"
+        type: string
+      registration_type:
+        allOf:
+        - $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.RegistrationType'
+        enum:
+        - passenger
+        - driver
+        - taxi_park
+        example: passenger
+    required:
+    - code
+    - phone
+    - registration_type
     type: object
   github_com_kishert-lab_taxi-platform_internal_dto.CoordinatesRequest:
     properties:
@@ -951,6 +990,376 @@ definitions:
         example: "2026-05-12T12:00:00Z"
         type: string
     type: object
+  github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkBlockDriverRequest:
+    properties:
+      reason:
+        example: Expired license
+        type: string
+    required:
+    - reason
+    type: object
+  github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkCarPatchRequest:
+    properties:
+      attached_driver_ids:
+        items:
+          type: string
+        type: array
+      brand:
+        example: Lada
+        type: string
+      car_class:
+        example: economy
+        type: string
+      color:
+        example: White
+        type: string
+      diagnostic_card_expires_at:
+        example: "2027-01-31"
+        type: string
+      is_active:
+        example: true
+        type: boolean
+      model:
+        example: Vesta
+        type: string
+      osago_expires_at:
+        example: "2027-01-31"
+        type: string
+      owner_details:
+        example: Leased by taxi park
+        type: string
+      permit_expires_at:
+        example: "2031-01-31"
+        type: string
+      permit_issued_at:
+        example: "2026-01-31"
+        type: string
+      permit_region:
+        example: Sverdlovsk Oblast
+        type: string
+      plate_number:
+        example: A001AA196
+        type: string
+      primary_driver_id:
+        example: 22222222-2222-2222-2222-222222222222
+        type: string
+      pts:
+        example: 77AA000000
+        type: string
+      regional_registry_number:
+        example: 66-123456
+        type: string
+      sts:
+        example: "9911000000"
+        type: string
+      taxi_permit_number:
+        example: TAXI-66-000001
+        type: string
+      verification_status:
+        allOf:
+        - $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.VerificationLifecycleStatus'
+        enum:
+        - draft
+        - pending_verification
+        - verified
+        - rejected
+        - blocked
+        - archived
+        example: verified
+      vin:
+        example: XTA00000000000000
+        type: string
+      year:
+        example: 2023
+        type: integer
+    type: object
+  github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkCarRequest:
+    properties:
+      attached_driver_ids:
+        items:
+          type: string
+        type: array
+      brand:
+        example: Lada
+        type: string
+      car_class:
+        example: economy
+        type: string
+      color:
+        example: White
+        type: string
+      diagnostic_card_expires_at:
+        example: "2027-01-31"
+        type: string
+      is_active:
+        example: true
+        type: boolean
+      model:
+        example: Vesta
+        type: string
+      osago_expires_at:
+        example: "2027-01-31"
+        type: string
+      owner_details:
+        example: Owned by taxi park
+        type: string
+      permit_expires_at:
+        example: "2031-01-31"
+        type: string
+      permit_issued_at:
+        example: "2026-01-31"
+        type: string
+      permit_region:
+        example: Sverdlovsk Oblast
+        type: string
+      plate_number:
+        example: A001AA196
+        type: string
+      primary_driver_id:
+        example: 22222222-2222-2222-2222-222222222222
+        type: string
+      pts:
+        example: 77AA000000
+        type: string
+      regional_registry_number:
+        example: 66-123456
+        type: string
+      sts:
+        example: "9911000000"
+        type: string
+      taxi_permit_number:
+        example: TAXI-66-000001
+        type: string
+      verification_status:
+        allOf:
+        - $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.VerificationLifecycleStatus'
+        enum:
+        - draft
+        - pending_verification
+        - verified
+        - rejected
+        - blocked
+        - archived
+        example: pending_verification
+      vin:
+        example: XTA00000000000000
+        type: string
+      year:
+        example: 2023
+        type: integer
+    required:
+    - brand
+    - color
+    - model
+    - plate_number
+    type: object
+  github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkCarResponse:
+    properties:
+      attached_driver_ids:
+        items:
+          type: string
+        type: array
+      brand:
+        example: Lada
+        type: string
+      car_class:
+        example: economy
+        type: string
+      color:
+        example: White
+        type: string
+      created_at:
+        example: "2026-05-19T12:00:00Z"
+        type: string
+      diagnostic_card_expires_at:
+        example: "2027-01-31T00:00:00Z"
+        type: string
+      id:
+        example: 55555555-5555-5555-5555-555555555555
+        type: string
+      is_active:
+        example: true
+        type: boolean
+      model:
+        example: Vesta
+        type: string
+      osago_expires_at:
+        example: "2027-01-31T00:00:00Z"
+        type: string
+      owner_details:
+        example: Owned by taxi park
+        type: string
+      permit_expires_at:
+        example: "2031-01-31T00:00:00Z"
+        type: string
+      permit_issued_at:
+        example: "2026-01-31T00:00:00Z"
+        type: string
+      permit_region:
+        example: Sverdlovsk Oblast
+        type: string
+      plate_number:
+        example: A001AA196
+        type: string
+      primary_driver_id:
+        example: 22222222-2222-2222-2222-222222222222
+        type: string
+      pts:
+        example: 77AA000000
+        type: string
+      regional_registry_number:
+        example: 66-123456
+        type: string
+      sts:
+        example: "9911000000"
+        type: string
+      taxi_park_id:
+        example: 44444444-4444-4444-4444-444444444444
+        type: string
+      taxi_permit_number:
+        example: TAXI-66-000001
+        type: string
+      updated_at:
+        example: "2026-05-19T12:00:00Z"
+        type: string
+      verification_status:
+        allOf:
+        - $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.VerificationLifecycleStatus'
+        example: verified
+      vin:
+        example: XTA00000000000000
+        type: string
+      year:
+        example: 2023
+        type: integer
+    type: object
+  github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkCarsResponse:
+    properties:
+      cars:
+        items:
+          $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkCarResponse'
+        type: array
+    type: object
+  github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkCreateDriverRequest:
+    properties:
+      attached_car_id:
+        example: 55555555-5555-5555-5555-555555555555
+        type: string
+      birth_date:
+        example: "1990-01-31"
+        type: string
+      driving_experience_from:
+        example: "2015-01-31"
+        type: string
+      email:
+        example: driver@example.com
+        type: string
+      first_name:
+        example: Ivan
+        type: string
+      last_name:
+        example: Petrov
+        type: string
+      license_expires_at:
+        example: "2030-01-31"
+        type: string
+      license_issued_at:
+        example: "2020-01-31"
+        type: string
+      license_number:
+        example: "7700000000"
+        type: string
+      license_series:
+        example: 77 01
+        type: string
+      password:
+        example: temporary-password
+        type: string
+      phone:
+        example: "+79990000001"
+        type: string
+      taxi_park_comment:
+        example: Documents checked by park manager
+        type: string
+      verification_status:
+        allOf:
+        - $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.VerificationLifecycleStatus'
+        enum:
+        - draft
+        - pending_verification
+        - verified
+        - rejected
+        - blocked
+        - archived
+        example: pending_verification
+    required:
+    - phone
+    type: object
+  github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkCreateDriverResponse:
+    properties:
+      birth_date:
+        example: "1990-01-31T00:00:00Z"
+        type: string
+      driver_id:
+        example: 22222222-2222-2222-2222-222222222222
+        type: string
+      driving_experience_from:
+        example: "2015-01-31T00:00:00Z"
+        type: string
+      email:
+        example: driver@example.com
+        type: string
+      generated_password:
+        example: A1b2C3d4E5f6G7h8J9
+        type: string
+      is_verified:
+        example: false
+        type: boolean
+      license_expires_at:
+        example: "2030-01-31T00:00:00Z"
+        type: string
+      license_issued_at:
+        example: "2020-01-31T00:00:00Z"
+        type: string
+      license_number:
+        example: "7700000000"
+        type: string
+      license_series:
+        example: 77 01
+        type: string
+      name:
+        example: Ivan Petrov
+        type: string
+      password_generated:
+        example: true
+        type: boolean
+      phone:
+        example: "+79990000001"
+        type: string
+      rating:
+        example: 5
+        type: number
+      ratings_count:
+        example: 0
+        type: integer
+      status:
+        allOf:
+        - $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.DriverStatus'
+        example: offline
+      taxi_park_comment:
+        example: Documents checked by park manager
+        type: string
+      taxi_park_id:
+        example: 44444444-4444-4444-4444-444444444444
+        type: string
+      user_id:
+        example: 33333333-3333-3333-3333-333333333333
+        type: string
+      verification_status:
+        allOf:
+        - $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.VerificationLifecycleStatus'
+        example: pending_verification
+    type: object
   github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkDriverResponse:
     properties:
       created_at:
@@ -1274,6 +1683,50 @@ definitions:
           $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkTariffResponse'
         type: array
     type: object
+  github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkUpdateDriverRequest:
+    properties:
+      attached_car_id:
+        example: 55555555-5555-5555-5555-555555555555
+        type: string
+      birth_date:
+        example: "1990-01-31"
+        type: string
+      driving_experience_from:
+        example: "2015-01-31"
+        type: string
+      first_name:
+        example: Ivan
+        type: string
+      last_name:
+        example: Petrov
+        type: string
+      license_expires_at:
+        example: "2030-01-31"
+        type: string
+      license_issued_at:
+        example: "2020-01-31"
+        type: string
+      license_number:
+        example: "7700000000"
+        type: string
+      license_series:
+        example: 77 01
+        type: string
+      taxi_park_comment:
+        example: Verified by park
+        type: string
+      verification_status:
+        allOf:
+        - $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.VerificationLifecycleStatus'
+        enum:
+        - draft
+        - pending_verification
+        - verified
+        - rejected
+        - blocked
+        - archived
+        example: verified
+    type: object
   github_com_kishert-lab_taxi-platform_pkg_response.Error:
     properties:
       error:
@@ -1450,6 +1903,27 @@ definitions:
     properties:
       data:
         $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkBalanceResponse'
+      meta:
+        $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta'
+    type: object
+  internal_transport_http_handler.TaxiParkCarSuccessResponse:
+    properties:
+      data:
+        $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkCarResponse'
+      meta:
+        $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta'
+    type: object
+  internal_transport_http_handler.TaxiParkCarsSuccessResponse:
+    properties:
+      data:
+        $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkCarsResponse'
+      meta:
+        $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta'
+    type: object
+  internal_transport_http_handler.TaxiParkCreateDriverSuccessResponse:
+    properties:
+      data:
+        $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkCreateDriverResponse'
       meta:
         $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta'
     type: object
@@ -1677,11 +2151,42 @@ paths:
       summary: Deactivate legal document version
       tags:
       - admin-legal
+  /auth/confirm-phone:
+    post:
+      consumes:
+      - application/json
+      description: Confirms the SMS code sent during registration.
+      parameters:
+      - description: Phone confirmation request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.ConfirmPhoneRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Success'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+      summary: Confirm phone after registration
+      tags:
+      - auth
   /auth/email/send-code:
     post:
       consumes:
       - application/json
-      description: Explicit mail endpoint for mobile clients that authorize by email.
+      description: Sends a verification code for the notification email attached to
+        an existing account.
       parameters:
       - description: Email code request
         in: body
@@ -1715,7 +2220,7 @@ paths:
     post:
       consumes:
       - application/json
-      description: Explicit mail verification endpoint. Returns rotated access/refresh
+      description: Confirms the notification email and returns a fresh access/refresh
         token pair.
       parameters:
       - description: Email verification request
@@ -1746,8 +2251,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Sends verification code to phone or email. At least one of phone
-        or email must be provided.
+      description: Authenticates by phone number and password. SMS codes are used
+        only for registration phone confirmation.
       parameters:
       - description: Login request
         in: body
@@ -1761,7 +2266,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_transport_http_handler.AuthCodeSentSuccessResponse'
+            $ref: '#/definitions/internal_transport_http_handler.AuthTokenSuccessResponse'
         "400":
           description: Bad Request
           schema:
@@ -1770,11 +2275,7 @@ paths:
           description: Unauthorized
           schema:
             $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
-        "429":
-          description: Too Many Requests
-          schema:
-            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
-      summary: Start phone or email login
+      summary: Login by phone and password
       tags:
       - auth
   /auth/logout:
@@ -1873,7 +2374,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Verifies SMS or email code and returns access/refresh tokens.
+      description: Verifies email confirmation code and returns access/refresh tokens.
+        SMS code verification is used only by /auth/confirm-phone after registration.
       parameters:
       - description: Verification request
         in: body
@@ -2992,6 +3494,102 @@ paths:
       summary: Get taxi park balance
       tags:
       - finance-taxi-park
+  /taxi-park/cars:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_handler.TaxiParkCarsSuccessResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+      security:
+      - BearerAuth: []
+      summary: List taxi park cars
+      tags:
+      - taxi-park-cars
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Car card
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkCarRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_transport_http_handler.TaxiParkCarSuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+      security:
+      - BearerAuth: []
+      summary: Create taxi park car
+      tags:
+      - taxi-park-cars
+  /taxi-park/cars/{id}:
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Car ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Car patch
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkCarPatchRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_handler.TaxiParkCarSuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+      security:
+      - BearerAuth: []
+      summary: Update taxi park car
+      tags:
+      - taxi-park-cars
   /taxi-park/drivers:
     get:
       parameters:
@@ -3019,6 +3617,170 @@ paths:
       summary: Get taxi park drivers
       tags:
       - finance-taxi-park
+    post:
+      consumes:
+      - application/json
+      description: Creates a driver account under the current taxi park by phone number.
+        If password is omitted, backend generates a temporary password and returns
+        it once.
+      parameters:
+      - description: Driver account
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkCreateDriverRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_transport_http_handler.TaxiParkCreateDriverSuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+      security:
+      - BearerAuth: []
+      summary: Create taxi park driver
+      tags:
+      - taxi-park-drivers
+  /taxi-park/drivers/{id}:
+    delete:
+      parameters:
+      - description: Driver ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Success'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+      security:
+      - BearerAuth: []
+      summary: Archive taxi park driver
+      tags:
+      - taxi-park-drivers
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Driver ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Driver patch
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkUpdateDriverRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_handler.TaxiParkCreateDriverSuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+      security:
+      - BearerAuth: []
+      summary: Update taxi park driver
+      tags:
+      - taxi-park-drivers
+  /taxi-park/drivers/{id}/block:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Driver ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Block reason
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkBlockDriverRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Success'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+      security:
+      - BearerAuth: []
+      summary: Block taxi park driver
+      tags:
+      - taxi-park-drivers
   /taxi-park/orders:
     get:
       parameters:

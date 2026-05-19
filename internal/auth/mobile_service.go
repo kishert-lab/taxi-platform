@@ -83,6 +83,21 @@ func (service *MobileService) StartLogin(ctx context.Context, request dto.AuthLo
 	if !user.IsPhoneConfirmed {
 		return dto.AuthTokenResponse{}, ErrInvalidCredentials
 	}
+	if user.Role == domain.UserRoleDriver {
+		access, err := service.userRepository.GetDriverLoginAccess(ctx, user.ID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return dto.AuthTokenResponse{}, ErrDriverAccessDenied
+			}
+			return dto.AuthTokenResponse{}, fmt.Errorf("get driver login access: %w", err)
+		}
+		if access.TaxiParkID == nil ||
+			!access.TaxiParkActive ||
+			access.VerificationStatus == domain.ComplianceStatusBlocked ||
+			access.VerificationStatus == domain.ComplianceStatusArchived {
+			return dto.AuthTokenResponse{}, ErrDriverAccessDenied
+		}
+	}
 	if err := service.passwordHasher.ComparePasswordAndHash(request.Password, user.PasswordHash); err != nil {
 		return dto.AuthTokenResponse{}, ErrInvalidCredentials
 	}

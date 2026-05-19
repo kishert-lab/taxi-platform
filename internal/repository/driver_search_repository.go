@@ -40,7 +40,29 @@ func (repository *PostgresDriverSearchRepository) FindNearestOnlineDrivers(ctx c
 		WHERE d.city_id = $3
 		  AND d.status = 'online'
 		  AND d.is_verified = true
+		  AND d.verification_status = 'verified'
+		  AND d.taxi_park_id IS NOT NULL
 		  AND d.deleted_at IS NULL
+		  AND EXISTS (
+		  	SELECT 1
+		  	FROM taxi_parks tp
+		  	LEFT JOIN taxi_park_settings tps ON tps.taxi_park_id = tp.id
+		  	WHERE tp.id = d.taxi_park_id
+		  	  AND tp.deleted_at IS NULL
+		  	  AND COALESCE(tps.is_active, true) = true
+		  )
+		  AND EXISTS (
+		  	SELECT 1
+		  	FROM cars c
+		  	LEFT JOIN car_driver_assignments cda ON cda.car_id = c.id
+		  	WHERE c.taxi_park_id = d.taxi_park_id
+		  	  AND (c.driver_id = d.id OR cda.driver_id = d.id)
+		  	  AND c.verification_status = 'verified'
+		  	  AND c.is_active = true
+		  	  AND c.deleted_at IS NULL
+		  	  AND COALESCE(c.permit_expires_at, current_date + interval '1 day') >= current_date
+		  	  AND COALESCE(c.osago_expires_at, current_date + interval '1 day') >= current_date
+		  )
 		  AND dl.updated_at >= now() - make_interval(secs => $7)
 		  AND ST_DWithin(dl.location, pickup.location, $4)
 		  AND NOT (d.id = ANY($5::uuid[]))

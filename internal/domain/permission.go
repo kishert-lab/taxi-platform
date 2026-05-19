@@ -46,6 +46,7 @@ const (
 	PermissionDispatcherContactDriver Permission = "dispatcher.drivers.contact"
 
 	PermissionTaxiParkManageProfile Permission = "taxi_park.profile.manage"
+	PermissionTaxiParkCreateDrivers Permission = "taxi_park.drivers.create"
 	PermissionTaxiParkManageDrivers Permission = "taxi_park.drivers.manage"
 	PermissionTaxiParkManageCars    Permission = "taxi_park.cars.manage"
 	PermissionTaxiParkViewOrders    Permission = "taxi_park.orders.view"
@@ -102,6 +103,7 @@ var rolePermissions = map[UserRole][]Permission{
 	},
 	UserRoleTaxiPark: {
 		PermissionTaxiParkManageProfile,
+		PermissionTaxiParkCreateDrivers,
 		PermissionTaxiParkManageDrivers,
 		PermissionTaxiParkManageCars,
 		PermissionTaxiParkViewOrders,
