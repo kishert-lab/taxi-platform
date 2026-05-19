@@ -33,7 +33,8 @@ type StartRegistrationResponse struct {
 	RegistrationType domain.RegistrationType `json:"registration_type" example:"passenger"`
 	PhoneMasked      string                  `json:"phone_masked" example:"+7*****000"`
 	EmailMasked      string                  `json:"email_masked" example:"u***@example.com"`
-	Message          string                  `json:"message" example:"confirmation codes sent"`
+	Message          string                  `json:"message" example:"phone confirmation code sent"`
+	DebugCode        string                  `json:"debug_code,omitempty" example:"123456"`
 }
 
 type ConfirmPhoneRequest struct {

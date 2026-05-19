@@ -175,9 +175,9 @@ type RejectOrderRequest struct {
 }
 
 type AuthLoginRequest struct {
-	Phone string          `json:"phone,omitempty" example:"+79990000000"`
-	Email string          `json:"email,omitempty" example:"user@example.com"`
-	Role  domain.UserRole `json:"role" binding:"required,oneof=passenger driver taxi_park admin dispatcher" example:"passenger"`
+	Phone    string          `json:"phone" binding:"required" example:"+79990000000"`
+	Password string          `json:"password" binding:"required" example:"strong-password"`
+	Role     domain.UserRole `json:"role" binding:"required,oneof=passenger driver taxi_park admin dispatcher" example:"passenger"`
 }
 
 type AuthEmailCodeRequest struct {

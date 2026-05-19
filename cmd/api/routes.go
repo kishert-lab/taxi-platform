@@ -32,14 +32,37 @@ func newApplicationRoutes(postgresPool *pgxpool.Pool, config *configs.Config, lo
 	unavailableUseCase := service.NewUnavailableUseCase()
 
 	userRepository := repository.NewPostgresUserRepository(postgresPool)
+	taxiParkRepository := repository.NewPostgresTaxiParkRepository(postgresPool)
 	verificationCodeRepository := repository.NewPostgresVerificationCodeRepository(postgresPool)
 	refreshTokenRepository := repository.NewPostgresRefreshTokenRepository(postgresPool)
+	userConsentEventRepository := repository.NewPostgresUserConsentEventRepository(postgresPool)
+	passwordHasher := security.NewBCryptPasswordHasher(config.Security.BCryptCost)
+	codeHasher := security.NewBCryptCodeHasher(config.Security.BCryptCost)
+	codeGenerator := security.NewNumericCodeGenerator()
+	registrationService := authapp.NewRegistrationService(authapp.NewRegistrationServiceParams{
+		UserRepository:             userRepository,
+		TaxiParkRepository:         taxiParkRepository,
+		VerificationCodeRepository: verificationCodeRepository,
+		UserConsentEventRepository: userConsentEventRepository,
+		SMSProvider:                authapp.NewLoggingSMSProvider(logger),
+		EmailProvider:              authapp.NewLoggingEmailProvider(logger),
+		PasswordHasher:             passwordHasher,
+		CodeHasher:                 codeHasher,
+		CodeGenerator:              codeGenerator,
+		Logger:                     logger,
+		Config: authapp.RegistrationServiceConfig{
+			PhoneCodeTTL:    config.Auth.PhoneCodeTTL,
+			EmailCodeTTL:    config.Auth.EmailCodeTTL,
+			MaxCodeAttempts: config.Auth.MaxCodeAttempts,
+		},
+	})
 	mobileAuthService := authapp.NewMobileService(authapp.NewMobileServiceParams{
 		UserRepository:             userRepository,
 		VerificationCodeRepository: verificationCodeRepository,
 		RefreshTokenRepository:     refreshTokenRepository,
-		CodeGenerator:              security.NewNumericCodeGenerator(),
-		CodeHasher:                 security.NewBCryptCodeHasher(config.Security.BCryptCost),
+		CodeGenerator:              codeGenerator,
+		CodeHasher:                 codeHasher,
+		PasswordHasher:             passwordHasher,
 		TokenManager: authapp.NewTokenManager(authapp.TokenManagerConfig{
 			AccessSecret:  config.JWT.AccessSecret,
 			RefreshSecret: config.JWT.RefreshSecret,
@@ -61,7 +84,7 @@ func newApplicationRoutes(postgresPool *pgxpool.Pool, config *configs.Config, lo
 	legalService := legalapp.NewService(legalRepository)
 
 	return applicationRoutes{
-		auth:       handler.NewAuthHandler(unavailableUseCase),
+		auth:       handler.NewAuthHandler(registrationService),
 		mobileAuth: handler.NewMobileAuthHandler(mobileAuthService),
 		order:      handler.NewOrderHandler(unavailableUseCase),
 		passenger:  handler.NewPassengerMobileHandler(unavailableUseCase, unavailableUseCase),

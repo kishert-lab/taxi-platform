@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/kishert-lab/taxi-platform/internal/admin"
@@ -188,6 +189,88 @@ func (repository *PostgresAdminRepository) ResetPasswordByPhone(ctx context.Cont
 	}
 
 	return result, nil
+}
+
+func (repository *PostgresAdminRepository) ListTaxiParkAccounts(ctx context.Context, filter admin.ListTaxiParkAccountsFilter) ([]admin.TaxiParkAccount, error) {
+	const query = `
+		SELECT
+			tp.id,
+			tp.owner_user_id,
+			tp.city_id,
+			c.name,
+			tp.name,
+			COALESCE(tp.legal_name, ''),
+			COALESCE(tp.tax_id, ''),
+			tp.contact_phone,
+			tp.contact_email,
+			u.phone,
+			COALESCE(u.email, ''),
+			tp.is_verified,
+			tp.verification_status::text,
+			COALESCE(tp.commission_percent::text, ''),
+			COALESCE(tp.balance_cents, 0),
+			u.is_active,
+			tp.created_at,
+			tp.deleted_at
+		FROM taxi_parks tp
+		JOIN users u ON u.id = tp.owner_user_id
+		JOIN cities c ON c.id = tp.city_id
+		WHERE ($2::boolean OR tp.deleted_at IS NULL)
+		  AND (
+			$3 = ''
+			OR tp.name ILIKE '%' || $3 || '%'
+			OR COALESCE(tp.legal_name, '') ILIKE '%' || $3 || '%'
+			OR COALESCE(tp.tax_id, '') ILIKE '%' || $3 || '%'
+			OR tp.contact_phone ILIKE '%' || $3 || '%'
+			OR tp.contact_email ILIKE '%' || $3 || '%'
+			OR u.phone ILIKE '%' || $3 || '%'
+			OR COALESCE(u.email, '') ILIKE '%' || $3 || '%'
+		  )
+		ORDER BY tp.created_at DESC
+		LIMIT $1`
+
+	rows, err := repository.pool.Query(ctx, query, filter.Limit, filter.IncludeDeleted, filter.Search)
+	if err != nil {
+		return nil, fmt.Errorf("query taxi park accounts: %w", err)
+	}
+	defer rows.Close()
+
+	accounts := make([]admin.TaxiParkAccount, 0, filter.Limit)
+	for rows.Next() {
+		var account admin.TaxiParkAccount
+		var deletedAt pgtype.Timestamptz
+		if err := rows.Scan(
+			&account.TaxiParkID,
+			&account.OwnerUserID,
+			&account.CityID,
+			&account.CityName,
+			&account.Name,
+			&account.LegalName,
+			&account.TaxID,
+			&account.ContactPhone,
+			&account.ContactEmail,
+			&account.OwnerPhone,
+			&account.OwnerEmail,
+			&account.IsVerified,
+			&account.VerificationStatus,
+			&account.CommissionPercent,
+			&account.BalanceCents,
+			&account.IsOwnerActive,
+			&account.CreatedAt,
+			&deletedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan taxi park account: %w", err)
+		}
+		if deletedAt.Valid {
+			account.DeletedAt = &deletedAt.Time
+		}
+		accounts = append(accounts, account)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate taxi park accounts: %w", err)
+	}
+
+	return accounts, nil
 }
 
 func insertConsoleConsentEvents(ctx context.Context, transaction pgx.Tx, userID uuid.UUID, record admin.CreateTaxiParkOwnerRecord) error {

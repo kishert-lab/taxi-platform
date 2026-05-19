@@ -90,6 +90,7 @@ type StartRegistrationResult struct {
 	RegistrationType domain.RegistrationType
 	PhoneMasked      string
 	EmailMasked      string
+	DebugCode        string
 }
 
 type ConfirmPhoneCommand struct {
@@ -177,10 +178,8 @@ func (service *RegistrationService) StartRegistration(ctx context.Context, comma
 		return StartRegistrationResult{}, err
 	}
 
-	if err := service.sendPhoneConfirmation(ctx, createdUser.ID, normalizedPhone); err != nil {
-		return StartRegistrationResult{}, err
-	}
-	if err := service.sendEmailConfirmation(ctx, createdUser.ID, normalizedEmail); err != nil {
+	debugCode, err := service.sendPhoneConfirmation(ctx, createdUser.ID, normalizedPhone)
+	if err != nil {
 		return StartRegistrationResult{}, err
 	}
 
@@ -197,6 +196,7 @@ func (service *RegistrationService) StartRegistration(ctx context.Context, comma
 		RegistrationType: command.RegistrationType,
 		PhoneMasked:      maskPhone(normalizedPhone),
 		EmailMasked:      maskEmail(normalizedEmail),
+		DebugCode:        debugCode,
 	}, nil
 }
 
@@ -275,14 +275,14 @@ func (service *RegistrationService) ConfirmPhone(ctx context.Context, command Co
 	}
 
 	if time.Now().UTC().After(verificationCode.ExpiresAt) {
-		return fmt.Errorf("phone confirmation code expired")
+		return ErrInvalidCode
 	}
 
 	if err := service.codeHasher.CompareCodeAndHash(command.Code, verificationCode.CodeHash); err != nil {
 		if incrementErr := service.verificationCodeRepository.IncrementAttempts(ctx, verificationCode.ID); incrementErr != nil {
 			return fmt.Errorf("increment phone confirmation attempts after compare failure: %w", incrementErr)
 		}
-		return fmt.Errorf("compare phone confirmation code: %w", err)
+		return ErrInvalidCode
 	}
 
 	now := time.Now().UTC()
@@ -319,14 +319,14 @@ func (service *RegistrationService) ConfirmEmail(ctx context.Context, command Co
 	}
 
 	if time.Now().UTC().After(verificationCode.ExpiresAt) {
-		return fmt.Errorf("email confirmation code expired")
+		return ErrInvalidCode
 	}
 
 	if err := service.codeHasher.CompareCodeAndHash(command.Code, verificationCode.CodeHash); err != nil {
 		if incrementErr := service.verificationCodeRepository.IncrementAttempts(ctx, verificationCode.ID); incrementErr != nil {
 			return fmt.Errorf("increment email confirmation attempts after compare failure: %w", incrementErr)
 		}
-		return fmt.Errorf("compare email confirmation code: %w", err)
+		return ErrInvalidCode
 	}
 
 	now := time.Now().UTC()
@@ -341,15 +341,15 @@ func (service *RegistrationService) ConfirmEmail(ctx context.Context, command Co
 	return nil
 }
 
-func (service *RegistrationService) sendPhoneConfirmation(ctx context.Context, userID uuid.UUID, phone string) error {
+func (service *RegistrationService) sendPhoneConfirmation(ctx context.Context, userID uuid.UUID, phone string) (string, error) {
 	code, err := service.codeGenerator.GenerateNumericCode(6)
 	if err != nil {
-		return fmt.Errorf("generate phone confirmation code: %w", err)
+		return "", fmt.Errorf("generate phone confirmation code: %w", err)
 	}
 
 	codeHash, err := service.codeHasher.HashCode(code)
 	if err != nil {
-		return fmt.Errorf("hash phone confirmation code: %w", err)
+		return "", fmt.Errorf("hash phone confirmation code: %w", err)
 	}
 
 	verificationCode := domain.VerificationCode{
@@ -364,13 +364,13 @@ func (service *RegistrationService) sendPhoneConfirmation(ctx context.Context, u
 	}
 
 	if _, err := service.verificationCodeRepository.CreateVerificationCode(ctx, verificationCode); err != nil {
-		return fmt.Errorf("store phone confirmation code: %w", err)
+		return "", fmt.Errorf("store phone confirmation code: %w", err)
 	}
 	if err := service.smsProvider.SendVerificationCode(ctx, phone, code); err != nil {
-		return fmt.Errorf("send phone confirmation sms: %w", err)
+		return "", fmt.Errorf("send phone confirmation sms: %w", err)
 	}
 
-	return nil
+	return code, nil
 }
 
 func (service *RegistrationService) sendEmailConfirmation(ctx context.Context, userID uuid.UUID, email string) error {

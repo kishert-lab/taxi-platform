@@ -14,6 +14,7 @@ import (
 
 type RegistrationUseCase interface {
 	StartRegistration(ctx context.Context, command auth.StartRegistrationCommand) (auth.StartRegistrationResult, error)
+	ConfirmPhone(ctx context.Context, command auth.ConfirmPhoneCommand) error
 }
 
 type AuthHandler struct {
@@ -26,6 +27,7 @@ func NewAuthHandler(registrationUseCase RegistrationUseCase) *AuthHandler {
 
 func (handler *AuthHandler) RegisterRoutes(router gin.IRouter) {
 	router.POST("/auth/register", handler.Register)
+	router.POST("/auth/confirm-phone", handler.ConfirmPhone)
 }
 
 // Register godoc
@@ -93,8 +95,40 @@ func (handler *AuthHandler) Register(context *gin.Context) {
 		RegistrationType: result.RegistrationType,
 		PhoneMasked:      result.PhoneMasked,
 		EmailMasked:      result.EmailMasked,
-		Message:          "confirmation codes sent",
+		Message:          "phone confirmation code sent",
+		DebugCode:        result.DebugCode,
 	})
+}
+
+// ConfirmPhone godoc
+// @Summary Confirm phone after registration
+// @Description Confirms the SMS code sent during registration.
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param request body dto.ConfirmPhoneRequest true "Phone confirmation request"
+// @Success 200 {object} response.Success
+// @Failure 400 {object} response.Error
+// @Failure 401 {object} response.Error
+// @Router /auth/confirm-phone [post]
+func (handler *AuthHandler) ConfirmPhone(context *gin.Context) {
+	var request dto.ConfirmPhoneRequest
+	if err := context.ShouldBindJSON(&request); err != nil {
+		failValidation(context, "Invalid phone confirmation request")
+		return
+	}
+
+	err := handler.registrationUseCase.ConfirmPhone(context.Request.Context(), auth.ConfirmPhoneCommand{
+		Phone:            request.Phone,
+		RegistrationType: request.Type,
+		Code:             request.Code,
+	})
+	if err != nil {
+		failByError(context, err)
+		return
+	}
+
+	response.OK(context, gin.H{"phone_confirmed": true})
 }
 
 type errorResponse struct {

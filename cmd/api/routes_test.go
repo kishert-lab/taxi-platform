@@ -36,6 +36,7 @@ func TestMobileAndFinanceRoutesAreRegistered(t *testing.T) {
 
 	expectedRoutes := []string{
 		http.MethodPost + " /api/v1/auth/register",
+		http.MethodPost + " /api/v1/auth/confirm-phone",
 		http.MethodPost + " /api/v1/auth/login",
 		http.MethodPost + " /api/v1/auth/email/send-code",
 		http.MethodPost + " /api/v1/auth/email/verify",

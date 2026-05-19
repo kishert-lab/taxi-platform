@@ -150,6 +150,27 @@ func (service *Service) ResetPassword(ctx context.Context, command ResetPassword
 	return result, nil
 }
 
+func (service *Service) ListTaxiParkAccounts(ctx context.Context, command ListTaxiParkAccountsCommand) ([]TaxiParkAccount, error) {
+	limit := command.Limit
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+
+	accounts, err := service.repository.ListTaxiParkAccounts(ctx, ListTaxiParkAccountsFilter{
+		Limit:          limit,
+		Search:         strings.TrimSpace(command.Search),
+		IncludeDeleted: command.IncludeDeleted,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list taxi park accounts: %w", err)
+	}
+
+	return accounts, nil
+}
+
 func GeneratePassword(length int) (string, error) {
 	if length < 12 {
 		length = 12

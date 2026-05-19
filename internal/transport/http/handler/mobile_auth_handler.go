@@ -10,7 +10,8 @@ import (
 )
 
 type MobileAuthUseCase interface {
-	StartLogin(ctx context.Context, request dto.AuthLoginRequest) (dto.AuthCodeSentResponse, error)
+	StartLogin(ctx context.Context, request dto.AuthLoginRequest) (dto.AuthTokenResponse, error)
+	SendEmailCode(ctx context.Context, request dto.AuthEmailCodeRequest) (dto.AuthCodeSentResponse, error)
 	VerifyCode(ctx context.Context, request dto.AuthVerifyCodeRequest) (dto.AuthTokenResponse, error)
 	Refresh(ctx context.Context, request dto.RefreshTokenRequest) (dto.AuthTokenResponse, error)
 	Logout(ctx context.Context, request dto.LogoutRequest) error
@@ -34,25 +35,20 @@ func (handler *MobileAuthHandler) RegisterRoutes(router gin.IRouter) {
 }
 
 // Login godoc
-// @Summary Start phone or email login
-// @Description Sends verification code to phone or email. At least one of phone or email must be provided.
+// @Summary Login by phone and password
+// @Description Authenticates by phone number and password. SMS codes are used only for registration phone confirmation.
 // @Tags auth
 // @Accept json
 // @Produce json
 // @Param request body dto.AuthLoginRequest true "Login request"
-// @Success 200 {object} AuthCodeSentSuccessResponse
+// @Success 200 {object} AuthTokenSuccessResponse
 // @Failure 400 {object} response.Error
 // @Failure 401 {object} response.Error
-// @Failure 429 {object} response.Error
 // @Router /auth/login [post]
 func (handler *MobileAuthHandler) Login(context *gin.Context) {
 	var request dto.AuthLoginRequest
 	if err := context.ShouldBindJSON(&request); err != nil {
 		failValidation(context, "Invalid login request")
-		return
-	}
-	if request.Phone == "" && request.Email == "" {
-		failValidation(context, "Phone or email is required")
 		return
 	}
 
@@ -67,7 +63,7 @@ func (handler *MobileAuthHandler) Login(context *gin.Context) {
 
 // SendEmailCode godoc
 // @Summary Send email verification code
-// @Description Explicit mail endpoint for mobile clients that authorize by email.
+// @Description Sends a verification code for the notification email attached to an existing account.
 // @Tags auth
 // @Accept json
 // @Produce json
@@ -84,10 +80,7 @@ func (handler *MobileAuthHandler) SendEmailCode(context *gin.Context) {
 		return
 	}
 
-	result, err := handler.useCase.StartLogin(context.Request.Context(), dto.AuthLoginRequest{
-		Email: request.Email,
-		Role:  request.Role,
-	})
+	result, err := handler.useCase.SendEmailCode(context.Request.Context(), request)
 	if err != nil {
 		failByError(context, err)
 		return
@@ -98,7 +91,7 @@ func (handler *MobileAuthHandler) SendEmailCode(context *gin.Context) {
 
 // VerifyEmailCode godoc
 // @Summary Verify email code
-// @Description Explicit mail verification endpoint. Returns rotated access/refresh token pair.
+// @Description Confirms the notification email and returns a fresh access/refresh token pair.
 // @Tags auth
 // @Accept json
 // @Produce json
@@ -129,7 +122,7 @@ func (handler *MobileAuthHandler) VerifyEmailCode(context *gin.Context) {
 
 // VerifyCode godoc
 // @Summary Verify login code
-// @Description Verifies SMS or email code and returns access/refresh tokens.
+// @Description Verifies email confirmation code and returns access/refresh tokens. SMS code verification is used only by /auth/confirm-phone after registration.
 // @Tags auth
 // @Accept json
 // @Produce json
@@ -144,8 +137,8 @@ func (handler *MobileAuthHandler) VerifyCode(context *gin.Context) {
 		failValidation(context, "Invalid verification request")
 		return
 	}
-	if request.Phone == "" && request.Email == "" {
-		failValidation(context, "Phone or email is required")
+	if request.Email == "" {
+		failValidation(context, "Email is required")
 		return
 	}
 

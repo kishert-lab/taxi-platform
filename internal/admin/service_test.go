@@ -76,6 +76,32 @@ func TestResetPasswordGeneratesPasswordAndRevokesTokens(t *testing.T) {
 	}
 }
 
+func TestListTaxiParkAccountsNormalizesLimitAndSearch(t *testing.T) {
+	repository := &fakeRepository{}
+	service := NewService(repository, fakePasswordHasher{})
+
+	accounts, err := service.ListTaxiParkAccounts(context.Background(), ListTaxiParkAccountsCommand{
+		Limit:          5000,
+		Search:         "  city taxi  ",
+		IncludeDeleted: true,
+	})
+	if err != nil {
+		t.Fatalf("list taxi park accounts: %v", err)
+	}
+	if len(accounts) != 1 {
+		t.Fatalf("expected one account, got %d", len(accounts))
+	}
+	if repository.listFilter.Limit != 1000 {
+		t.Fatalf("expected capped limit 1000, got %d", repository.listFilter.Limit)
+	}
+	if repository.listFilter.Search != "city taxi" {
+		t.Fatalf("expected trimmed search, got %q", repository.listFilter.Search)
+	}
+	if !repository.listFilter.IncludeDeleted {
+		t.Fatal("expected include deleted flag to be forwarded")
+	}
+}
+
 type fakePasswordHasher struct{}
 
 func (fakePasswordHasher) HashPassword(password string) (string, error) {
@@ -85,6 +111,7 @@ func (fakePasswordHasher) HashPassword(password string) (string, error) {
 type fakeRepository struct {
 	createdRecord CreateTaxiParkOwnerRecord
 	resetRecord   ResetPasswordRecord
+	listFilter    ListTaxiParkAccountsFilter
 }
 
 func (repository *fakeRepository) CreateTaxiParkOwner(_ context.Context, record CreateTaxiParkOwnerRecord) (CreateTaxiParkOwnerResult, error) {
@@ -104,5 +131,23 @@ func (repository *fakeRepository) ResetPasswordByPhone(_ context.Context, record
 		Phone:             record.Phone,
 		Role:              record.Role,
 		RevokedTokenCount: 2,
+	}, nil
+}
+
+func (repository *fakeRepository) ListTaxiParkAccounts(_ context.Context, filter ListTaxiParkAccountsFilter) ([]TaxiParkAccount, error) {
+	repository.listFilter = filter
+	return []TaxiParkAccount{
+		{
+			TaxiParkID:         uuid.New(),
+			OwnerUserID:        uuid.New(),
+			CityID:             uuid.New(),
+			CityName:           "City",
+			Name:               "City Taxi",
+			ContactPhone:       "+79990000000",
+			ContactEmail:       "park@example.com",
+			OwnerPhone:         "+79990000000",
+			VerificationStatus: "verified",
+			IsOwnerActive:      true,
+		},
 	}, nil
 }

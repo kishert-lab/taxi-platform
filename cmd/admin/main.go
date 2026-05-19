@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"text/tabwriter"
 
 	"github.com/google/uuid"
 
@@ -33,6 +34,8 @@ func main() {
 	switch os.Args[1] {
 	case "create-taxi-park":
 		err = runCreateTaxiPark(ctx, os.Args[2:])
+	case "list-taxi-parks":
+		err = runListTaxiParks(ctx, os.Args[2:])
 	case "reset-password":
 		err = runResetPassword(ctx, os.Args[2:])
 	case "help", "-h", "--help":
@@ -45,6 +48,34 @@ func main() {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func runListTaxiParks(ctx context.Context, args []string) error {
+	flags := flag.NewFlagSet("list-taxi-parks", flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
+
+	var command adminapp.ListTaxiParkAccountsCommand
+	var output string
+	flags.IntVar(&command.Limit, "limit", 100, "maximum number of taxi park accounts to list")
+	flags.StringVar(&command.Search, "search", "", "optional search by park name, legal name, tax id, phone, or email")
+	flags.BoolVar(&command.IncludeDeleted, "include-deleted", false, "include soft-deleted taxi parks")
+	flags.StringVar(&output, "output", "text", "output format: text or json")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	service, closeService, err := newAdminService(ctx)
+	if err != nil {
+		return err
+	}
+	defer closeService()
+
+	accounts, err := service.ListTaxiParkAccounts(ctx, command)
+	if err != nil {
+		return err
+	}
+
+	return printTaxiParkAccounts(accounts, output)
 }
 
 func runCreateTaxiPark(ctx context.Context, args []string) error {
@@ -141,6 +172,56 @@ func newAdminService(ctx context.Context) (*adminapp.Service, func(), error) {
 	return adminapp.NewService(adminRepository, passwordHasher), postgresPool.Close, nil
 }
 
+func printTaxiParkAccounts(accounts []adminapp.TaxiParkAccount, output string) error {
+	if output == "json" {
+		return printJSON(struct {
+			Accounts []adminapp.TaxiParkAccount `json:"accounts"`
+			Count    int                        `json:"count"`
+		}{Accounts: accounts, Count: len(accounts)})
+	}
+	if output != "text" {
+		return fmt.Errorf("unsupported output format %q", output)
+	}
+
+	if len(accounts) == 0 {
+		fmt.Println("taxi park accounts not found")
+		return nil
+	}
+
+	writer := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(writer, "TAXI_PARK_ID\tNAME\tCITY\tOWNER_PHONE\tOWNER_EMAIL\tSTATUS\tCOMMISSION\tBALANCE_RUB\tOWNER_ACTIVE\tCREATED_AT")
+	for _, account := range accounts {
+		commissionPercent := account.CommissionPercent
+		if commissionPercent == "" {
+			commissionPercent = "-"
+		}
+		ownerEmail := account.OwnerEmail
+		if ownerEmail == "" {
+			ownerEmail = "-"
+		}
+		fmt.Fprintf(
+			writer,
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%t\t%s\n",
+			account.TaxiParkID,
+			account.Name,
+			account.CityName,
+			account.OwnerPhone,
+			ownerEmail,
+			account.VerificationStatus,
+			commissionPercent,
+			formatCents(account.BalanceCents),
+			account.IsOwnerActive,
+			account.CreatedAt.Format("2006-01-02 15:04:05"),
+		)
+	}
+
+	if err := writer.Flush(); err != nil {
+		return fmt.Errorf("flush taxi park accounts table: %w", err)
+	}
+
+	return nil
+}
+
 func printCreateTaxiParkResult(result adminapp.CreateTaxiParkResult, output string) error {
 	if output == "json" {
 		return printJSON(result)
@@ -181,6 +262,15 @@ func printResetPasswordResult(result adminapp.ResetPasswordCommandResult, output
 	return nil
 }
 
+func formatCents(value int64) string {
+	sign := ""
+	if value < 0 {
+		sign = "-"
+		value = -value
+	}
+	return fmt.Sprintf("%s%d.%02d", sign, value/100, value%100)
+}
+
 func printJSON(value any) error {
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
@@ -194,9 +284,11 @@ func printJSON(value any) error {
 func printUsage() {
 	fmt.Fprintln(os.Stderr, `usage:
   go run ./cmd/admin create-taxi-park --phone +79990000000 --email park@example.com --city-id <uuid> --name "City Taxi" --accept-documents
+  go run ./cmd/admin list-taxi-parks --limit 100
   go run ./cmd/admin reset-password --phone +79990000000 --role taxi_park
 
 commands:
   create-taxi-park  create taxi park owner user, taxi park profile, settings and consent audit
+  list-taxi-parks   list taxi park accounts with owner contacts and finance status
   reset-password    reset user password by phone and role, revoking active refresh tokens`)
 }

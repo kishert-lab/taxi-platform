@@ -3,6 +3,7 @@ package admin
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -16,6 +17,7 @@ type PasswordHasher interface {
 type Repository interface {
 	CreateTaxiParkOwner(ctx context.Context, record CreateTaxiParkOwnerRecord) (CreateTaxiParkOwnerResult, error)
 	ResetPasswordByPhone(ctx context.Context, record ResetPasswordRecord) (ResetPasswordResult, error)
+	ListTaxiParkAccounts(ctx context.Context, filter ListTaxiParkAccountsFilter) ([]TaxiParkAccount, error)
 }
 
 type CreateTaxiParkCommand struct {
@@ -91,4 +93,37 @@ type ResetPasswordCommandResult struct {
 	ResetPasswordResult
 	GeneratedPassword string `json:"generated_password,omitempty"`
 	PasswordGenerated bool   `json:"password_generated"`
+}
+
+type ListTaxiParkAccountsCommand struct {
+	Limit          int
+	Search         string
+	IncludeDeleted bool
+}
+
+type ListTaxiParkAccountsFilter struct {
+	Limit          int
+	Search         string
+	IncludeDeleted bool
+}
+
+type TaxiParkAccount struct {
+	TaxiParkID         uuid.UUID  `json:"taxi_park_id"`
+	OwnerUserID        uuid.UUID  `json:"owner_user_id"`
+	CityID             uuid.UUID  `json:"city_id"`
+	CityName           string     `json:"city_name"`
+	Name               string     `json:"name"`
+	LegalName          string     `json:"legal_name,omitempty"`
+	TaxID              string     `json:"tax_id,omitempty"`
+	ContactPhone       string     `json:"contact_phone"`
+	ContactEmail       string     `json:"contact_email"`
+	OwnerPhone         string     `json:"owner_phone"`
+	OwnerEmail         string     `json:"owner_email,omitempty"`
+	IsVerified         bool       `json:"is_verified"`
+	VerificationStatus string     `json:"verification_status"`
+	CommissionPercent  string     `json:"commission_percent,omitempty"`
+	BalanceCents       int64      `json:"balance_cents"`
+	IsOwnerActive      bool       `json:"is_owner_active"`
+	CreatedAt          time.Time  `json:"created_at"`
+	DeletedAt          *time.Time `json:"deleted_at,omitempty"`
 }

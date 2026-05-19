@@ -301,4 +301,11 @@ Reset password by phone and role:
 go run ./cmd/admin reset-password --phone +79990000000 --role taxi_park
 ```
 
+List taxi park accounts:
+
+```bash
+go run ./cmd/admin list-taxi-parks --limit 100
+go run ./cmd/admin list-taxi-parks --search "City Taxi" --output json
+```
+
 Both commands generate a secure password when `--password` is omitted. Password reset revokes active refresh tokens for the selected user role.

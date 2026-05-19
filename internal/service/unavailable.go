@@ -25,7 +25,15 @@ func (useCase *UnavailableUseCase) StartRegistration(context.Context, auth.Start
 	return auth.StartRegistrationResult{}, common.ErrNotImplemented
 }
 
-func (useCase *UnavailableUseCase) StartLogin(context.Context, dto.AuthLoginRequest) (dto.AuthCodeSentResponse, error) {
+func (useCase *UnavailableUseCase) ConfirmPhone(context.Context, auth.ConfirmPhoneCommand) error {
+	return common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) StartLogin(context.Context, dto.AuthLoginRequest) (dto.AuthTokenResponse, error) {
+	return dto.AuthTokenResponse{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) SendEmailCode(context.Context, dto.AuthEmailCodeRequest) (dto.AuthCodeSentResponse, error) {
 	return dto.AuthCodeSentResponse{}, common.ErrNotImplemented
 }
 
