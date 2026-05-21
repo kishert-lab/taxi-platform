@@ -26,6 +26,7 @@ type TaxiParkSettingsUseCase interface {
 	ListCars(ctx context.Context, ownerUserID uuid.UUID) ([]domain.Car, error)
 	CreateCar(ctx context.Context, ownerUserID uuid.UUID, request dto.TaxiParkCarRequest) (domain.Car, error)
 	UpdateCar(ctx context.Context, ownerUserID uuid.UUID, carID uuid.UUID, request dto.TaxiParkCarPatchRequest) (domain.Car, error)
+	VerifyCar(ctx context.Context, ownerUserID uuid.UUID, carID uuid.UUID) (domain.Car, error)
 }
 
 type TaxiParkSettingsHandler struct {
@@ -47,6 +48,7 @@ func (handler *TaxiParkSettingsHandler) RegisterRoutes(router gin.IRouter) {
 	taxiPark.GET("/cars", handler.ListCars)
 	taxiPark.POST("/cars", handler.CreateCar)
 	taxiPark.PATCH("/cars/:id", handler.UpdateCar)
+	taxiPark.POST("/cars/:id/verify", handler.VerifyCar)
 	taxiPark.GET("/tariffs", handler.ListTariffs)
 	taxiPark.POST("/tariffs", handler.CreateTariff)
 	taxiPark.PATCH("/tariffs/:id", handler.UpdateTariff)
@@ -328,6 +330,36 @@ func (handler *TaxiParkSettingsHandler) UpdateCar(context *gin.Context) {
 		return
 	}
 	car, err := handler.useCase.UpdateCar(context.Request.Context(), ownerUserID, carID, request)
+	if err != nil {
+		failByError(context, err)
+		return
+	}
+	response.OK(context, taxiParkCarResponse(car))
+}
+
+// VerifyCar godoc
+// @Summary Verify taxi park car
+// @Tags taxi-park-cars
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Car ID"
+// @Success 200 {object} TaxiParkCarSuccessResponse
+// @Failure 400 {object} response.Error
+// @Failure 401 {object} response.Error
+// @Failure 403 {object} response.Error
+// @Router /taxi-park/cars/{id}/verify [post]
+func (handler *TaxiParkSettingsHandler) VerifyCar(context *gin.Context) {
+	ownerUserID, ok := userIDFromContext(context)
+	if !ok {
+		failUnauthorized(context, "User id is missing")
+		return
+	}
+	carID, err := uuid.Parse(context.Param("id"))
+	if err != nil {
+		failValidation(context, "Invalid car id")
+		return
+	}
+	car, err := handler.useCase.VerifyCar(context.Request.Context(), ownerUserID, carID)
 	if err != nil {
 		failByError(context, err)
 		return

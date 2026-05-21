@@ -106,18 +106,18 @@ func (service *Service) CreateDriver(ctx context.Context, ownerUserID uuid.UUID,
 	}
 
 	result, err := service.repository.CreateDriverByOwnerUserID(ctx, ownerUserID, CreateDriverRecord{
-		Phone:                 phone,
-		Email:                 email,
-		FirstName:             strings.TrimSpace(request.FirstName),
-		LastName:              strings.TrimSpace(request.LastName),
-		BirthDate:             birthDate,
-		LicenseSeries:         strings.TrimSpace(request.LicenseSeries),
-		PasswordHash:          passwordHash,
-		LicenseNumber:         strings.TrimSpace(request.LicenseNumber),
-		LicenseCategory:       strings.TrimSpace(request.LicenseCategory),
-		LicenseIssuedAt:       licenseIssuedAt,
-		LicenseExpiresAt:      licenseExpiresAt,
-		DrivingExperienceFrom: drivingExperienceFrom,
+		Phone:                         phone,
+		Email:                         email,
+		FirstName:                     strings.TrimSpace(request.FirstName),
+		LastName:                      strings.TrimSpace(request.LastName),
+		BirthDate:                     birthDate,
+		LicenseSeries:                 strings.TrimSpace(request.LicenseSeries),
+		PasswordHash:                  passwordHash,
+		LicenseNumber:                 strings.TrimSpace(request.LicenseNumber),
+		LicenseCategory:               strings.TrimSpace(request.LicenseCategory),
+		LicenseIssuedAt:               licenseIssuedAt,
+		LicenseExpiresAt:              licenseExpiresAt,
+		DrivingExperienceFrom:         drivingExperienceFrom,
 		HasNoTaxiWorkRestrictions:     request.HasNoTaxiWorkRestrictions,
 		FederalLaw580Compliant:        request.FederalLaw580Compliant,
 		RegionalRequirementsCompliant: request.RegionalRequirementsCompliant,
@@ -125,9 +125,9 @@ func (service *Service) CreateDriver(ctx context.Context, ownerUserID uuid.UUID,
 		PretripControlRequired:        request.PretripControlRequired,
 		PretripControlPassed:          request.PretripControlPassed,
 		NoTransportBan:                request.NoTransportBan,
-		VerificationStatus:    verificationStatus,
-		TaxiParkComment:       strings.TrimSpace(request.TaxiParkComment),
-		AttachedCarID:         request.AttachedCarID,
+		VerificationStatus:            verificationStatus,
+		TaxiParkComment:               strings.TrimSpace(request.TaxiParkComment),
+		AttachedCarID:                 request.AttachedCarID,
 	})
 	if err != nil {
 		return CreateDriverResult{}, err
@@ -142,14 +142,14 @@ func (service *Service) CreateDriver(ctx context.Context, ownerUserID uuid.UUID,
 
 func (service *Service) UpdateDriver(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID, request dto.TaxiParkUpdateDriverRequest) (CreateDriverResult, error) {
 	record := UpdateDriverRecord{
-		FirstName:          trimStringPointer(request.FirstName),
-		LastName:           trimStringPointer(request.LastName),
-		LicenseSeries:      trimStringPointer(request.LicenseSeries),
-		LicenseNumber:      trimStringPointer(request.LicenseNumber),
-		LicenseCategory:    trimStringPointer(request.LicenseCategory),
-		TaxiParkComment:    trimStringPointer(request.TaxiParkComment),
-		VerificationStatus: request.VerificationStatus,
-		AttachedCarID:      request.AttachedCarID,
+		FirstName:                     trimStringPointer(request.FirstName),
+		LastName:                      trimStringPointer(request.LastName),
+		LicenseSeries:                 trimStringPointer(request.LicenseSeries),
+		LicenseNumber:                 trimStringPointer(request.LicenseNumber),
+		LicenseCategory:               trimStringPointer(request.LicenseCategory),
+		TaxiParkComment:               trimStringPointer(request.TaxiParkComment),
+		VerificationStatus:            request.VerificationStatus,
+		AttachedCarID:                 request.AttachedCarID,
 		HasNoTaxiWorkRestrictions:     request.HasNoTaxiWorkRestrictions,
 		FederalLaw580Compliant:        request.FederalLaw580Compliant,
 		RegionalRequirementsCompliant: request.RegionalRequirementsCompliant,
@@ -212,6 +212,13 @@ func (service *Service) UpdateCar(ctx context.Context, ownerUserID uuid.UUID, ca
 	return service.repository.UpdateCarByOwnerUserID(ctx, ownerUserID, carID, record)
 }
 
+func (service *Service) VerifyCar(ctx context.Context, ownerUserID uuid.UUID, carID uuid.UUID) (domain.Car, error) {
+	verifiedStatus := domain.ComplianceStatusVerified
+	return service.repository.UpdateCarByOwnerUserID(ctx, ownerUserID, carID, CarPatchRecord{
+		VerificationStatus: &verifiedStatus,
+	})
+}
+
 func generateTemporaryPassword(length int) (string, error) {
 	const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%*-_"
 	if length <= 0 {
@@ -235,11 +242,13 @@ func parseOptionalDate(value string) (*time.Time, error) {
 	if trimmed == "" {
 		return nil, nil
 	}
-	parsed, err := time.Parse(time.DateOnly, trimmed)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid date %q", ErrInvalidDriverCreateFields, value)
+	if parsed, err := time.Parse(time.DateOnly, trimmed); err == nil {
+		return &parsed, nil
 	}
-	return &parsed, nil
+	if parsed, err := time.Parse(time.RFC3339, trimmed); err == nil {
+		return &parsed, nil
+	}
+	return nil, fmt.Errorf("%w: invalid date %q", ErrInvalidDriverCreateFields, value)
 }
 
 func parseOptionalDatePointer(value *string) (*time.Time, error) {
@@ -285,72 +294,80 @@ func carRecordFromRequest(request dto.TaxiParkCarRequest) (CarRecord, error) {
 	if request.IsActive != nil {
 		isActive = *request.IsActive
 	}
+	ownerDetails := request.OwnerDetails
+	if strings.TrimSpace(ownerDetails) == "" {
+		ownerDetails = request.OwnerOrLegalBasis
+	}
 	return CarRecord{
-		PrimaryDriverID:         request.PrimaryDriverID,
-		AttachedDriverIDs:       request.AttachedDriverIDs,
-		Brand:                   strings.TrimSpace(request.Brand),
-		Model:                   strings.TrimSpace(request.Model),
-		Year:                    request.Year,
-		PlateNumber:             strings.TrimSpace(request.PlateNumber),
-		VIN:                     strings.TrimSpace(request.VIN),
-		STS:                     strings.TrimSpace(request.STS),
-		PTS:                     strings.TrimSpace(request.PTS),
-		Color:                   strings.TrimSpace(request.Color),
-		CarClass:                strings.TrimSpace(request.CarClass),
-		VerificationStatus:      status,
-		OwnerDetails:            strings.TrimSpace(request.OwnerDetails),
-		OSAGOExpiresAt:          osagoExpiresAt,
-		DiagnosticCardExpiresAt: diagnosticExpiresAt,
-		TaxiPermitNumber:        strings.TrimSpace(request.TaxiPermitNumber),
-		RegionalRegistryNumber:  strings.TrimSpace(request.RegionalRegistryNumber),
-		PermitRegion:            strings.TrimSpace(request.PermitRegion),
-		PermitIssuedAt:          permitIssuedAt,
-		PermitExpiresAt:         permitExpiresAt,
-		TaxiPermitVerified:      request.TaxiPermitVerified,
-		RegionalRegistryVerified:        request.RegionalRegistryVerified,
-		RegionalRequirementsCompliant:   request.RegionalRequirementsCompliant,
-		HasTaxiColorScheme:      request.HasTaxiColorScheme,
-		HasOrangeRoofLamp:       request.HasOrangeRoofLamp,
-		HasPassengerInfo:        request.HasPassengerInfo,
-		OSAGOVerified:           request.OSAGOVerified,
-		DiagnosticCardVerified:  request.DiagnosticCardVerified,
-		TechnicalStateVerified:  request.TechnicalStateVerified,
-		LocalizationCompliant:   request.LocalizationCompliant,
-		LegalUseBasisVerified:   request.LegalUseBasisVerified,
-		IsActive:                isActive,
+		PrimaryDriverID:               request.PrimaryDriverID,
+		AttachedDriverIDs:             request.AttachedDriverIDs,
+		Brand:                         strings.TrimSpace(request.Brand),
+		Model:                         strings.TrimSpace(request.Model),
+		Year:                          request.Year,
+		PlateNumber:                   strings.TrimSpace(request.PlateNumber),
+		VIN:                           strings.TrimSpace(request.VIN),
+		STS:                           strings.TrimSpace(request.STS),
+		PTS:                           strings.TrimSpace(request.PTS),
+		Color:                         strings.TrimSpace(request.Color),
+		CarClass:                      strings.TrimSpace(request.CarClass),
+		VerificationStatus:            status,
+		OwnerDetails:                  strings.TrimSpace(ownerDetails),
+		OSAGOExpiresAt:                osagoExpiresAt,
+		DiagnosticCardExpiresAt:       diagnosticExpiresAt,
+		TaxiPermitNumber:              strings.TrimSpace(request.TaxiPermitNumber),
+		RegionalRegistryNumber:        strings.TrimSpace(request.RegionalRegistryNumber),
+		PermitRegion:                  strings.TrimSpace(request.PermitRegion),
+		PermitIssuedAt:                permitIssuedAt,
+		PermitExpiresAt:               permitExpiresAt,
+		TaxiPermitVerified:            request.TaxiPermitVerified,
+		RegionalRegistryVerified:      request.RegionalRegistryVerified,
+		RegionalRequirementsCompliant: request.RegionalRequirementsCompliant,
+		HasTaxiColorScheme:            request.HasTaxiColorScheme,
+		HasOrangeRoofLamp:             request.HasOrangeRoofLamp,
+		HasPassengerInfo:              request.HasPassengerInfo,
+		OSAGOVerified:                 request.OSAGOVerified,
+		DiagnosticCardVerified:        request.DiagnosticCardVerified,
+		TechnicalStateVerified:        request.TechnicalStateVerified,
+		LocalizationCompliant:         request.LocalizationCompliant,
+		LegalUseBasisVerified:         request.LegalUseBasisVerified,
+		IsActive:                      isActive,
 	}, nil
 }
 
 func carPatchRecordFromRequest(request dto.TaxiParkCarPatchRequest) (CarPatchRecord, error) {
+	ownerDetails := request.OwnerDetails
+	if ownerDetails == nil {
+		ownerDetails = request.OwnerOrLegalBasis
+	}
 	record := CarPatchRecord{
-		PrimaryDriverID:        request.PrimaryDriverID,
-		AttachedDriverIDs:      request.AttachedDriverIDs,
-		Brand:                  trimStringPointer(request.Brand),
-		Model:                  trimStringPointer(request.Model),
-		Year:                   request.Year,
-		PlateNumber:            trimStringPointer(request.PlateNumber),
-		VIN:                    trimStringPointer(request.VIN),
-		STS:                    trimStringPointer(request.STS),
-		PTS:                    trimStringPointer(request.PTS),
-		Color:                  trimStringPointer(request.Color),
-		CarClass:               trimStringPointer(request.CarClass),
-		VerificationStatus:     request.VerificationStatus,
-		OwnerDetails:           trimStringPointer(request.OwnerDetails),
-		TaxiPermitNumber:       trimStringPointer(request.TaxiPermitNumber),
-		RegionalRegistryNumber: trimStringPointer(request.RegionalRegistryNumber),
-		PermitRegion:           trimStringPointer(request.PermitRegion),
-		TaxiPermitVerified:     request.TaxiPermitVerified,
-		RegionalRegistryVerified:       request.RegionalRegistryVerified,
-		RegionalRequirementsCompliant:  request.RegionalRequirementsCompliant,
-		HasTaxiColorScheme:     request.HasTaxiColorScheme,
-		HasOrangeRoofLamp:      request.HasOrangeRoofLamp,
-		HasPassengerInfo:       request.HasPassengerInfo,
-		OSAGOVerified:          request.OSAGOVerified,
-		DiagnosticCardVerified: request.DiagnosticCardVerified,
-		TechnicalStateVerified: request.TechnicalStateVerified,
-		LocalizationCompliant:  request.LocalizationCompliant,
-		LegalUseBasisVerified:  request.LegalUseBasisVerified,
-		IsActive:               request.IsActive,
+		PrimaryDriverID:               request.PrimaryDriverID,
+		AttachedDriverIDs:             request.AttachedDriverIDs,
+		Brand:                         trimStringPointer(request.Brand),
+		Model:                         trimStringPointer(request.Model),
+		Year:                          request.Year,
+		PlateNumber:                   trimStringPointer(request.PlateNumber),
+		VIN:                           trimStringPointer(request.VIN),
+		STS:                           trimStringPointer(request.STS),
+		PTS:                           trimStringPointer(request.PTS),
+		Color:                         trimStringPointer(request.Color),
+		CarClass:                      trimStringPointer(request.CarClass),
+		VerificationStatus:            request.VerificationStatus,
+		OwnerDetails:                  trimStringPointer(ownerDetails),
+		TaxiPermitNumber:              trimStringPointer(request.TaxiPermitNumber),
+		RegionalRegistryNumber:        trimStringPointer(request.RegionalRegistryNumber),
+		PermitRegion:                  trimStringPointer(request.PermitRegion),
+		TaxiPermitVerified:            request.TaxiPermitVerified,
+		RegionalRegistryVerified:      request.RegionalRegistryVerified,
+		RegionalRequirementsCompliant: request.RegionalRequirementsCompliant,
+		HasTaxiColorScheme:            request.HasTaxiColorScheme,
+		HasOrangeRoofLamp:             request.HasOrangeRoofLamp,
+		HasPassengerInfo:              request.HasPassengerInfo,
+		OSAGOVerified:                 request.OSAGOVerified,
+		DiagnosticCardVerified:        request.DiagnosticCardVerified,
+		TechnicalStateVerified:        request.TechnicalStateVerified,
+		LocalizationCompliant:         request.LocalizationCompliant,
+		LegalUseBasisVerified:         request.LegalUseBasisVerified,
+		IsActive:                      request.IsActive,
 	}
 	var err error
 	record.OSAGOExpiresAt, err = parseOptionalDatePointer(request.OSAGOExpiresAt)

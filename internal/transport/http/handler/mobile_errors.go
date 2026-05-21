@@ -58,6 +58,8 @@ func failByError(context *gin.Context, err error) {
 		response.Fail(context, http.StatusConflict, response.CodeOrderInvalidState, "Financial settlement already exists", nil)
 	case errors.Is(err, taxiparkapp.ErrTaxiParkNotFound):
 		response.Fail(context, http.StatusForbidden, response.CodeForbidden, "Taxi park account is not available", nil)
+	case errors.Is(err, taxiparkapp.ErrInvalidDriverCreateFields):
+		response.Fail(context, http.StatusBadRequest, response.CodeValidationError, "Invalid taxi park request", nil)
 	case errors.Is(err, taxiparkapp.ErrDriverPhoneAlreadyExists):
 		response.Fail(context, http.StatusConflict, response.CodeValidationError, "Driver with this phone already exists", nil)
 	case errors.Is(err, common.ErrNotImplemented):

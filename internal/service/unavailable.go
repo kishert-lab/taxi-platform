@@ -238,6 +238,10 @@ func (useCase *UnavailableUseCase) UpdateCar(context.Context, uuid.UUID, uuid.UU
 	return domain.Car{}, common.ErrNotImplemented
 }
 
+func (useCase *UnavailableUseCase) VerifyCar(context.Context, uuid.UUID, uuid.UUID) (domain.Car, error) {
+	return domain.Car{}, common.ErrNotImplemented
+}
+
 func (useCase *UnavailableUseCase) GetActiveDocument(context.Context, domain.LegalDocumentType, string) (domain.LegalDocument, error) {
 	return domain.LegalDocument{}, common.ErrNotImplemented
 }
