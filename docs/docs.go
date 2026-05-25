@@ -2538,6 +2538,57 @@ const docTemplate = `{
                 }
             }
         },
+        "/taxi-park/cars/{id}/verify": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "taxi-park-cars"
+                ],
+                "summary": "Verify taxi park car",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Car ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_handler.TaxiParkCarSuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/taxi-park/drivers": {
             "get": {
                 "security": [
@@ -4649,7 +4700,31 @@ const docTemplate = `{
                     "type": "string",
                     "example": "2027-01-31"
                 },
+                "diagnostic_card_verified": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "has_orange_roof_lamp": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "has_passenger_info": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "has_taxi_color_scheme": {
+                    "type": "boolean",
+                    "example": true
+                },
                 "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "legal_use_basis_verified": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "localization_compliant": {
                     "type": "boolean",
                     "example": true
                 },
@@ -4661,9 +4736,17 @@ const docTemplate = `{
                     "type": "string",
                     "example": "2027-01-31"
                 },
+                "osago_verified": {
+                    "type": "boolean",
+                    "example": true
+                },
                 "owner_details": {
                     "type": "string",
                     "example": "Leased by taxi park"
+                },
+                "owner_or_legal_basis": {
+                    "type": "string",
+                    "example": "Lease agreement"
                 },
                 "permit_expires_at": {
                     "type": "string",
@@ -4693,6 +4776,14 @@ const docTemplate = `{
                     "type": "string",
                     "example": "66-123456"
                 },
+                "regional_registry_verified": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "regional_requirements_compliant": {
+                    "type": "boolean",
+                    "example": true
+                },
                 "sts": {
                     "type": "string",
                     "example": "9911000000"
@@ -4700,6 +4791,14 @@ const docTemplate = `{
                 "taxi_permit_number": {
                     "type": "string",
                     "example": "TAXI-66-000001"
+                },
+                "taxi_permit_verified": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "technical_state_verified": {
+                    "type": "boolean",
+                    "example": true
                 },
                 "verification_status": {
                     "enum": [
@@ -4758,7 +4857,31 @@ const docTemplate = `{
                     "type": "string",
                     "example": "2027-01-31"
                 },
+                "diagnostic_card_verified": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "has_orange_roof_lamp": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "has_passenger_info": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "has_taxi_color_scheme": {
+                    "type": "boolean",
+                    "example": true
+                },
                 "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "legal_use_basis_verified": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "localization_compliant": {
                     "type": "boolean",
                     "example": true
                 },
@@ -4770,9 +4893,17 @@ const docTemplate = `{
                     "type": "string",
                     "example": "2027-01-31"
                 },
+                "osago_verified": {
+                    "type": "boolean",
+                    "example": true
+                },
                 "owner_details": {
                     "type": "string",
                     "example": "Owned by taxi park"
+                },
+                "owner_or_legal_basis": {
+                    "type": "string",
+                    "example": "Lease agreement"
                 },
                 "permit_expires_at": {
                     "type": "string",
@@ -4802,6 +4933,14 @@ const docTemplate = `{
                     "type": "string",
                     "example": "66-123456"
                 },
+                "regional_registry_verified": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "regional_requirements_compliant": {
+                    "type": "boolean",
+                    "example": true
+                },
                 "sts": {
                     "type": "string",
                     "example": "9911000000"
@@ -4809,6 +4948,14 @@ const docTemplate = `{
                 "taxi_permit_number": {
                     "type": "string",
                     "example": "TAXI-66-000001"
+                },
+                "taxi_permit_verified": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "technical_state_verified": {
+                    "type": "boolean",
+                    "example": true
                 },
                 "verification_status": {
                     "enum": [
@@ -4865,11 +5012,35 @@ const docTemplate = `{
                     "type": "string",
                     "example": "2027-01-31T00:00:00Z"
                 },
+                "diagnostic_card_verified": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "has_orange_roof_lamp": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "has_passenger_info": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "has_taxi_color_scheme": {
+                    "type": "boolean",
+                    "example": true
+                },
                 "id": {
                     "type": "string",
                     "example": "55555555-5555-5555-5555-555555555555"
                 },
                 "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "legal_use_basis_verified": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "localization_compliant": {
                     "type": "boolean",
                     "example": true
                 },
@@ -4880,6 +5051,10 @@ const docTemplate = `{
                 "osago_expires_at": {
                     "type": "string",
                     "example": "2027-01-31T00:00:00Z"
+                },
+                "osago_verified": {
+                    "type": "boolean",
+                    "example": true
                 },
                 "owner_details": {
                     "type": "string",
@@ -4913,6 +5088,14 @@ const docTemplate = `{
                     "type": "string",
                     "example": "66-123456"
                 },
+                "regional_registry_verified": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "regional_requirements_compliant": {
+                    "type": "boolean",
+                    "example": true
+                },
                 "sts": {
                     "type": "string",
                     "example": "9911000000"
@@ -4925,9 +5108,25 @@ const docTemplate = `{
                     "type": "string",
                     "example": "TAXI-66-000001"
                 },
+                "taxi_permit_verified": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "technical_state_verified": {
+                    "type": "boolean",
+                    "example": true
+                },
                 "updated_at": {
                     "type": "string",
                     "example": "2026-05-19T12:00:00Z"
+                },
+                "verification_checked_at": {
+                    "type": "string",
+                    "example": "2026-05-19T12:00:00Z"
+                },
+                "verification_checked_by": {
+                    "type": "string",
+                    "example": "11111111-1111-1111-1111-111111111111"
                 },
                 "verification_status": {
                     "allOf": [
@@ -4980,13 +5179,25 @@ const docTemplate = `{
                     "type": "string",
                     "example": "driver@example.com"
                 },
+                "federal_law_580_compliant": {
+                    "type": "boolean",
+                    "example": true
+                },
                 "first_name": {
                     "type": "string",
                     "example": "Ivan"
                 },
+                "has_no_taxi_work_restrictions": {
+                    "type": "boolean",
+                    "example": true
+                },
                 "last_name": {
                     "type": "string",
                     "example": "Petrov"
+                },
+                "license_category": {
+                    "type": "string",
+                    "example": "B"
                 },
                 "license_expires_at": {
                     "type": "string",
@@ -5004,6 +5215,14 @@ const docTemplate = `{
                     "type": "string",
                     "example": "77 01"
                 },
+                "medical_check_passed": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "no_transport_ban": {
+                    "type": "boolean",
+                    "example": true
+                },
                 "password": {
                     "type": "string",
                     "example": "temporary-password"
@@ -5011,6 +5230,18 @@ const docTemplate = `{
                 "phone": {
                     "type": "string",
                     "example": "+79990000001"
+                },
+                "pretrip_control_passed": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "pretrip_control_required": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "regional_requirements_compliant": {
+                    "type": "boolean",
+                    "example": true
                 },
                 "taxi_park_comment": {
                     "type": "string",
@@ -5053,13 +5284,25 @@ const docTemplate = `{
                     "type": "string",
                     "example": "driver@example.com"
                 },
+                "federal_law_580_compliant": {
+                    "type": "boolean",
+                    "example": true
+                },
                 "generated_password": {
                     "type": "string",
                     "example": "A1b2C3d4E5f6G7h8J9"
                 },
+                "has_no_taxi_work_restrictions": {
+                    "type": "boolean",
+                    "example": true
+                },
                 "is_verified": {
                     "type": "boolean",
                     "example": false
+                },
+                "license_category": {
+                    "type": "string",
+                    "example": "B"
                 },
                 "license_expires_at": {
                     "type": "string",
@@ -5077,9 +5320,17 @@ const docTemplate = `{
                     "type": "string",
                     "example": "77 01"
                 },
+                "medical_check_passed": {
+                    "type": "boolean",
+                    "example": true
+                },
                 "name": {
                     "type": "string",
                     "example": "Ivan Petrov"
+                },
+                "no_transport_ban": {
+                    "type": "boolean",
+                    "example": true
                 },
                 "password_generated": {
                     "type": "boolean",
@@ -5089,6 +5340,14 @@ const docTemplate = `{
                     "type": "string",
                     "example": "+79990000001"
                 },
+                "pretrip_control_passed": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "pretrip_control_required": {
+                    "type": "boolean",
+                    "example": true
+                },
                 "rating": {
                     "type": "number",
                     "example": 5
@@ -5096,6 +5355,10 @@ const docTemplate = `{
                 "ratings_count": {
                     "type": "integer",
                     "example": 0
+                },
+                "regional_requirements_compliant": {
+                    "type": "boolean",
+                    "example": true
                 },
                 "status": {
                     "allOf": [
@@ -5116,6 +5379,14 @@ const docTemplate = `{
                 "user_id": {
                     "type": "string",
                     "example": "33333333-3333-3333-3333-333333333333"
+                },
+                "verification_checked_at": {
+                    "type": "string",
+                    "example": "2026-05-19T12:00:00Z"
+                },
+                "verification_checked_by": {
+                    "type": "string",
+                    "example": "11111111-1111-1111-1111-111111111111"
                 },
                 "verification_status": {
                     "allOf": [
@@ -5591,13 +5862,25 @@ const docTemplate = `{
                     "type": "string",
                     "example": "2015-01-31"
                 },
+                "federal_law_580_compliant": {
+                    "type": "boolean",
+                    "example": true
+                },
                 "first_name": {
                     "type": "string",
                     "example": "Ivan"
                 },
+                "has_no_taxi_work_restrictions": {
+                    "type": "boolean",
+                    "example": true
+                },
                 "last_name": {
                     "type": "string",
                     "example": "Petrov"
+                },
+                "license_category": {
+                    "type": "string",
+                    "example": "B"
                 },
                 "license_expires_at": {
                     "type": "string",
@@ -5614,6 +5897,26 @@ const docTemplate = `{
                 "license_series": {
                     "type": "string",
                     "example": "77 01"
+                },
+                "medical_check_passed": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "no_transport_ban": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "pretrip_control_passed": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "pretrip_control_required": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "regional_requirements_compliant": {
+                    "type": "boolean",
+                    "example": true
                 },
                 "taxi_park_comment": {
                     "type": "string",
