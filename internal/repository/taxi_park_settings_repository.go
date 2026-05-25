@@ -203,22 +203,22 @@ func (repository *PostgresTaxiParkSettingsRepository) CreateDriverByOwnerUserID(
 	}
 
 	result := taxiparkapp.CreateDriverResult{
-		TaxiParkID:            taxiParkID,
-		Phone:                 record.Phone,
-		Email:                 record.Email,
-		FirstName:             record.FirstName,
-		LastName:              record.LastName,
-		Status:                domain.DriverStatusOffline,
-		VerificationStatus:    record.VerificationStatus,
-		Rating:                5,
-		RatingsCount:          0,
-		BirthDate:             record.BirthDate,
-		LicenseSeries:         record.LicenseSeries,
-		LicenseNumber:         record.LicenseNumber,
-		LicenseCategory:       record.LicenseCategory,
-		LicenseIssuedAt:       record.LicenseIssuedAt,
-		LicenseExpiresAt:      record.LicenseExpiresAt,
-		DrivingExperienceFrom: record.DrivingExperienceFrom,
+		TaxiParkID:                    taxiParkID,
+		Phone:                         record.Phone,
+		Email:                         record.Email,
+		FirstName:                     record.FirstName,
+		LastName:                      record.LastName,
+		Status:                        domain.DriverStatusOffline,
+		VerificationStatus:            record.VerificationStatus,
+		Rating:                        5,
+		RatingsCount:                  0,
+		BirthDate:                     record.BirthDate,
+		LicenseSeries:                 record.LicenseSeries,
+		LicenseNumber:                 record.LicenseNumber,
+		LicenseCategory:               record.LicenseCategory,
+		LicenseIssuedAt:               record.LicenseIssuedAt,
+		LicenseExpiresAt:              record.LicenseExpiresAt,
+		DrivingExperienceFrom:         record.DrivingExperienceFrom,
 		HasNoTaxiWorkRestrictions:     record.HasNoTaxiWorkRestrictions,
 		FederalLaw580Compliant:        record.FederalLaw580Compliant,
 		RegionalRequirementsCompliant: record.RegionalRequirementsCompliant,
@@ -226,8 +226,8 @@ func (repository *PostgresTaxiParkSettingsRepository) CreateDriverByOwnerUserID(
 		PretripControlRequired:        record.PretripControlRequired,
 		PretripControlPassed:          record.PretripControlPassed,
 		NoTransportBan:                record.NoTransportBan,
-		IsVerified:            false,
-		TaxiParkComment:       record.TaxiParkComment,
+		IsVerified:                    false,
+		TaxiParkComment:               record.TaxiParkComment,
 	}
 
 	if err := transaction.QueryRow(ctx, `
@@ -526,8 +526,8 @@ func (repository *PostgresTaxiParkSettingsRepository) CreateCarByOwnerUserID(ctx
 			localization_compliant, legal_use_basis_verified, verification_checked_at, verification_checked_by, is_active
 		)
 		VALUES ($1, $2, $3, $4, NULLIF($5, 0), $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-		        $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, CASE WHEN $12 = 'verified' THEN now() ELSE NULL END,
-		        CASE WHEN $12 = 'verified' THEN $33 ELSE NULL END, $34)
+		        $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, CASE WHEN $12 = 'verified' THEN now() ELSE NULL END,
+		        CASE WHEN $12 = 'verified' THEN $32 ELSE NULL END, $33)
 		RETURNING id, taxi_park_id, driver_id, brand, model, COALESCE(year, 0), plate_number, COALESCE(vin, ''),
 		          COALESCE(sts, ''), COALESCE(pts, ''), color, COALESCE(car_class, ''), verification_status,
 		          COALESCE(owner_details, ''), osago_expires_at, diagnostic_card_expires_at,
