@@ -202,10 +202,10 @@ func (repository *PostgresFinanceRepository) GetDriverBalance(ctx context.Contex
 
 func (repository *PostgresFinanceRepository) ListDriverTransactions(ctx context.Context, driverID uuid.UUID, limit int) ([]domain.FinancialTransaction, error) {
 	rows, err := repository.pool.Query(ctx, `
-		SELECT `+financialTransactionColumns+`
-		FROM financial_transactions
-		WHERE driver_id = $1
-		ORDER BY created_at DESC
+		SELECT `+financialTransactionColumns("ft")+`
+		FROM financial_transactions ft
+		WHERE ft.driver_id = $1
+		ORDER BY ft.created_at DESC
 		LIMIT $2`, driverID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("select driver financial transactions: %w", err)
@@ -351,11 +351,28 @@ func (repository *PostgresFinanceRepository) ListTaxiParkDrivers(ctx context.Con
 
 func (repository *PostgresFinanceRepository) ListTaxiParkOrders(ctx context.Context, ownerUserID uuid.UUID, limit int) ([]finance.TaxiParkOrder, error) {
 	const query = `
-		SELECT o.id, o.driver_id, o.status, COALESCE((o.final_price * 100)::bigint, 0), 'RUB'::text, o.created_at, o.completed_at
+		SELECT
+			o.id,
+			o.driver_id,
+			o.status,
+			COALESCE((COALESCE(o.final_price, o.estimated_price) * 100)::bigint, 0),
+			'RUB'::text,
+			o.created_at,
+			o.completed_at
 		FROM taxi_parks tp
-		JOIN drivers d ON d.taxi_park_id = tp.id
-		JOIN orders o ON o.driver_id = d.id
-		WHERE tp.owner_user_id = $1 AND tp.deleted_at IS NULL AND o.deleted_at IS NULL
+		JOIN orders o ON (
+			o.metadata->>'taxi_park_id' = tp.id::text
+			OR EXISTS (
+				SELECT 1
+				FROM drivers d
+				WHERE d.id = o.driver_id
+				  AND d.taxi_park_id = tp.id
+				  AND d.deleted_at IS NULL
+			)
+		)
+		WHERE tp.owner_user_id = $1
+		  AND tp.deleted_at IS NULL
+		  AND o.deleted_at IS NULL
 		ORDER BY o.created_at DESC
 		LIMIT $2`
 
@@ -368,10 +385,15 @@ func (repository *PostgresFinanceRepository) ListTaxiParkOrders(ctx context.Cont
 	orders := make([]finance.TaxiParkOrder, 0, limit)
 	for rows.Next() {
 		var order finance.TaxiParkOrder
+		var driverID pgtype.UUID
 		var currency string
 		var completedAt pgtype.Timestamptz
-		if err := rows.Scan(&order.ID, &order.DriverID, &order.Status, &order.GrossAmount.Amount, &currency, &order.CreatedAt, &completedAt); err != nil {
+		if err := rows.Scan(&order.ID, &driverID, &order.Status, &order.GrossAmount.Amount, &currency, &order.CreatedAt, &completedAt); err != nil {
 			return nil, fmt.Errorf("scan taxi park order: %w", err)
+		}
+		if driverID.Valid {
+			value := uuid.UUID(driverID.Bytes)
+			order.DriverID = &value
 		}
 		order.GrossAmount.Currency = currency
 		if completedAt.Valid {
@@ -387,7 +409,7 @@ func (repository *PostgresFinanceRepository) ListTaxiParkOrders(ctx context.Cont
 
 func (repository *PostgresFinanceRepository) ListTaxiParkTransactions(ctx context.Context, ownerUserID uuid.UUID, limit int) ([]domain.FinancialTransaction, error) {
 	rows, err := repository.pool.Query(ctx, `
-		SELECT `+financialTransactionColumns+`
+		SELECT `+financialTransactionColumns("ft")+`
 		FROM financial_transactions ft
 		JOIN taxi_parks tp ON tp.id = ft.taxi_park_id
 		WHERE tp.owner_user_id = $1
@@ -511,18 +533,20 @@ func insertFinanceAudit(ctx context.Context, tx pgx.Tx, transactionID uuid.UUID,
 	return nil
 }
 
-const financialTransactionColumns = `
-	id,
-	order_id,
-	driver_id,
-	taxi_park_id,
-	transaction_type,
-	gross_amount_cents,
-	(commission_percent * 100)::integer,
-	commission_amount_cents,
-	net_amount_cents,
-	currency,
-	created_at`
+func financialTransactionColumns(alias string) string {
+	return fmt.Sprintf(`
+	%s.id,
+	%s.order_id,
+	%s.driver_id,
+	%s.taxi_park_id,
+	%s.transaction_type,
+	%s.gross_amount_cents,
+	(%s.commission_percent * 100)::integer,
+	%s.commission_amount_cents,
+	%s.net_amount_cents,
+	%s.currency,
+	%s.created_at`, alias, alias, alias, alias, alias, alias, alias, alias, alias, alias, alias)
+}
 
 func pgDateTimePtr(value pgtype.Date) *time.Time {
 	if !value.Valid {

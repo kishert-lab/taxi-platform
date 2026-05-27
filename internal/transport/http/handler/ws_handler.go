@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	goredis "github.com/redis/go-redis/v9"
 
 	"github.com/kishert-lab/taxi-platform/internal/domain"
 	wsmsg "github.com/kishert-lab/taxi-platform/internal/ws"
@@ -28,12 +30,18 @@ type WebSocketAuthUseCase interface {
 
 type WebSocketHandler struct {
 	authUseCase WebSocketAuthUseCase
+	redisClient *goredis.Client
 	upgrader    websocket.Upgrader
 }
 
-func NewWebSocketHandler(authUseCase WebSocketAuthUseCase, allowedOrigins []string) *WebSocketHandler {
+func NewWebSocketHandler(authUseCase WebSocketAuthUseCase, allowedOrigins []string, redisClients ...*goredis.Client) *WebSocketHandler {
+	var redisClient *goredis.Client
+	if len(redisClients) > 0 {
+		redisClient = redisClients[0]
+	}
 	return &WebSocketHandler{
 		authUseCase: authUseCase,
+		redisClient: redisClient,
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
@@ -100,10 +108,10 @@ func (handler *WebSocketHandler) Connect(context *gin.Context) {
 		return
 	}
 
-	handler.keepConnectionAlive(context.Request.Context(), connection)
+	handler.keepConnectionAlive(context.Request.Context(), connection, userID)
 }
 
-func (handler *WebSocketHandler) keepConnectionAlive(ctx context.Context, connection *websocket.Conn) {
+func (handler *WebSocketHandler) keepConnectionAlive(ctx context.Context, connection *websocket.Conn, userID uuid.UUID) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -117,12 +125,27 @@ func (handler *WebSocketHandler) keepConnectionAlive(ctx context.Context, connec
 	ticker := time.NewTicker(websocketPingPeriod)
 	defer ticker.Stop()
 
+	var messages <-chan *goredis.Message
+	var subscription *goredis.PubSub
+	if handler.redisClient != nil && userID != uuid.Nil {
+		subscription = handler.redisClient.Subscribe(ctx, webSocketUserChannel(userID))
+		defer subscription.Close()
+		messages = subscription.Channel()
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-done:
 			return
+		case message, ok := <-messages:
+			if !ok || message == nil {
+				return
+			}
+			if err := writeWebSocketText(connection, message.Payload); err != nil {
+				return
+			}
 		case <-ticker.C:
 			if err := writeWebSocketPing(connection); err != nil {
 				return
@@ -145,6 +168,13 @@ func writeWebSocketPing(connection *websocket.Conn) error {
 	return connection.WriteMessage(websocket.PingMessage, nil)
 }
 
+func writeWebSocketText(connection *websocket.Conn, payload string) error {
+	if err := connection.SetWriteDeadline(time.Now().Add(websocketWriteTimeout)); err != nil {
+		return err
+	}
+	return connection.WriteMessage(websocket.TextMessage, []byte(payload))
+}
+
 func websocketToken(context *gin.Context) string {
 	authorizationHeader := context.GetHeader("Authorization")
 	if strings.HasPrefix(strings.ToLower(authorizationHeader), "bearer ") {
@@ -152,6 +182,10 @@ func websocketToken(context *gin.Context) string {
 	}
 
 	return strings.TrimSpace(context.Query("token"))
+}
+
+func webSocketUserChannel(userID uuid.UUID) string {
+	return fmt.Sprintf("ws:user:%s", userID)
 }
 
 func websocketOriginChecker(allowedOrigins []string) func(request *http.Request) bool {

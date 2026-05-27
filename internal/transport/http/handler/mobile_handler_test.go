@@ -331,6 +331,10 @@ func (useCase *fakeDriverMobileUseCase) GetDriverProfile(_ context.Context, driv
 	return dto.DriverProfileResponse{ID: driverID, Status: domain.DriverStatusOnline}, nil
 }
 
+func (useCase *fakeDriverMobileUseCase) ListDriverCars(context.Context, uuid.UUID) (dto.TaxiParkCarsResponse, error) {
+	return dto.TaxiParkCarsResponse{}, nil
+}
+
 func (useCase *fakeDriverMobileUseCase) UpdateDriverProfile(_ context.Context, driverID uuid.UUID, _ dto.DriverProfilePatchRequest) (dto.DriverProfileResponse, error) {
 	return dto.DriverProfileResponse{ID: driverID, Status: domain.DriverStatusOnline}, nil
 }

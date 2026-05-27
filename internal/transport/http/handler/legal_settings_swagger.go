@@ -40,6 +40,11 @@ type TaxiParkCarsSuccessResponse struct {
 	Meta response.Meta            `json:"meta"`
 }
 
+type TaxiParkDriverLocationsSuccessResponse struct {
+	Data dto.TaxiParkDriverLocationsResponse `json:"data"`
+	Meta response.Meta                       `json:"meta"`
+}
+
 type TaxiParkDocumentsSuccessResponse struct {
 	Data dto.TaxiParkDocumentsResponse `json:"data"`
 	Meta response.Meta                 `json:"meta"`

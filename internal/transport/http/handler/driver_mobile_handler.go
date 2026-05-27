@@ -14,6 +14,7 @@ import (
 
 type DriverMobileUseCase interface {
 	GetDriverProfile(ctx context.Context, driverID uuid.UUID) (dto.DriverProfileResponse, error)
+	ListDriverCars(ctx context.Context, driverID uuid.UUID) (dto.TaxiParkCarsResponse, error)
 	UpdateDriverProfile(ctx context.Context, driverID uuid.UUID, request dto.DriverProfilePatchRequest) (dto.DriverProfileResponse, error)
 	UploadDriverProfilePhoto(ctx context.Context, driverID uuid.UUID, request dto.ProfilePhotoUploadRequest) (dto.ProfilePhotoUploadResponse, error)
 	MarkDriverOnline(ctx context.Context, driverID uuid.UUID) (dto.DriverProfileResponse, error)
@@ -41,6 +42,7 @@ func NewDriverMobileHandler(useCase DriverMobileUseCase) *DriverMobileHandler {
 func (handler *DriverMobileHandler) RegisterRoutes(router gin.IRouter) {
 	driver := router.Group("/driver", middleware.RequireRole(domain.UserRoleDriver))
 	driver.GET("/profile", handler.GetProfile)
+	driver.GET("/cars", handler.ListCars)
 	driver.PATCH("/profile", handler.UpdateProfile)
 	driver.POST("/profile/photo", handler.UploadProfilePhoto)
 	driver.POST("/online", handler.Online)
@@ -74,6 +76,31 @@ func (handler *DriverMobileHandler) GetProfile(context *gin.Context) {
 	}
 
 	result, err := handler.useCase.GetDriverProfile(context.Request.Context(), driverID)
+	if err != nil {
+		failByError(context, err)
+		return
+	}
+
+	response.OK(context, result)
+}
+
+// ListCars godoc
+// @Summary List cars attached to current driver
+// @Tags driver
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} TaxiParkCarsSuccessResponse
+// @Failure 401 {object} response.Error
+// @Failure 403 {object} response.Error
+// @Router /driver/cars [get]
+func (handler *DriverMobileHandler) ListCars(context *gin.Context) {
+	driverID, ok := userIDFromContext(context)
+	if !ok {
+		failUnauthorized(context, "User id is missing")
+		return
+	}
+
+	result, err := handler.useCase.ListDriverCars(context.Request.Context(), driverID)
 	if err != nil {
 		failByError(context, err)
 		return

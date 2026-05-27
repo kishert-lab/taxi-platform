@@ -73,7 +73,7 @@ type TaxiParkDriver struct {
 
 type TaxiParkOrder struct {
 	ID          uuid.UUID
-	DriverID    uuid.UUID
+	DriverID    *uuid.UUID
 	Status      domain.OrderStatus
 	GrossAmount domain.Money
 	CreatedAt   time.Time

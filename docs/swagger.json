@@ -693,6 +693,42 @@
                 }
             }
         },
+        "/driver/cars": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "driver"
+                ],
+                "summary": "List cars attached to current driver",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_handler.TaxiParkCarsSuccessResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/driver/location": {
             "post": {
                 "security": [
@@ -2802,6 +2838,57 @@
                 }
             }
         },
+        "/taxi-park/drivers/locations": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns current driver coordinates, stale flag, status, verification status, and assigned car summary for taxi park dashboard maps.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "taxi-park-drivers"
+                ],
+                "summary": "List taxi park driver locations for dashboard map",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Location max age before stale=true, default 30",
+                        "name": "max_age_seconds",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_handler.TaxiParkDriverLocationsSuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/taxi-park/drivers/{id}": {
             "delete": {
                 "security": [
@@ -2995,6 +3082,63 @@
                 }
             }
         },
+        "/taxi-park/drivers/{id}/cars": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "taxi-park-drivers"
+                ],
+                "summary": "List cars attached to taxi park driver",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Driver ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_handler.TaxiParkCarsSuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/taxi-park/drivers/{id}/cars/{car_id}": {
             "post": {
                 "security": [
@@ -3071,6 +3215,71 @@
                     "taxi-park-cars"
                 ],
                 "summary": "Detach taxi park car from driver",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Driver ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Car ID",
+                        "name": "car_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Success"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/taxi-park/drivers/{id}/cars/{car_id}/assign": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Sets the car primary driver to the selected driver and keeps the driver-car assignment link. This endpoint can reassign a car that already has another primary driver.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "taxi-park-cars"
+                ],
+                "summary": "Assign taxi park car as primary driver car",
                 "parameters": [
                     {
                         "type": "string",
@@ -3341,6 +3550,67 @@
                     },
                     "403": {
                         "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates an order from taxi park or dispatcher workspace. If passenger_phone is omitted, the order is linked to the taxi park owner account as a fallback.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "taxi-park-orders"
+                ],
+                "summary": "Create taxi park order",
+                "parameters": [
+                    {
+                        "description": "Taxi park order",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkCreateOrderRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_handler.OrderSuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
                         }
@@ -5815,6 +6085,60 @@
                 }
             }
         },
+        "github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkCreateOrderRequest": {
+            "type": "object",
+            "required": [
+                "tariff_id"
+            ],
+            "properties": {
+                "comment": {
+                    "type": "string",
+                    "example": "Entrance 2"
+                },
+                "destination_address": {
+                    "type": "string",
+                    "example": "Lenina 50"
+                },
+                "destination_location": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkOrderCoordinatesRequest"
+                },
+                "passenger_name": {
+                    "type": "string",
+                    "example": "Irina"
+                },
+                "passenger_phone": {
+                    "type": "string",
+                    "example": "+79990000000"
+                },
+                "payment_method": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.PaymentMethod"
+                        }
+                    ],
+                    "example": "cash"
+                },
+                "payment_type": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.PaymentMethod"
+                        }
+                    ],
+                    "example": "cash"
+                },
+                "pickup_address": {
+                    "type": "string",
+                    "example": "Mira 8"
+                },
+                "pickup_location": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkOrderCoordinatesRequest"
+                },
+                "tariff_id": {
+                    "type": "string",
+                    "example": "4e99f0be-5ea1-4353-8307-d1555f588825"
+                }
+            }
+        },
         "github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkDocumentResponse": {
             "type": "object",
             "properties": {
@@ -5871,6 +6195,129 @@
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkDocumentResponse"
+                    }
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkDriverLocationCarResponse": {
+            "type": "object",
+            "properties": {
+                "brand": {
+                    "type": "string",
+                    "example": "Lada"
+                },
+                "car_class": {
+                    "type": "string",
+                    "example": "economy"
+                },
+                "color": {
+                    "type": "string",
+                    "example": "White"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "55555555-5555-5555-5555-555555555555"
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "model": {
+                    "type": "string",
+                    "example": "Vesta"
+                },
+                "plate_number": {
+                    "type": "string",
+                    "example": "A001AA196"
+                },
+                "verification_status": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.VerificationLifecycleStatus"
+                        }
+                    ],
+                    "example": "verified"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkDriverLocationResponse": {
+            "type": "object",
+            "properties": {
+                "accuracy_meters": {
+                    "type": "number",
+                    "example": 12.5
+                },
+                "car": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkDriverLocationCarResponse"
+                },
+                "driver_id": {
+                    "type": "string",
+                    "example": "22222222-2222-2222-2222-222222222222"
+                },
+                "heading": {
+                    "type": "integer",
+                    "example": 90
+                },
+                "is_stale": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "location": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.CoordinatesResponse"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Ivan Petrov"
+                },
+                "phone": {
+                    "type": "string",
+                    "example": "+79990000001"
+                },
+                "rating": {
+                    "type": "number",
+                    "example": 4.95
+                },
+                "recorded_at": {
+                    "type": "string",
+                    "example": "2026-05-12T12:00:00Z"
+                },
+                "speed_mps": {
+                    "type": "number",
+                    "example": 8.3
+                },
+                "status": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.DriverStatus"
+                        }
+                    ],
+                    "example": "online"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-05-12T12:00:00Z"
+                },
+                "user_id": {
+                    "type": "string",
+                    "example": "66666666-6666-6666-6666-666666666666"
+                },
+                "verification_status": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_domain.VerificationLifecycleStatus"
+                        }
+                    ],
+                    "example": "verified"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkDriverLocationsResponse": {
+            "type": "object",
+            "properties": {
+                "drivers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkDriverLocationResponse"
                     }
                 }
             }
@@ -6049,6 +6496,19 @@
                     "items": {
                         "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkDriverResponse"
                     }
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkOrderCoordinatesRequest": {
+            "type": "object",
+            "properties": {
+                "latitude": {
+                    "type": "number",
+                    "example": 56.835128
+                },
+                "longitude": {
+                    "type": "number",
+                    "example": 60.598698
                 }
             }
         },
@@ -6765,6 +7225,17 @@
                 }
             }
         },
+        "internal_transport_http_handler.OrderSuccessResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.OrderResponse"
+                },
+                "meta": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta"
+                }
+            }
+        },
         "internal_transport_http_handler.PassengerOrderHistorySuccessResponse": {
             "type": "object",
             "properties": {
@@ -6858,6 +7329,17 @@
             "properties": {
                 "data": {
                     "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkDocumentsResponse"
+                },
+                "meta": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta"
+                }
+            }
+        },
+        "internal_transport_http_handler.TaxiParkDriverLocationsSuccessResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkDriverLocationsResponse"
                 },
                 "meta": {
                     "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta"

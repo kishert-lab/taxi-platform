@@ -2,6 +2,8 @@ package handler
 
 import (
 	"context"
+	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -21,18 +23,21 @@ type TaxiParkSettingsUseCase interface {
 	UpdateTariff(ctx context.Context, ownerUserID uuid.UUID, tariffID uuid.UUID, request dto.TaxiParkTariffPatchRequest) (domain.TaxiParkTariff, error)
 	CreateOrder(ctx context.Context, ownerUserID uuid.UUID, request dto.TaxiParkCreateOrderRequest) (domain.Order, error)
 	CreateDriver(ctx context.Context, ownerUserID uuid.UUID, request dto.TaxiParkCreateDriverRequest) (taxiparkapp.CreateDriverResult, error)
+	ListDriverLocations(ctx context.Context, ownerUserID uuid.UUID, maxAge time.Duration) ([]taxiparkapp.DriverLocation, error)
 	UpdateDriver(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID, request dto.TaxiParkUpdateDriverRequest) (taxiparkapp.CreateDriverResult, error)
 	UpdateDriverPassword(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID, request dto.TaxiParkDriverPasswordRequest) error
 	BlockDriver(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID, reason string) error
 	UnblockDriver(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID) error
 	ArchiveDriver(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID) error
 	ListDriverDocuments(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID) ([]domain.TaxiParkDocument, error)
+	ListTaxiParkDriverCars(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID) ([]domain.Car, error)
 	ListCars(ctx context.Context, ownerUserID uuid.UUID) ([]domain.Car, error)
 	CreateCar(ctx context.Context, ownerUserID uuid.UUID, request dto.TaxiParkCarRequest) (domain.Car, error)
 	UpdateCar(ctx context.Context, ownerUserID uuid.UUID, carID uuid.UUID, request dto.TaxiParkCarPatchRequest) (domain.Car, error)
 	VerifyCar(ctx context.Context, ownerUserID uuid.UUID, carID uuid.UUID) (domain.Car, error)
 	ArchiveCar(ctx context.Context, ownerUserID uuid.UUID, carID uuid.UUID) error
 	AttachCarToDriver(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID, carID uuid.UUID) error
+	AssignCarToDriver(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID, carID uuid.UUID) error
 	DetachCarFromDriver(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID, carID uuid.UUID) error
 	ListCarDocuments(ctx context.Context, ownerUserID uuid.UUID, carID uuid.UUID) ([]domain.TaxiParkDocument, error)
 }
@@ -51,13 +56,17 @@ func (handler *TaxiParkSettingsHandler) RegisterRoutes(router gin.IRouter) {
 	taxiPark.PATCH("/settings", handler.UpdateSettings)
 	taxiPark.POST("/orders", handler.CreateOrder)
 	taxiPark.POST("/drivers", handler.CreateDriver)
+	taxiPark.GET("/drivers/locations", handler.ListDriverLocations)
 	taxiPark.PATCH("/drivers/:id", handler.UpdateDriver)
 	taxiPark.POST("/drivers/:id/password", handler.UpdateDriverPassword)
 	taxiPark.POST("/drivers/:id/block", handler.BlockDriver)
 	taxiPark.POST("/drivers/:id/unblock", handler.UnblockDriver)
+	taxiPark.POST("/drivers/:id/archive", handler.ArchiveDriver)
 	taxiPark.DELETE("/drivers/:id", handler.ArchiveDriver)
 	taxiPark.GET("/drivers/:id/documents", handler.ListDriverDocuments)
+	taxiPark.GET("/drivers/:id/cars", handler.ListDriverCars)
 	taxiPark.POST("/drivers/:id/cars/:car_id", handler.AttachCarToDriver)
+	taxiPark.POST("/drivers/:id/cars/:car_id/assign", handler.AssignCarToDriver)
 	taxiPark.DELETE("/drivers/:id/cars/:car_id", handler.DetachCarFromDriver)
 	taxiPark.POST("/drivers/:id/cars/:car_id/attach", handler.AttachCarToDriver)
 	taxiPark.DELETE("/drivers/:id/cars/:car_id/detach", handler.DetachCarFromDriver)
@@ -192,6 +201,37 @@ func (handler *TaxiParkSettingsHandler) CreateDriver(context *gin.Context) {
 		return
 	}
 	response.Created(context, taxiParkCreateDriverResponse(driver))
+}
+
+// ListDriverLocations godoc
+// @Summary List taxi park driver locations for dashboard map
+// @Description Returns current driver coordinates, stale flag, status, verification status, and assigned car summary for taxi park dashboard maps.
+// @Tags taxi-park-drivers
+// @Produce json
+// @Security BearerAuth
+// @Param max_age_seconds query int false "Location max age before stale=true, default 30"
+// @Success 200 {object} TaxiParkDriverLocationsSuccessResponse
+// @Failure 400 {object} response.Error
+// @Failure 401 {object} response.Error
+// @Failure 403 {object} response.Error
+// @Router /taxi-park/drivers/locations [get]
+func (handler *TaxiParkSettingsHandler) ListDriverLocations(context *gin.Context) {
+	ownerUserID, ok := userIDFromContext(context)
+	if !ok {
+		failUnauthorized(context, "User id is missing")
+		return
+	}
+
+	maxAge, ok := driverLocationMaxAgeFromQuery(context)
+	if !ok {
+		return
+	}
+	locations, err := handler.useCase.ListDriverLocations(context.Request.Context(), ownerUserID, maxAge)
+	if err != nil {
+		failByError(context, err)
+		return
+	}
+	response.OK(context, taxiParkDriverLocationsResponse(locations))
 }
 
 // UpdateDriver godoc
@@ -397,6 +437,37 @@ func (handler *TaxiParkSettingsHandler) ListDriverDocuments(context *gin.Context
 	response.OK(context, taxiParkDocumentsResponse(documents))
 }
 
+// ListDriverCars godoc
+// @Summary List cars attached to taxi park driver
+// @Tags taxi-park-drivers
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Driver ID"
+// @Success 200 {object} TaxiParkCarsSuccessResponse
+// @Failure 400 {object} response.Error
+// @Failure 401 {object} response.Error
+// @Failure 403 {object} response.Error
+// @Failure 404 {object} response.Error
+// @Router /taxi-park/drivers/{id}/cars [get]
+func (handler *TaxiParkSettingsHandler) ListDriverCars(context *gin.Context) {
+	ownerUserID, ok := userIDFromContext(context)
+	if !ok {
+		failUnauthorized(context, "User id is missing")
+		return
+	}
+	driverID, err := uuid.Parse(context.Param("id"))
+	if err != nil {
+		failValidation(context, "Invalid driver id")
+		return
+	}
+	cars, err := handler.useCase.ListTaxiParkDriverCars(context.Request.Context(), ownerUserID, driverID)
+	if err != nil {
+		failByError(context, err)
+		return
+	}
+	response.OK(context, taxiParkCarsResponse(cars))
+}
+
 // ListCars godoc
 // @Summary List taxi park cars
 // @Tags taxi-park-cars
@@ -570,7 +641,33 @@ func (handler *TaxiParkSettingsHandler) AttachCarToDriver(context *gin.Context) 
 		failByError(context, err)
 		return
 	}
-	response.OK(context, gin.H{"attached": true})
+	response.OK(context, gin.H{"attached": true, "assigned": true})
+}
+
+// AssignCarToDriver godoc
+// @Summary Assign taxi park car as primary driver car
+// @Description Sets the car primary driver to the selected driver and keeps the driver-car assignment link. This endpoint can reassign a car that already has another primary driver.
+// @Tags taxi-park-cars
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Driver ID"
+// @Param car_id path string true "Car ID"
+// @Success 200 {object} response.Success
+// @Failure 400 {object} response.Error
+// @Failure 401 {object} response.Error
+// @Failure 403 {object} response.Error
+// @Failure 404 {object} response.Error
+// @Router /taxi-park/drivers/{id}/cars/{car_id}/assign [post]
+func (handler *TaxiParkSettingsHandler) AssignCarToDriver(context *gin.Context) {
+	ownerUserID, driverID, carID, ok := taxiParkDriverCarIDs(context)
+	if !ok {
+		return
+	}
+	if err := handler.useCase.AssignCarToDriver(context.Request.Context(), ownerUserID, driverID, carID); err != nil {
+		failByError(context, err)
+		return
+	}
+	response.OK(context, gin.H{"assigned": true})
 }
 
 // DetachCarFromDriver godoc
@@ -782,6 +879,57 @@ func taxiParkCreateDriverResponse(driver taxiparkapp.CreateDriverResult) dto.Tax
 		GeneratedPassword:     driver.GeneratedPassword,
 		PasswordGenerated:     driver.PasswordGenerated,
 	}
+}
+
+func driverLocationMaxAgeFromQuery(context *gin.Context) (time.Duration, bool) {
+	value := context.DefaultQuery("max_age_seconds", "30")
+	seconds, err := strconv.Atoi(value)
+	if err != nil || seconds <= 0 {
+		failValidation(context, "Invalid max_age_seconds")
+		return 0, false
+	}
+	return time.Duration(seconds) * time.Second, true
+}
+
+func taxiParkDriverLocationsResponse(locations []taxiparkapp.DriverLocation) dto.TaxiParkDriverLocationsResponse {
+	responseBody := dto.TaxiParkDriverLocationsResponse{Drivers: make([]dto.TaxiParkDriverLocationResponse, 0, len(locations))}
+	for _, location := range locations {
+		responseLocation := dto.TaxiParkDriverLocationResponse{
+			DriverID:           location.DriverID,
+			UserID:             location.UserID,
+			Name:               location.Name,
+			Phone:              location.Phone,
+			Status:             location.Status,
+			VerificationStatus: location.VerificationStatus,
+			Rating:             location.Rating,
+			Heading:            location.Heading,
+			SpeedMPS:           location.SpeedMPS,
+			AccuracyMeters:     location.AccuracyMeters,
+			RecordedAt:         location.RecordedAt,
+			UpdatedAt:          location.UpdatedAt,
+			IsStale:            location.IsStale,
+		}
+		if location.Location != nil {
+			responseLocation.Location = &dto.CoordinatesResponse{
+				Latitude:  location.Location.Latitude,
+				Longitude: location.Location.Longitude,
+			}
+		}
+		if location.Car != nil {
+			responseLocation.Car = &dto.TaxiParkDriverLocationCarResponse{
+				ID:                 location.Car.ID,
+				Brand:              location.Car.Brand,
+				Model:              location.Car.Model,
+				PlateNumber:        location.Car.PlateNumber,
+				Color:              location.Car.Color,
+				CarClass:           location.Car.CarClass,
+				VerificationStatus: location.Car.VerificationStatus,
+				IsActive:           location.Car.IsActive,
+			}
+		}
+		responseBody.Drivers = append(responseBody.Drivers, responseLocation)
+	}
+	return responseBody
 }
 
 func taxiParkCarsResponse(cars []domain.Car) dto.TaxiParkCarsResponse {

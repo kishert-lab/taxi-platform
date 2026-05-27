@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -166,6 +167,10 @@ func (repository *fakeRepository) CreateDriverByOwnerUserID(_ context.Context, _
 	}, nil
 }
 
+func (repository *fakeRepository) ListDriverLocationsByOwnerUserID(context.Context, uuid.UUID, time.Duration) ([]DriverLocation, error) {
+	return nil, nil
+}
+
 func (repository *fakeRepository) UpdateDriverByOwnerUserID(context.Context, uuid.UUID, uuid.UUID, UpdateDriverRecord) (CreateDriverResult, error) {
 	return CreateDriverResult{}, nil
 }
@@ -194,6 +199,10 @@ func (repository *fakeRepository) AttachCarToDriverByOwnerUserID(context.Context
 	return nil
 }
 
+func (repository *fakeRepository) AssignCarToDriverByOwnerUserID(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) error {
+	return nil
+}
+
 func (repository *fakeRepository) DetachCarFromDriverByOwnerUserID(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) error {
 	return nil
 }
@@ -207,6 +216,10 @@ func (repository *fakeRepository) ListCarDocumentsByOwnerUserID(context.Context,
 }
 
 func (repository *fakeRepository) ListCarsByOwnerUserID(context.Context, uuid.UUID) ([]domain.Car, error) {
+	return nil, nil
+}
+
+func (repository *fakeRepository) ListCarsByDriverAndOwnerUserID(context.Context, uuid.UUID, uuid.UUID) ([]domain.Car, error) {
 	return nil, nil
 }
 

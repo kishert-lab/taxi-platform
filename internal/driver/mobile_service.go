@@ -27,6 +27,7 @@ type MobileRepository interface {
 	GetProfileByUserID(ctx context.Context, userID uuid.UUID) (Profile, error)
 	UpdateProfileByUserID(ctx context.Context, userID uuid.UUID, patch ProfilePatch) (Profile, error)
 	SetStatusByUserID(ctx context.Context, userID uuid.UUID, status domain.DriverStatus) (Profile, error)
+	ListCarsByUserID(ctx context.Context, userID uuid.UUID) ([]domain.Car, error)
 	GetCurrentOrderByUserID(ctx context.Context, userID uuid.UUID) (CurrentOrder, error)
 }
 
@@ -40,12 +41,22 @@ type LocationService interface {
 	UpdateLocationBatch(ctx context.Context, updates []geoservice.DriverLocationUpdate) error
 }
 
+type DispatchController interface {
+	AcceptOffer(ctx context.Context, orderID uuid.UUID, driverID uuid.UUID) error
+}
+
+type RealtimeGateway interface {
+	SendDriverLocationToTaxiPark(ctx context.Context, driverID uuid.UUID, payload any) error
+}
+
 type MobileService struct {
-	repository      MobileRepository
-	presenceStore   PresenceStore
-	locationService LocationService
-	logger          *zap.Logger
-	presenceTTL     time.Duration
+	repository         MobileRepository
+	presenceStore      PresenceStore
+	locationService    LocationService
+	dispatchController DispatchController
+	realtimeGateway    RealtimeGateway
+	logger             *zap.Logger
+	presenceTTL        time.Duration
 }
 
 type Profile struct {
@@ -99,12 +110,29 @@ func NewMobileService(repository MobileRepository, presenceStore PresenceStore, 
 	}
 }
 
+func NewMobileServiceWithDispatch(repository MobileRepository, presenceStore PresenceStore, locationService LocationService, dispatchController DispatchController, logger *zap.Logger, realtimeGateways ...RealtimeGateway) *MobileService {
+	service := NewMobileService(repository, presenceStore, locationService, logger)
+	service.dispatchController = dispatchController
+	if len(realtimeGateways) > 0 {
+		service.realtimeGateway = realtimeGateways[0]
+	}
+	return service
+}
+
 func (service *MobileService) GetDriverProfile(ctx context.Context, userID uuid.UUID) (dto.DriverProfileResponse, error) {
 	profile, err := service.repository.GetProfileByUserID(ctx, userID)
 	if err != nil {
 		return dto.DriverProfileResponse{}, err
 	}
 	return profileResponse(profile), nil
+}
+
+func (service *MobileService) ListDriverCars(ctx context.Context, userID uuid.UUID) (dto.TaxiParkCarsResponse, error) {
+	cars, err := service.repository.ListCarsByUserID(ctx, userID)
+	if err != nil {
+		return dto.TaxiParkCarsResponse{}, err
+	}
+	return driverCarsResponse(cars), nil
 }
 
 func (service *MobileService) UpdateDriverProfile(ctx context.Context, userID uuid.UUID, request dto.DriverProfilePatchRequest) (dto.DriverProfileResponse, error) {
@@ -158,7 +186,11 @@ func (service *MobileService) UpdateDriverLocation(ctx context.Context, userID u
 	if err != nil {
 		return err
 	}
-	return service.locationService.UpdateLocation(ctx, locationUpdate(profile, request))
+	update := locationUpdate(profile, request)
+	if err := service.locationService.UpdateLocation(ctx, update); err != nil {
+		return err
+	}
+	return service.publishLocationUpdated(ctx, profile, update)
 }
 
 func (service *MobileService) UpdateDriverLocationBatch(ctx context.Context, userID uuid.UUID, request dto.DriverLocationBatchRequest) error {
@@ -170,7 +202,13 @@ func (service *MobileService) UpdateDriverLocationBatch(ctx context.Context, use
 	for _, location := range request.Locations {
 		updates = append(updates, locationUpdate(profile, location))
 	}
-	return service.locationService.UpdateLocationBatch(ctx, updates)
+	if err := service.locationService.UpdateLocationBatch(ctx, updates); err != nil {
+		return err
+	}
+	if len(updates) == 0 {
+		return nil
+	}
+	return service.publishLocationUpdated(ctx, profile, updates[len(updates)-1])
 }
 
 func (service *MobileService) GetCurrentDriverOrder(ctx context.Context, userID uuid.UUID) (dto.DriverOrderResponse, error) {
@@ -185,8 +223,18 @@ func (service *MobileService) ListDriverOrderHistory(context.Context, uuid.UUID)
 	return dto.DriverOrderHistoryResponse{}, common.ErrNotImplemented
 }
 
-func (service *MobileService) AcceptDriverOrder(context.Context, uuid.UUID, uuid.UUID) (dto.DriverOrderResponse, error) {
-	return dto.DriverOrderResponse{}, common.ErrNotImplemented
+func (service *MobileService) AcceptDriverOrder(ctx context.Context, userID uuid.UUID, orderID uuid.UUID) (dto.DriverOrderResponse, error) {
+	if service.dispatchController == nil {
+		return dto.DriverOrderResponse{}, common.ErrNotImplemented
+	}
+	profile, err := service.repository.GetProfileByUserID(ctx, userID)
+	if err != nil {
+		return dto.DriverOrderResponse{}, err
+	}
+	if err := service.dispatchController.AcceptOffer(ctx, orderID, profile.DriverID); err != nil {
+		return dto.DriverOrderResponse{}, err
+	}
+	return service.GetCurrentDriverOrder(ctx, userID)
 }
 
 func (service *MobileService) RejectDriverOrder(context.Context, uuid.UUID, uuid.UUID, dto.RejectOrderRequest) error {
@@ -224,6 +272,31 @@ func locationUpdate(profile Profile, request dto.DriverLocationRequest) geoservi
 	}
 }
 
+func (service *MobileService) publishLocationUpdated(ctx context.Context, profile Profile, update geoservice.DriverLocationUpdate) error {
+	if service.realtimeGateway == nil {
+		return nil
+	}
+	payload := map[string]any{
+		"driver_id": profile.DriverID,
+		"user_id":   profile.UserID,
+		"name":      strings.TrimSpace(strings.TrimSpace(profile.FirstName) + " " + strings.TrimSpace(profile.LastName)),
+		"phone":     profile.Phone,
+		"status":    profile.Status,
+		"location": map[string]float64{
+			"latitude":  update.Location.Latitude,
+			"longitude": update.Location.Longitude,
+		},
+		"heading":         update.Heading,
+		"speed_mps":       update.SpeedMPS,
+		"accuracy_meters": update.AccuracyMeters,
+		"recorded_at":     update.RecordedAt,
+	}
+	if err := service.realtimeGateway.SendDriverLocationToTaxiPark(ctx, profile.DriverID, payload); err != nil {
+		return fmt.Errorf("publish taxi park driver location websocket event: %w", err)
+	}
+	return nil
+}
+
 func profileResponse(profile Profile) dto.DriverProfileResponse {
 	name := strings.TrimSpace(strings.TrimSpace(profile.FirstName) + " " + strings.TrimSpace(profile.LastName))
 	return dto.DriverProfileResponse{
@@ -238,6 +311,53 @@ func profileResponse(profile Profile) dto.DriverProfileResponse {
 		LicenseNumber: profile.LicenseNumber,
 		IsVerified:    profile.IsVerified,
 	}
+}
+
+func driverCarsResponse(cars []domain.Car) dto.TaxiParkCarsResponse {
+	responseBody := dto.TaxiParkCarsResponse{Cars: make([]dto.TaxiParkCarResponse, 0, len(cars))}
+	for _, car := range cars {
+		responseBody.Cars = append(responseBody.Cars, dto.TaxiParkCarResponse{
+			ID:                            car.ID,
+			TaxiParkID:                    car.TaxiParkID,
+			PrimaryDriverID:               car.PrimaryDriverID,
+			AttachedDriverIDs:             car.AttachedDriverIDs,
+			Brand:                         car.Brand,
+			Model:                         car.Model,
+			Year:                          car.Year,
+			PlateNumber:                   car.PlateNumber,
+			VIN:                           car.VIN,
+			STS:                           car.STS,
+			PTS:                           car.PTS,
+			Color:                         car.Color,
+			CarClass:                      car.CarClass,
+			VerificationStatus:            car.VerificationStatus,
+			OwnerDetails:                  car.OwnerDetails,
+			OSAGOExpiresAt:                car.OSAGOExpiresAt,
+			DiagnosticCardExpiresAt:       car.DiagnosticCardExpiresAt,
+			TaxiPermitNumber:              car.TaxiPermitNumber,
+			RegionalRegistryNumber:        car.RegionalRegistryNumber,
+			PermitRegion:                  car.PermitRegion,
+			PermitIssuedAt:                car.PermitIssuedAt,
+			PermitExpiresAt:               car.PermitExpiresAt,
+			TaxiPermitVerified:            car.TaxiPermitVerified,
+			RegionalRegistryVerified:      car.RegionalRegistryVerified,
+			RegionalRequirementsCompliant: car.RegionalRequirementsCompliant,
+			HasTaxiColorScheme:            car.HasTaxiColorScheme,
+			HasOrangeRoofLamp:             car.HasOrangeRoofLamp,
+			HasPassengerInfo:              car.HasPassengerInfo,
+			OSAGOVerified:                 car.OSAGOVerified,
+			DiagnosticCardVerified:        car.DiagnosticCardVerified,
+			TechnicalStateVerified:        car.TechnicalStateVerified,
+			LocalizationCompliant:         car.LocalizationCompliant,
+			LegalUseBasisVerified:         car.LegalUseBasisVerified,
+			VerificationCheckedAt:         car.VerificationCheckedAt,
+			VerificationCheckedBy:         car.VerificationCheckedBy,
+			IsActive:                      car.IsActive,
+			CreatedAt:                     car.CreatedAt,
+			UpdatedAt:                     car.UpdatedAt,
+		})
+	}
+	return responseBody
 }
 
 func currentOrderResponse(order CurrentOrder) dto.DriverOrderResponse {

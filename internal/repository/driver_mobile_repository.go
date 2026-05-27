@@ -75,6 +75,58 @@ func (repository *PostgresDriverMobileRepository) SetStatusByUserID(ctx context.
 	return driverapp.Profile{}, fmt.Errorf("unsupported driver status update: %w", domain.ErrInvalidDriverStatus)
 }
 
+func (repository *PostgresDriverMobileRepository) ListCarsByUserID(ctx context.Context, userID uuid.UUID) ([]domain.Car, error) {
+	var driverID uuid.UUID
+	if err := repository.pool.QueryRow(ctx, `
+		SELECT d.id
+		FROM drivers d
+		JOIN users u ON u.id = d.user_id
+		WHERE d.user_id = $1
+		  AND d.deleted_at IS NULL
+		  AND u.deleted_at IS NULL`, userID).Scan(&driverID); err != nil {
+		return nil, mapDriverMobileScanError("select driver before list cars", err)
+	}
+
+	rows, err := repository.pool.Query(ctx, `
+		SELECT DISTINCT c.id, c.taxi_park_id, c.driver_id, c.brand, c.model, COALESCE(c.year, 0),
+		       c.plate_number, COALESCE(c.vin, ''), COALESCE(c.sts, ''), COALESCE(c.pts, ''),
+		       c.color, COALESCE(c.car_class, ''), c.verification_status, COALESCE(c.owner_details, ''),
+		       c.osago_expires_at, c.diagnostic_card_expires_at, COALESCE(c.taxi_permit_number, ''),
+		       COALESCE(c.regional_registry_number, ''), COALESCE(c.permit_region, ''),
+		       c.permit_issued_at, c.permit_expires_at, c.taxi_permit_verified, c.regional_registry_verified,
+		       c.regional_requirements_compliant, c.has_taxi_color_scheme, c.has_orange_roof_lamp,
+		       c.has_passenger_info, c.osago_verified, c.diagnostic_card_verified, c.technical_state_verified,
+		       c.localization_compliant, c.legal_use_basis_verified, c.verification_checked_at,
+		       c.verification_checked_by, c.is_active, c.created_at, c.updated_at
+		FROM cars c
+		LEFT JOIN car_driver_assignments cda ON cda.car_id = c.id
+		WHERE c.deleted_at IS NULL
+		  AND (c.driver_id = $1 OR cda.driver_id = $1)
+		ORDER BY c.created_at DESC`, driverID)
+	if err != nil {
+		return nil, fmt.Errorf("select driver cars: %w", err)
+	}
+	defer rows.Close()
+
+	cars := make([]domain.Car, 0)
+	for rows.Next() {
+		car, err := scanTaxiParkCar(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan driver car: %w", err)
+		}
+		attachedDriverIDs, err := repository.carAssignments(ctx, car.ID)
+		if err != nil {
+			return nil, err
+		}
+		car.AttachedDriverIDs = attachedDriverIDs
+		cars = append(cars, car)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate driver cars: %w", err)
+	}
+	return cars, nil
+}
+
 func (repository *PostgresDriverMobileRepository) GetCurrentOrderByUserID(ctx context.Context, userID uuid.UUID) (driverapp.CurrentOrder, error) {
 	order, err := scanDriverCurrentOrder(repository.pool.QueryRow(ctx, `
 		SELECT o.id,
@@ -121,16 +173,42 @@ func (repository *PostgresDriverMobileRepository) markOnline(ctx context.Context
 	profile, err := scanDriverMobileProfile(repository.pool.QueryRow(ctx, `
 		WITH updated_driver AS (
 			UPDATE drivers d
-			SET status = 'online'
-			FROM taxi_parks tp
-			WHERE d.user_id = $1
-			  AND tp.id = d.taxi_park_id
-			  AND d.status IN ('offline', 'paused', 'online')
-			  AND d.taxi_park_id IS NOT NULL
-			  AND d.verification_status NOT IN ('blocked', 'archived', 'rejected')
-			  AND d.deleted_at IS NULL
-			  AND tp.deleted_at IS NULL
-			RETURNING d.id
+		    SET status = 'online'
+		    FROM taxi_parks tp
+		    WHERE d.user_id = $1
+		      AND tp.id = d.taxi_park_id
+		      AND d.status IN ('offline', 'paused', 'online')
+		      AND d.taxi_park_id IS NOT NULL
+		      AND d.is_verified = true
+		      AND d.verification_status = 'verified'
+		      AND d.deleted_at IS NULL
+		      AND tp.deleted_at IS NULL
+		      AND EXISTS (
+		      	SELECT 1
+		      	FROM taxi_park_settings tps
+		      	WHERE tps.taxi_park_id = tp.id
+		      	  AND tps.is_active = true
+		      	UNION ALL
+		      	SELECT 1
+		      	WHERE NOT EXISTS (
+		      		SELECT 1
+		      		FROM taxi_park_settings tps
+		      		WHERE tps.taxi_park_id = tp.id
+		      	)
+		      )
+		      AND EXISTS (
+		      	SELECT 1
+		      	FROM cars c
+		      	LEFT JOIN car_driver_assignments cda ON cda.car_id = c.id
+		      	WHERE c.taxi_park_id = d.taxi_park_id
+		      	  AND (c.driver_id = d.id OR cda.driver_id = d.id)
+		      	  AND c.verification_status = 'verified'
+		      	  AND c.is_active = true
+		      	  AND c.deleted_at IS NULL
+		      	  AND COALESCE(c.permit_expires_at, current_date + interval '1 day') >= current_date
+		      	  AND COALESCE(c.osago_expires_at, current_date + interval '1 day') >= current_date
+		      )
+		    RETURNING d.id
 		)
 		`+driverMobileProfileSelect+`
 		WHERE d.user_id = $1
@@ -267,6 +345,27 @@ func scanDriverCurrentOrder(row pgx.Row) (driverapp.CurrentOrder, error) {
 	}
 
 	return order, nil
+}
+
+func (repository *PostgresDriverMobileRepository) carAssignments(ctx context.Context, carID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := repository.pool.Query(ctx, `SELECT driver_id FROM car_driver_assignments WHERE car_id = $1`, carID)
+	if err != nil {
+		return nil, fmt.Errorf("select driver car assignments: %w", err)
+	}
+	defer rows.Close()
+
+	driverIDs := make([]uuid.UUID, 0)
+	for rows.Next() {
+		var driverID uuid.UUID
+		if err := rows.Scan(&driverID); err != nil {
+			return nil, fmt.Errorf("scan driver car assignment: %w", err)
+		}
+		driverIDs = append(driverIDs, driverID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate driver car assignments: %w", err)
+	}
+	return driverIDs, nil
 }
 
 func mapDriverMobileScanError(operation string, err error) error {

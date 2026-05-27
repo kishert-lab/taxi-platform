@@ -8,6 +8,7 @@ import (
 
 	"github.com/kishert-lab/taxi-platform/configs"
 	authapp "github.com/kishert-lab/taxi-platform/internal/auth"
+	dispatchapp "github.com/kishert-lab/taxi-platform/internal/dispatch"
 	driverapp "github.com/kishert-lab/taxi-platform/internal/driver"
 	financeapp "github.com/kishert-lab/taxi-platform/internal/finance"
 	geoapp "github.com/kishert-lab/taxi-platform/internal/geo"
@@ -30,6 +31,7 @@ type applicationRoutes struct {
 	taxiPark   *handler.TaxiParkSettingsHandler
 	legal      *handler.LegalHandler
 	websocket  *handler.WebSocketHandler
+	dispatch   *dispatchapp.Worker
 }
 
 func newApplicationRoutes(postgresPool *pgxpool.Pool, redisClient *goredis.Client, config *configs.Config, logger *zap.Logger) applicationRoutes {
@@ -83,13 +85,42 @@ func newApplicationRoutes(postgresPool *pgxpool.Pool, redisClient *goredis.Clien
 	driverLocationRepository := repository.NewPostgresDriverLocationRepository(postgresPool)
 	driverLocationThrottle := redisinfra.NewLocationThrottle(redisClient)
 	driverLocationService := geoapp.NewLocationService(driverLocationRepository, driverLocationThrottle)
+	dispatchOrderRepository := repository.NewPostgresDispatchOrderRepository(postgresPool)
+	dispatchQueue := redisinfra.NewDispatchQueue(redisClient)
+	dispatchTimeoutQueue := redisinfra.NewDispatchTimeoutQueue(redisClient)
+	dispatchStateStore := redisinfra.NewDispatchStateStore(redisClient)
+	offerStore := redisinfra.NewOfferStore(redisClient)
+	lockManager := redisinfra.NewLockManager(redisClient)
+	realtimeGateway := redisinfra.NewRealtimeGateway(redisClient, postgresPool)
+	dispatchConfig := dispatchConfigFromApplication(config.Dispatch)
+	dispatchService := dispatchapp.NewService(dispatchapp.NewServiceParams{
+		OrderRepository:        dispatchOrderRepository,
+		DriverSearchRepository: repository.NewPostgresDriverSearchRepository(postgresPool),
+		DriverStateRepository:  repository.NewPostgresDriverStateRepository(postgresPool),
+		OfferStore:             offerStore,
+		DispatchStateStore:     dispatchStateStore,
+		TaskQueue:              dispatchQueue,
+		TimeoutQueue:           dispatchTimeoutQueue,
+		LockManager:            lockManager,
+		RealtimeGateway:        realtimeGateway,
+		Logger:                 logger,
+		Config:                 dispatchConfig,
+	})
+	dispatchWorker := dispatchapp.NewWorker(dispatchapp.NewWorkerParams{
+		Service:            dispatchService,
+		TaskQueue:          dispatchQueue,
+		TimeoutQueue:       dispatchTimeoutQueue,
+		RecoveryRepository: dispatchOrderRepository,
+		Logger:             logger,
+		Config:             dispatchConfig,
+	})
 	driverMobileRepository := repository.NewPostgresDriverMobileRepository(postgresPool)
 	driverPresenceStore := redisinfra.NewDriverPresenceStore(redisClient)
-	driverMobileService := driverapp.NewMobileService(driverMobileRepository, driverPresenceStore, driverLocationService, logger)
+	driverMobileService := driverapp.NewMobileServiceWithDispatch(driverMobileRepository, driverPresenceStore, driverLocationService, dispatchService, logger, realtimeGateway)
 	financeRepository := repository.NewPostgresFinanceRepository(postgresPool)
 	financeService := financeapp.NewService(financeRepository, logger)
 	taxiParkSettingsRepository := repository.NewPostgresTaxiParkSettingsRepository(postgresPool)
-	taxiParkSettingsService := taxiparkapp.NewService(taxiParkSettingsRepository, passwordHasher)
+	taxiParkSettingsService := taxiparkapp.NewServiceWithDispatch(taxiParkSettingsRepository, passwordHasher, dispatchService)
 	legalRepository := repository.NewPostgresLegalRepository(postgresPool)
 	legalService := legalapp.NewService(legalRepository)
 
@@ -102,7 +133,23 @@ func newApplicationRoutes(postgresPool *pgxpool.Pool, redisClient *goredis.Clien
 		finance:    handler.NewFinanceHandler(financeService),
 		taxiPark:   handler.NewTaxiParkSettingsHandler(taxiParkSettingsService),
 		legal:      handler.NewLegalHandler(legalService),
-		websocket:  handler.NewWebSocketHandler(mobileAuthService, config.HTTP.CORS.AllowedOrigins),
+		websocket:  handler.NewWebSocketHandler(mobileAuthService, config.HTTP.CORS.AllowedOrigins, redisClient),
+		dispatch:   dispatchWorker,
+	}
+}
+
+func dispatchConfigFromApplication(config configs.DispatchConfig) dispatchapp.Config {
+	return dispatchapp.Config{
+		InitialRadiusMeters:  config.InitialRadiusMeters,
+		MaxRadiusMeters:      config.MaxRadiusMeters,
+		RadiusStepMeters:     config.RadiusStepMeters,
+		RadiusAttemptsMeters: config.RadiusAttemptsMeters,
+		MaxDriversPerOffer:   config.MaxDriversPerOffer,
+		DriverLocationMaxAge: config.DriverLocationMaxAge,
+		OfferTTL:             config.OfferTTL,
+		AcceptLockTTL:        config.AcceptLockTTL,
+		WorkerPollTimeout:    config.WorkerPollTimeout,
+		RecoveryInterval:     config.RecoveryInterval,
 	}
 }
 

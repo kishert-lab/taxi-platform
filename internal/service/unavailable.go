@@ -106,6 +106,10 @@ func (useCase *UnavailableUseCase) GetDriverProfile(context.Context, uuid.UUID) 
 	return dto.DriverProfileResponse{}, common.ErrNotImplemented
 }
 
+func (useCase *UnavailableUseCase) ListDriverCars(context.Context, uuid.UUID) (dto.TaxiParkCarsResponse, error) {
+	return dto.TaxiParkCarsResponse{}, common.ErrNotImplemented
+}
+
 func (useCase *UnavailableUseCase) UpdateDriverProfile(context.Context, uuid.UUID, dto.DriverProfilePatchRequest) (dto.DriverProfileResponse, error) {
 	return dto.DriverProfileResponse{}, common.ErrNotImplemented
 }
@@ -218,6 +222,10 @@ func (useCase *UnavailableUseCase) CreateDriver(context.Context, uuid.UUID, dto.
 	return taxiparkapp.CreateDriverResult{}, common.ErrNotImplemented
 }
 
+func (useCase *UnavailableUseCase) ListDriverLocations(context.Context, uuid.UUID, time.Duration) ([]taxiparkapp.DriverLocation, error) {
+	return nil, common.ErrNotImplemented
+}
+
 func (useCase *UnavailableUseCase) UpdateDriver(context.Context, uuid.UUID, uuid.UUID, dto.TaxiParkUpdateDriverRequest) (taxiparkapp.CreateDriverResult, error) {
 	return taxiparkapp.CreateDriverResult{}, common.ErrNotImplemented
 }
@@ -242,6 +250,10 @@ func (useCase *UnavailableUseCase) ListDriverDocuments(context.Context, uuid.UUI
 	return nil, common.ErrNotImplemented
 }
 
+func (useCase *UnavailableUseCase) ListTaxiParkDriverCars(context.Context, uuid.UUID, uuid.UUID) ([]domain.Car, error) {
+	return nil, common.ErrNotImplemented
+}
+
 func (useCase *UnavailableUseCase) ListCars(context.Context, uuid.UUID) ([]domain.Car, error) {
 	return nil, common.ErrNotImplemented
 }
@@ -263,6 +275,10 @@ func (useCase *UnavailableUseCase) ArchiveCar(context.Context, uuid.UUID, uuid.U
 }
 
 func (useCase *UnavailableUseCase) AttachCarToDriver(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) error {
+	return common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) AssignCarToDriver(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) error {
 	return common.ErrNotImplemented
 }
 

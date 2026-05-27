@@ -30,12 +30,17 @@ var (
 )
 
 type Service struct {
-	repository     Repository
-	passwordHasher PasswordHasher
+	repository         Repository
+	passwordHasher     PasswordHasher
+	dispatchController DispatchController
 }
 
 func NewService(repository Repository, passwordHasher PasswordHasher) *Service {
 	return &Service{repository: repository, passwordHasher: passwordHasher}
+}
+
+func NewServiceWithDispatch(repository Repository, passwordHasher PasswordHasher, dispatchController DispatchController) *Service {
+	return &Service{repository: repository, passwordHasher: passwordHasher, dispatchController: dispatchController}
 }
 
 func (service *Service) GetSettings(ctx context.Context, ownerUserID uuid.UUID) (domain.TaxiParkSettings, error) {
@@ -63,7 +68,16 @@ func (service *Service) CreateOrder(ctx context.Context, ownerUserID uuid.UUID, 
 	if err != nil {
 		return domain.Order{}, err
 	}
-	return service.repository.CreateOrderByOwnerUserID(ctx, ownerUserID, record)
+	order, err := service.repository.CreateOrderByOwnerUserID(ctx, ownerUserID, record)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	if service.dispatchController != nil {
+		if err := service.dispatchController.EnqueueOrder(ctx, order.ID); err != nil {
+			return domain.Order{}, fmt.Errorf("enqueue taxi park order dispatch: %w", err)
+		}
+	}
+	return order, nil
 }
 
 func (service *Service) CreateDriver(ctx context.Context, ownerUserID uuid.UUID, request dto.TaxiParkCreateDriverRequest) (CreateDriverResult, error) {
@@ -154,6 +168,13 @@ func (service *Service) CreateDriver(ctx context.Context, ownerUserID uuid.UUID,
 	return result, nil
 }
 
+func (service *Service) ListDriverLocations(ctx context.Context, ownerUserID uuid.UUID, maxAge time.Duration) ([]DriverLocation, error) {
+	if maxAge <= 0 {
+		maxAge = 30 * time.Second
+	}
+	return service.repository.ListDriverLocationsByOwnerUserID(ctx, ownerUserID, maxAge)
+}
+
 func (service *Service) UpdateDriver(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID, request dto.TaxiParkUpdateDriverRequest) (CreateDriverResult, error) {
 	record := UpdateDriverRecord{
 		FirstName:                     trimStringPointer(request.FirstName),
@@ -226,6 +247,10 @@ func (service *Service) ListCars(ctx context.Context, ownerUserID uuid.UUID) ([]
 	return service.repository.ListCarsByOwnerUserID(ctx, ownerUserID)
 }
 
+func (service *Service) ListTaxiParkDriverCars(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID) ([]domain.Car, error) {
+	return service.repository.ListCarsByDriverAndOwnerUserID(ctx, ownerUserID, driverID)
+}
+
 func (service *Service) CreateCar(ctx context.Context, ownerUserID uuid.UUID, request dto.TaxiParkCarRequest) (domain.Car, error) {
 	record, err := carRecordFromRequest(request)
 	if err != nil {
@@ -255,6 +280,10 @@ func (service *Service) ArchiveCar(ctx context.Context, ownerUserID uuid.UUID, c
 
 func (service *Service) AttachCarToDriver(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID, carID uuid.UUID) error {
 	return service.repository.AttachCarToDriverByOwnerUserID(ctx, ownerUserID, driverID, carID)
+}
+
+func (service *Service) AssignCarToDriver(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID, carID uuid.UUID) error {
+	return service.repository.AssignCarToDriverByOwnerUserID(ctx, ownerUserID, driverID, carID)
 }
 
 func (service *Service) DetachCarFromDriver(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID, carID uuid.UUID) error {

@@ -6,6 +6,8 @@ import (
 	"time"
 
 	goredis "github.com/redis/go-redis/v9"
+
+	"github.com/kishert-lab/taxi-platform/internal/dispatch"
 )
 
 type LockManager struct {
@@ -16,7 +18,7 @@ func NewLockManager(client *goredis.Client) *LockManager {
 	return &LockManager{client: client}
 }
 
-func (manager *LockManager) Acquire(ctx context.Context, key string, ttl time.Duration) (*Lock, bool, error) {
+func (manager *LockManager) Acquire(ctx context.Context, key string, ttl time.Duration) (dispatch.Lock, bool, error) {
 	token := fmt.Sprintf("%d", time.Now().UnixNano())
 	acquired, err := manager.client.SetNX(ctx, key, token, ttl).Result()
 	if err != nil {

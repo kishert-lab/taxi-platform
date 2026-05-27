@@ -78,6 +78,13 @@ func main() {
 	}()
 
 	routes := newApplicationRoutes(postgresPool, redisClient, config, log)
+	if routes.dispatch != nil {
+		go func() {
+			if dispatchErr := routes.dispatch.Run(ctx); dispatchErr != nil {
+				log.Error("dispatch worker stopped", zap.Error(dispatchErr))
+			}
+		}()
+	}
 	router := buildRouter(config, log, routes)
 	server := &http.Server{
 		Addr:              config.Server.Address(),
