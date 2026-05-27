@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -12,6 +13,13 @@ import (
 	"github.com/kishert-lab/taxi-platform/internal/domain"
 	wsmsg "github.com/kishert-lab/taxi-platform/internal/ws"
 	"github.com/kishert-lab/taxi-platform/pkg/response"
+)
+
+const (
+	websocketPongWait     = 60 * time.Second
+	websocketPingPeriod   = 45 * time.Second
+	websocketWriteTimeout = 10 * time.Second
+	websocketReadLimit    = 4096
 )
 
 type WebSocketAuthUseCase interface {
@@ -72,6 +80,11 @@ func (handler *WebSocketHandler) Connect(context *gin.Context) {
 		return
 	}
 	defer connection.Close()
+	connection.SetReadLimit(websocketReadLimit)
+	_ = connection.SetReadDeadline(time.Now().Add(websocketPongWait))
+	connection.SetPongHandler(func(string) error {
+		return connection.SetReadDeadline(time.Now().Add(websocketPongWait))
+	})
 
 	requestID, _ := uuid.Parse(context.GetString(response.RequestIDContextKey))
 	if requestID == uuid.Nil {
@@ -83,7 +96,53 @@ func (handler *WebSocketHandler) Connect(context *gin.Context) {
 		"role":    role,
 		"reason":  "reconnect",
 	})
-	_ = connection.WriteJSON(message)
+	if err := writeWebSocketJSON(connection, message); err != nil {
+		return
+	}
+
+	handler.keepConnectionAlive(context.Request.Context(), connection)
+}
+
+func (handler *WebSocketHandler) keepConnectionAlive(ctx context.Context, connection *websocket.Conn) {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			if _, _, err := connection.NextReader(); err != nil {
+				return
+			}
+		}
+	}()
+
+	ticker := time.NewTicker(websocketPingPeriod)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-done:
+			return
+		case <-ticker.C:
+			if err := writeWebSocketPing(connection); err != nil {
+				return
+			}
+		}
+	}
+}
+
+func writeWebSocketJSON(connection *websocket.Conn, message any) error {
+	if err := connection.SetWriteDeadline(time.Now().Add(websocketWriteTimeout)); err != nil {
+		return err
+	}
+	return connection.WriteJSON(message)
+}
+
+func writeWebSocketPing(connection *websocket.Conn) error {
+	if err := connection.SetWriteDeadline(time.Now().Add(websocketWriteTimeout)); err != nil {
+		return err
+	}
+	return connection.WriteMessage(websocket.PingMessage, nil)
 }
 
 func websocketToken(context *gin.Context) string {

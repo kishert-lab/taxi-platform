@@ -210,6 +210,10 @@ func (useCase *UnavailableUseCase) UpdateTariff(context.Context, uuid.UUID, uuid
 	return domain.TaxiParkTariff{}, common.ErrNotImplemented
 }
 
+func (useCase *UnavailableUseCase) CreateOrder(context.Context, uuid.UUID, dto.TaxiParkCreateOrderRequest) (domain.Order, error) {
+	return domain.Order{}, common.ErrNotImplemented
+}
+
 func (useCase *UnavailableUseCase) CreateDriver(context.Context, uuid.UUID, dto.TaxiParkCreateDriverRequest) (taxiparkapp.CreateDriverResult, error) {
 	return taxiparkapp.CreateDriverResult{}, common.ErrNotImplemented
 }
@@ -218,12 +222,24 @@ func (useCase *UnavailableUseCase) UpdateDriver(context.Context, uuid.UUID, uuid
 	return taxiparkapp.CreateDriverResult{}, common.ErrNotImplemented
 }
 
+func (useCase *UnavailableUseCase) UpdateDriverPassword(context.Context, uuid.UUID, uuid.UUID, dto.TaxiParkDriverPasswordRequest) error {
+	return common.ErrNotImplemented
+}
+
 func (useCase *UnavailableUseCase) BlockDriver(context.Context, uuid.UUID, uuid.UUID, string) error {
+	return common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) UnblockDriver(context.Context, uuid.UUID, uuid.UUID) error {
 	return common.ErrNotImplemented
 }
 
 func (useCase *UnavailableUseCase) ArchiveDriver(context.Context, uuid.UUID, uuid.UUID) error {
 	return common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) ListDriverDocuments(context.Context, uuid.UUID, uuid.UUID) ([]domain.TaxiParkDocument, error) {
+	return nil, common.ErrNotImplemented
 }
 
 func (useCase *UnavailableUseCase) ListCars(context.Context, uuid.UUID) ([]domain.Car, error) {
@@ -240,6 +256,22 @@ func (useCase *UnavailableUseCase) UpdateCar(context.Context, uuid.UUID, uuid.UU
 
 func (useCase *UnavailableUseCase) VerifyCar(context.Context, uuid.UUID, uuid.UUID) (domain.Car, error) {
 	return domain.Car{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) ArchiveCar(context.Context, uuid.UUID, uuid.UUID) error {
+	return common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) AttachCarToDriver(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) error {
+	return common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) DetachCarFromDriver(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) error {
+	return common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) ListCarDocuments(context.Context, uuid.UUID, uuid.UUID) ([]domain.TaxiParkDocument, error) {
+	return nil, common.ErrNotImplemented
 }
 
 func (useCase *UnavailableUseCase) GetActiveDocument(context.Context, domain.LegalDocumentType, string) (domain.LegalDocument, error) {

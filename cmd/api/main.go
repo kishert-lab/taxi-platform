@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -76,7 +77,7 @@ func main() {
 		}
 	}()
 
-	routes := newApplicationRoutes(postgresPool, config, log)
+	routes := newApplicationRoutes(postgresPool, redisClient, config, log)
 	router := buildRouter(config, log, routes)
 	server := &http.Server{
 		Addr:              config.Server.Address(),
@@ -104,6 +105,13 @@ func main() {
 	}
 }
 
+func debugHTTPLoggingEnabled(config *configs.Config) bool {
+	if config == nil {
+		return false
+	}
+	return config.Server.Mode == gin.DebugMode || strings.EqualFold(config.App.Env, "debug") || strings.EqualFold(config.Logger.Level, "debug")
+}
+
 func buildRouter(config *configs.Config, log *zap.Logger, routes applicationRoutes) *gin.Engine {
 	if config.Server.Mode == gin.ReleaseMode {
 		gin.SetMode(gin.ReleaseMode)
@@ -111,6 +119,7 @@ func buildRouter(config *configs.Config, log *zap.Logger, routes applicationRout
 
 	router := gin.New()
 	router.Use(middleware.RequestID())
+	router.Use(middleware.DebugRequestLogger(log, debugHTTPLoggingEnabled(config)))
 	router.Use(gin.Recovery())
 
 	router.Use(cors.New(cors.Config{
@@ -153,7 +162,7 @@ func buildRouter(config *configs.Config, log *zap.Logger, routes applicationRout
 
 	router.NoRoute(func(context *gin.Context) {
 		log.Debug("route not found", zap.String("path", context.Request.URL.Path))
-		response.Fail(context, http.StatusNotFound, response.CodeValidationError, "Route not found", nil)
+		response.Fail(context, http.StatusNotFound, response.CodeNotFound, "Route not found", nil)
 	})
 
 	return router

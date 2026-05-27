@@ -3,12 +3,16 @@ package main
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
+	goredis "github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 
 	"github.com/kishert-lab/taxi-platform/configs"
 	authapp "github.com/kishert-lab/taxi-platform/internal/auth"
+	driverapp "github.com/kishert-lab/taxi-platform/internal/driver"
 	financeapp "github.com/kishert-lab/taxi-platform/internal/finance"
+	geoapp "github.com/kishert-lab/taxi-platform/internal/geo"
 	legalapp "github.com/kishert-lab/taxi-platform/internal/legal"
+	redisinfra "github.com/kishert-lab/taxi-platform/internal/redis"
 	"github.com/kishert-lab/taxi-platform/internal/repository"
 	"github.com/kishert-lab/taxi-platform/internal/security"
 	"github.com/kishert-lab/taxi-platform/internal/service"
@@ -28,7 +32,7 @@ type applicationRoutes struct {
 	websocket  *handler.WebSocketHandler
 }
 
-func newApplicationRoutes(postgresPool *pgxpool.Pool, config *configs.Config, logger *zap.Logger) applicationRoutes {
+func newApplicationRoutes(postgresPool *pgxpool.Pool, redisClient *goredis.Client, config *configs.Config, logger *zap.Logger) applicationRoutes {
 	unavailableUseCase := service.NewUnavailableUseCase()
 
 	userRepository := repository.NewPostgresUserRepository(postgresPool)
@@ -76,6 +80,12 @@ func newApplicationRoutes(postgresPool *pgxpool.Pool, config *configs.Config, lo
 		EmailCodeTTL:    config.Auth.EmailCodeTTL,
 		MaxCodeAttempts: config.Auth.MaxCodeAttempts,
 	})
+	driverLocationRepository := repository.NewPostgresDriverLocationRepository(postgresPool)
+	driverLocationThrottle := redisinfra.NewLocationThrottle(redisClient)
+	driverLocationService := geoapp.NewLocationService(driverLocationRepository, driverLocationThrottle)
+	driverMobileRepository := repository.NewPostgresDriverMobileRepository(postgresPool)
+	driverPresenceStore := redisinfra.NewDriverPresenceStore(redisClient)
+	driverMobileService := driverapp.NewMobileService(driverMobileRepository, driverPresenceStore, driverLocationService, logger)
 	financeRepository := repository.NewPostgresFinanceRepository(postgresPool)
 	financeService := financeapp.NewService(financeRepository, logger)
 	taxiParkSettingsRepository := repository.NewPostgresTaxiParkSettingsRepository(postgresPool)
@@ -88,7 +98,7 @@ func newApplicationRoutes(postgresPool *pgxpool.Pool, config *configs.Config, lo
 		mobileAuth: handler.NewMobileAuthHandler(mobileAuthService),
 		order:      handler.NewOrderHandler(unavailableUseCase),
 		passenger:  handler.NewPassengerMobileHandler(unavailableUseCase, unavailableUseCase),
-		driver:     handler.NewDriverMobileHandler(unavailableUseCase),
+		driver:     handler.NewDriverMobileHandler(driverMobileService),
 		finance:    handler.NewFinanceHandler(financeService),
 		taxiPark:   handler.NewTaxiParkSettingsHandler(taxiParkSettingsService),
 		legal:      handler.NewLegalHandler(legalService),

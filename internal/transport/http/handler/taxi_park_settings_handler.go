@@ -19,14 +19,22 @@ type TaxiParkSettingsUseCase interface {
 	ListTariffs(ctx context.Context, ownerUserID uuid.UUID) ([]domain.TaxiParkTariff, error)
 	CreateTariff(ctx context.Context, ownerUserID uuid.UUID, request dto.TaxiParkTariffRequest) (domain.TaxiParkTariff, error)
 	UpdateTariff(ctx context.Context, ownerUserID uuid.UUID, tariffID uuid.UUID, request dto.TaxiParkTariffPatchRequest) (domain.TaxiParkTariff, error)
+	CreateOrder(ctx context.Context, ownerUserID uuid.UUID, request dto.TaxiParkCreateOrderRequest) (domain.Order, error)
 	CreateDriver(ctx context.Context, ownerUserID uuid.UUID, request dto.TaxiParkCreateDriverRequest) (taxiparkapp.CreateDriverResult, error)
 	UpdateDriver(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID, request dto.TaxiParkUpdateDriverRequest) (taxiparkapp.CreateDriverResult, error)
+	UpdateDriverPassword(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID, request dto.TaxiParkDriverPasswordRequest) error
 	BlockDriver(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID, reason string) error
+	UnblockDriver(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID) error
 	ArchiveDriver(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID) error
+	ListDriverDocuments(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID) ([]domain.TaxiParkDocument, error)
 	ListCars(ctx context.Context, ownerUserID uuid.UUID) ([]domain.Car, error)
 	CreateCar(ctx context.Context, ownerUserID uuid.UUID, request dto.TaxiParkCarRequest) (domain.Car, error)
 	UpdateCar(ctx context.Context, ownerUserID uuid.UUID, carID uuid.UUID, request dto.TaxiParkCarPatchRequest) (domain.Car, error)
 	VerifyCar(ctx context.Context, ownerUserID uuid.UUID, carID uuid.UUID) (domain.Car, error)
+	ArchiveCar(ctx context.Context, ownerUserID uuid.UUID, carID uuid.UUID) error
+	AttachCarToDriver(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID, carID uuid.UUID) error
+	DetachCarFromDriver(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID, carID uuid.UUID) error
+	ListCarDocuments(ctx context.Context, ownerUserID uuid.UUID, carID uuid.UUID) ([]domain.TaxiParkDocument, error)
 }
 
 type TaxiParkSettingsHandler struct {
@@ -41,17 +49,62 @@ func (handler *TaxiParkSettingsHandler) RegisterRoutes(router gin.IRouter) {
 	taxiPark := router.Group("/taxi-park", middleware.RequireRole(domain.UserRoleTaxiPark))
 	taxiPark.GET("/settings", handler.GetSettings)
 	taxiPark.PATCH("/settings", handler.UpdateSettings)
+	taxiPark.POST("/orders", handler.CreateOrder)
 	taxiPark.POST("/drivers", handler.CreateDriver)
 	taxiPark.PATCH("/drivers/:id", handler.UpdateDriver)
+	taxiPark.POST("/drivers/:id/password", handler.UpdateDriverPassword)
 	taxiPark.POST("/drivers/:id/block", handler.BlockDriver)
+	taxiPark.POST("/drivers/:id/unblock", handler.UnblockDriver)
 	taxiPark.DELETE("/drivers/:id", handler.ArchiveDriver)
+	taxiPark.GET("/drivers/:id/documents", handler.ListDriverDocuments)
+	taxiPark.POST("/drivers/:id/cars/:car_id", handler.AttachCarToDriver)
+	taxiPark.DELETE("/drivers/:id/cars/:car_id", handler.DetachCarFromDriver)
+	taxiPark.POST("/drivers/:id/cars/:car_id/attach", handler.AttachCarToDriver)
+	taxiPark.DELETE("/drivers/:id/cars/:car_id/detach", handler.DetachCarFromDriver)
 	taxiPark.GET("/cars", handler.ListCars)
 	taxiPark.POST("/cars", handler.CreateCar)
 	taxiPark.PATCH("/cars/:id", handler.UpdateCar)
+	taxiPark.DELETE("/cars/:id", handler.ArchiveCar)
 	taxiPark.POST("/cars/:id/verify", handler.VerifyCar)
+	taxiPark.GET("/cars/:id/documents", handler.ListCarDocuments)
 	taxiPark.GET("/tariffs", handler.ListTariffs)
 	taxiPark.POST("/tariffs", handler.CreateTariff)
 	taxiPark.PATCH("/tariffs/:id", handler.UpdateTariff)
+}
+
+// CreateOrder godoc
+// @Summary Create taxi park order
+// @Description Creates an order from taxi park or dispatcher workspace. If passenger_phone is omitted, the order is linked to the taxi park owner account as a fallback.
+// @Tags taxi-park-orders
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body dto.TaxiParkCreateOrderRequest true "Taxi park order"
+// @Success 201 {object} OrderSuccessResponse
+// @Failure 400 {object} response.Error
+// @Failure 401 {object} response.Error
+// @Failure 403 {object} response.Error
+// @Failure 404 {object} response.Error
+// @Router /taxi-park/orders [post]
+func (handler *TaxiParkSettingsHandler) CreateOrder(context *gin.Context) {
+	ownerUserID, ok := userIDFromContext(context)
+	if !ok {
+		failUnauthorized(context, "User id is missing")
+		return
+	}
+	var request dto.TaxiParkCreateOrderRequest
+	if err := context.ShouldBindJSON(&request); err != nil {
+		failValidationWithDetails(context, "Invalid taxi park order request", map[string]any{
+			"reason": err.Error(),
+		})
+		return
+	}
+	order, err := handler.useCase.CreateOrder(context.Request.Context(), ownerUserID, request)
+	if err != nil {
+		failByError(context, err)
+		return
+	}
+	response.Created(context, orderToResponse(order))
 }
 
 // GetSettings godoc
@@ -179,6 +232,43 @@ func (handler *TaxiParkSettingsHandler) UpdateDriver(context *gin.Context) {
 	response.OK(context, taxiParkCreateDriverResponse(driver))
 }
 
+// UpdateDriverPassword godoc
+// @Summary Set taxi park driver password
+// @Tags taxi-park-drivers
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Driver ID"
+// @Param request body dto.TaxiParkDriverPasswordRequest true "New password"
+// @Success 200 {object} TaxiParkDriverPasswordSuccessResponse
+// @Failure 400 {object} response.Error
+// @Failure 401 {object} response.Error
+// @Failure 403 {object} response.Error
+// @Failure 404 {object} response.Error
+// @Router /taxi-park/drivers/{id}/password [post]
+func (handler *TaxiParkSettingsHandler) UpdateDriverPassword(context *gin.Context) {
+	ownerUserID, ok := userIDFromContext(context)
+	if !ok {
+		failUnauthorized(context, "User id is missing")
+		return
+	}
+	driverID, err := uuid.Parse(context.Param("id"))
+	if err != nil {
+		failValidation(context, "Invalid driver id")
+		return
+	}
+	var request dto.TaxiParkDriverPasswordRequest
+	if err := context.ShouldBindJSON(&request); err != nil {
+		failValidation(context, "Invalid taxi park driver password request")
+		return
+	}
+	if err := handler.useCase.UpdateDriverPassword(context.Request.Context(), ownerUserID, driverID, request); err != nil {
+		failByError(context, err)
+		return
+	}
+	response.OK(context, dto.TaxiParkDriverPasswordResponse{DriverID: driverID, PasswordUpdated: true})
+}
+
 // BlockDriver godoc
 // @Summary Block taxi park driver
 // @Tags taxi-park-drivers
@@ -244,6 +334,67 @@ func (handler *TaxiParkSettingsHandler) ArchiveDriver(context *gin.Context) {
 		return
 	}
 	response.OK(context, gin.H{"archived": true})
+}
+
+// UnblockDriver godoc
+// @Summary Unblock taxi park driver
+// @Tags taxi-park-drivers
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Driver ID"
+// @Success 200 {object} response.Success
+// @Failure 400 {object} response.Error
+// @Failure 401 {object} response.Error
+// @Failure 403 {object} response.Error
+// @Failure 404 {object} response.Error
+// @Router /taxi-park/drivers/{id}/unblock [post]
+func (handler *TaxiParkSettingsHandler) UnblockDriver(context *gin.Context) {
+	ownerUserID, ok := userIDFromContext(context)
+	if !ok {
+		failUnauthorized(context, "User id is missing")
+		return
+	}
+	driverID, err := uuid.Parse(context.Param("id"))
+	if err != nil {
+		failValidation(context, "Invalid driver id")
+		return
+	}
+	if err := handler.useCase.UnblockDriver(context.Request.Context(), ownerUserID, driverID); err != nil {
+		failByError(context, err)
+		return
+	}
+	response.OK(context, gin.H{"unblocked": true})
+}
+
+// ListDriverDocuments godoc
+// @Summary List taxi park driver documents
+// @Tags taxi-park-drivers
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Driver ID"
+// @Success 200 {object} TaxiParkDocumentsSuccessResponse
+// @Failure 400 {object} response.Error
+// @Failure 401 {object} response.Error
+// @Failure 403 {object} response.Error
+// @Failure 404 {object} response.Error
+// @Router /taxi-park/drivers/{id}/documents [get]
+func (handler *TaxiParkSettingsHandler) ListDriverDocuments(context *gin.Context) {
+	ownerUserID, ok := userIDFromContext(context)
+	if !ok {
+		failUnauthorized(context, "User id is missing")
+		return
+	}
+	driverID, err := uuid.Parse(context.Param("id"))
+	if err != nil {
+		failValidation(context, "Invalid driver id")
+		return
+	}
+	documents, err := handler.useCase.ListDriverDocuments(context.Request.Context(), ownerUserID, driverID)
+	if err != nil {
+		failByError(context, err)
+		return
+	}
+	response.OK(context, taxiParkDocumentsResponse(documents))
 }
 
 // ListCars godoc
@@ -367,6 +518,117 @@ func (handler *TaxiParkSettingsHandler) VerifyCar(context *gin.Context) {
 	response.OK(context, taxiParkCarResponse(car))
 }
 
+// ArchiveCar godoc
+// @Summary Archive taxi park car
+// @Tags taxi-park-cars
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Car ID"
+// @Success 200 {object} response.Success
+// @Failure 400 {object} response.Error
+// @Failure 401 {object} response.Error
+// @Failure 403 {object} response.Error
+// @Failure 404 {object} response.Error
+// @Router /taxi-park/cars/{id} [delete]
+func (handler *TaxiParkSettingsHandler) ArchiveCar(context *gin.Context) {
+	ownerUserID, ok := userIDFromContext(context)
+	if !ok {
+		failUnauthorized(context, "User id is missing")
+		return
+	}
+	carID, err := uuid.Parse(context.Param("id"))
+	if err != nil {
+		failValidation(context, "Invalid car id")
+		return
+	}
+	if err := handler.useCase.ArchiveCar(context.Request.Context(), ownerUserID, carID); err != nil {
+		failByError(context, err)
+		return
+	}
+	response.OK(context, gin.H{"archived": true})
+}
+
+// AttachCarToDriver godoc
+// @Summary Attach taxi park car to driver
+// @Tags taxi-park-cars
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Driver ID"
+// @Param car_id path string true "Car ID"
+// @Success 200 {object} response.Success
+// @Failure 400 {object} response.Error
+// @Failure 401 {object} response.Error
+// @Failure 403 {object} response.Error
+// @Failure 404 {object} response.Error
+// @Router /taxi-park/drivers/{id}/cars/{car_id} [post]
+func (handler *TaxiParkSettingsHandler) AttachCarToDriver(context *gin.Context) {
+	ownerUserID, driverID, carID, ok := taxiParkDriverCarIDs(context)
+	if !ok {
+		return
+	}
+	if err := handler.useCase.AttachCarToDriver(context.Request.Context(), ownerUserID, driverID, carID); err != nil {
+		failByError(context, err)
+		return
+	}
+	response.OK(context, gin.H{"attached": true})
+}
+
+// DetachCarFromDriver godoc
+// @Summary Detach taxi park car from driver
+// @Tags taxi-park-cars
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Driver ID"
+// @Param car_id path string true "Car ID"
+// @Success 200 {object} response.Success
+// @Failure 400 {object} response.Error
+// @Failure 401 {object} response.Error
+// @Failure 403 {object} response.Error
+// @Failure 404 {object} response.Error
+// @Router /taxi-park/drivers/{id}/cars/{car_id} [delete]
+func (handler *TaxiParkSettingsHandler) DetachCarFromDriver(context *gin.Context) {
+	ownerUserID, driverID, carID, ok := taxiParkDriverCarIDs(context)
+	if !ok {
+		return
+	}
+	if err := handler.useCase.DetachCarFromDriver(context.Request.Context(), ownerUserID, driverID, carID); err != nil {
+		failByError(context, err)
+		return
+	}
+	response.OK(context, gin.H{"detached": true})
+}
+
+// ListCarDocuments godoc
+// @Summary List taxi park car documents
+// @Tags taxi-park-cars
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Car ID"
+// @Success 200 {object} TaxiParkDocumentsSuccessResponse
+// @Failure 400 {object} response.Error
+// @Failure 401 {object} response.Error
+// @Failure 403 {object} response.Error
+// @Failure 404 {object} response.Error
+// @Router /taxi-park/cars/{id}/documents [get]
+func (handler *TaxiParkSettingsHandler) ListCarDocuments(context *gin.Context) {
+	ownerUserID, ok := userIDFromContext(context)
+	if !ok {
+		failUnauthorized(context, "User id is missing")
+		return
+	}
+	carID, err := uuid.Parse(context.Param("id"))
+	if err != nil {
+		failValidation(context, "Invalid car id")
+		return
+	}
+	documents, err := handler.useCase.ListCarDocuments(context.Request.Context(), ownerUserID, carID)
+	if err != nil {
+		failByError(context, err)
+		return
+	}
+	response.OK(context, taxiParkDocumentsResponse(documents))
+}
+
 // ListTariffs godoc
 // @Summary List taxi park tariffs
 // @Tags taxi-park-tariffs
@@ -460,6 +722,33 @@ func (handler *TaxiParkSettingsHandler) UpdateTariff(context *gin.Context) {
 		return
 	}
 	response.OK(context, dto.TaxiParkTariffFromDomain(tariff))
+}
+
+func taxiParkDriverCarIDs(context *gin.Context) (uuid.UUID, uuid.UUID, uuid.UUID, bool) {
+	ownerUserID, ok := userIDFromContext(context)
+	if !ok {
+		failUnauthorized(context, "User id is missing")
+		return uuid.Nil, uuid.Nil, uuid.Nil, false
+	}
+	driverID, err := uuid.Parse(context.Param("id"))
+	if err != nil {
+		failValidation(context, "Invalid driver id")
+		return uuid.Nil, uuid.Nil, uuid.Nil, false
+	}
+	carID, err := uuid.Parse(context.Param("car_id"))
+	if err != nil {
+		failValidation(context, "Invalid car id")
+		return uuid.Nil, uuid.Nil, uuid.Nil, false
+	}
+	return ownerUserID, driverID, carID, true
+}
+
+func taxiParkDocumentsResponse(documents []domain.TaxiParkDocument) dto.TaxiParkDocumentsResponse {
+	responseBody := dto.TaxiParkDocumentsResponse{Documents: make([]dto.TaxiParkDocumentResponse, 0, len(documents))}
+	for _, document := range documents {
+		responseBody.Documents = append(responseBody.Documents, dto.TaxiParkDocumentFromDomain(document))
+	}
+	return responseBody
 }
 
 func taxiParkCreateDriverResponse(driver taxiparkapp.CreateDriverResult) dto.TaxiParkCreateDriverResponse {

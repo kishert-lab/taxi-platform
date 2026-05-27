@@ -237,8 +237,38 @@ func (repository *PostgresFinanceRepository) GetTaxiParkBalance(ctx context.Cont
 
 func (repository *PostgresFinanceRepository) ListTaxiParkDrivers(ctx context.Context, ownerUserID uuid.UUID, limit int) ([]finance.TaxiParkDriver, error) {
 	const query = `
-		SELECT d.id, d.user_id, trim(coalesce(u.first_name, '') || ' ' || coalesce(u.last_name, '')) AS full_name,
-		       d.status, d.rating::float8, d.created_at
+		SELECT d.id,
+		       d.user_id,
+		       u.phone,
+		       COALESCE(u.email, ''),
+		       COALESCE(u.first_name, ''),
+		       COALESCE(u.last_name, ''),
+		       trim(coalesce(u.first_name, '') || ' ' || coalesce(u.last_name, '')) AS full_name,
+		       d.status,
+		       d.verification_status,
+		       d.rating::float8,
+		       d.ratings_count,
+		       d.birth_date,
+		       COALESCE(d.license_series, ''),
+		       COALESCE(d.license_number, ''),
+		       COALESCE(d.license_category, ''),
+		       d.license_issued_at,
+		       d.license_expires_at,
+		       d.driving_experience_from,
+		       d.has_no_taxi_work_restrictions,
+		       d.federal_law_580_compliant,
+		       d.regional_requirements_compliant,
+		       d.medical_check_passed,
+		       d.pretrip_control_required,
+		       d.pretrip_control_passed,
+		       d.no_transport_ban,
+		       d.verification_checked_at,
+		       d.verification_checked_by,
+		       d.is_verified,
+		       COALESCE(d.blocked_reason, ''),
+		       COALESCE(d.taxi_park_comment, ''),
+		       d.created_at,
+		       d.updated_at
 		FROM taxi_parks tp
 		JOIN drivers d ON d.taxi_park_id = tp.id
 		JOIN users u ON u.id = d.user_id
@@ -255,8 +285,61 @@ func (repository *PostgresFinanceRepository) ListTaxiParkDrivers(ctx context.Con
 	drivers := make([]finance.TaxiParkDriver, 0, limit)
 	for rows.Next() {
 		var driver finance.TaxiParkDriver
-		if err := rows.Scan(&driver.ID, &driver.UserID, &driver.FullName, &driver.Status, &driver.Rating, &driver.CreatedAt); err != nil {
+		var birthDate pgtype.Date
+		var licenseIssuedAt pgtype.Date
+		var licenseExpiresAt pgtype.Date
+		var drivingExperienceFrom pgtype.Date
+		var verificationCheckedAt pgtype.Timestamptz
+		var verificationCheckedBy pgtype.UUID
+		if err := rows.Scan(
+			&driver.ID,
+			&driver.UserID,
+			&driver.Phone,
+			&driver.Email,
+			&driver.FirstName,
+			&driver.LastName,
+			&driver.FullName,
+			&driver.Status,
+			&driver.VerificationStatus,
+			&driver.Rating,
+			&driver.RatingsCount,
+			&birthDate,
+			&driver.LicenseSeries,
+			&driver.LicenseNumber,
+			&driver.LicenseCategory,
+			&licenseIssuedAt,
+			&licenseExpiresAt,
+			&drivingExperienceFrom,
+			&driver.HasNoTaxiWorkRestrictions,
+			&driver.FederalLaw580Compliant,
+			&driver.RegionalRequirementsCompliant,
+			&driver.MedicalCheckPassed,
+			&driver.PretripControlRequired,
+			&driver.PretripControlPassed,
+			&driver.NoTransportBan,
+			&verificationCheckedAt,
+			&verificationCheckedBy,
+			&driver.IsVerified,
+			&driver.BlockedReason,
+			&driver.TaxiParkComment,
+			&driver.CreatedAt,
+			&driver.UpdatedAt,
+		); err != nil {
 			return nil, fmt.Errorf("scan taxi park driver: %w", err)
+		}
+		driver.BirthDate = pgDateTimePtr(birthDate)
+		driver.LicenseIssuedAt = pgDateTimePtr(licenseIssuedAt)
+		driver.LicenseExpiresAt = pgDateTimePtr(licenseExpiresAt)
+		driver.DrivingExperienceFrom = pgDateTimePtr(drivingExperienceFrom)
+		if verificationCheckedAt.Valid {
+			driver.VerificationCheckedAt = &verificationCheckedAt.Time
+		}
+		if verificationCheckedBy.Valid {
+			value, err := uuid.FromBytes(verificationCheckedBy.Bytes[:])
+			if err != nil {
+				return nil, fmt.Errorf("parse taxi park driver verifier id: %w", err)
+			}
+			driver.VerificationCheckedBy = &value
 		}
 		drivers = append(drivers, driver)
 	}
@@ -440,6 +523,13 @@ const financialTransactionColumns = `
 	net_amount_cents,
 	currency,
 	created_at`
+
+func pgDateTimePtr(value pgtype.Date) *time.Time {
+	if !value.Valid {
+		return nil
+	}
+	return &value.Time
+}
 
 func scanFinancialTransactions(rows pgx.Rows) ([]domain.FinancialTransaction, error) {
 	transactions := make([]domain.FinancialTransaction, 0)

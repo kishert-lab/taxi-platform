@@ -25,6 +25,11 @@ type OrderEstimateSuccessResponse struct {
 	Meta response.Meta             `json:"meta"`
 }
 
+type OrderSuccessResponse struct {
+	Data dto.OrderResponse `json:"data"`
+	Meta response.Meta     `json:"meta"`
+}
+
 type PassengerOrderSuccessResponse struct {
 	Data dto.PassengerOrderResponse `json:"data"`
 	Meta response.Meta              `json:"meta"`

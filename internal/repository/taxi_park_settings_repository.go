@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -183,6 +184,175 @@ func (repository *PostgresTaxiParkSettingsRepository) UpdateTariffByOwnerUserID(
 	return tariff, nil
 }
 
+func (repository *PostgresTaxiParkSettingsRepository) CreateOrderByOwnerUserID(ctx context.Context, ownerUserID uuid.UUID, record taxiparkapp.CreateOrderRecord) (domain.Order, error) {
+	transaction, err := repository.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return domain.Order{}, fmt.Errorf("begin taxi park order transaction: %w", err)
+	}
+	defer rollbackTx(ctx, transaction)
+
+	var taxiParkID uuid.UUID
+	var cityID uuid.UUID
+	if err := transaction.QueryRow(ctx, `
+		SELECT id, city_id
+		FROM taxi_parks
+		WHERE owner_user_id = $1 AND deleted_at IS NULL`, ownerUserID).Scan(&taxiParkID, &cityID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.Order{}, taxiparkapp.ErrTaxiParkNotFound
+		}
+		return domain.Order{}, fmt.Errorf("select taxi park for order creation: %w", err)
+	}
+
+	passengerID := ownerUserID
+	if record.PassengerPhone != "" {
+		firstName, lastName := splitPassengerName(record.PassengerName)
+		if err := transaction.QueryRow(ctx, `
+			INSERT INTO users (
+				phone, role, registration_type, first_name, last_name,
+				is_phone_confirmed, is_active
+			)
+			VALUES ($1, 'passenger', 'passenger', NULLIF($2, ''), NULLIF($3, ''), true, true)
+			ON CONFLICT (phone, role) DO UPDATE
+			SET first_name = COALESCE(NULLIF(EXCLUDED.first_name, ''), users.first_name),
+			    last_name = COALESCE(NULLIF(EXCLUDED.last_name, ''), users.last_name),
+			    updated_at = now()
+			RETURNING id`, record.PassengerPhone, firstName, lastName).Scan(&passengerID); err != nil {
+			return domain.Order{}, fmt.Errorf("upsert passenger for taxi park order: %w", err)
+		}
+	}
+
+	metadata, err := json.Marshal(map[string]any{
+		"created_by_user_id": ownerUserID,
+		"created_by_role":    string(domain.UserRoleTaxiPark),
+		"taxi_park_id":       taxiParkID,
+		"passenger_phone":    record.PassengerPhone,
+		"passenger_name":     record.PassengerName,
+	})
+	if err != nil {
+		return domain.Order{}, fmt.Errorf("marshal taxi park order metadata: %w", err)
+	}
+
+	var destinationLatitude any
+	var destinationLongitude any
+	if record.DestinationLocation != nil {
+		destinationLatitude = record.DestinationLocation.Latitude
+		destinationLongitude = record.DestinationLocation.Longitude
+	}
+
+	order, err := scanDispatchOrder(transaction.QueryRow(ctx, `
+		WITH selected_tariff AS (
+			SELECT t.id AS order_tariff_id,
+			       NULL::uuid AS taxi_park_tariff_id,
+			       t.base_price,
+			       t.price_per_km,
+			       t.minimum_price
+			FROM tariffs t
+			WHERE t.id = $3
+			  AND t.is_active = true
+			  AND t.deleted_at IS NULL
+			UNION ALL
+			SELECT NULL::uuid AS order_tariff_id,
+			       t.id AS taxi_park_tariff_id,
+			       (t.base_price_cents::numeric / 100) AS base_price,
+			       (t.price_per_km_cents::numeric / 100) AS price_per_km,
+			       (t.minimum_price_cents::numeric / 100) AS minimum_price
+			FROM taxi_park_tariffs t
+			WHERE t.id = $3
+			  AND t.taxi_park_id = $13
+			  AND t.is_active = true
+			LIMIT 1
+		),
+		order_points AS (
+			SELECT ST_SetSRID(ST_MakePoint($6, $5), 4326)::geography AS pickup_location,
+			       CASE
+			           WHEN $8::double precision IS NULL OR $9::double precision IS NULL THEN NULL
+			           ELSE ST_SetSRID(ST_MakePoint($9, $8), 4326)::geography
+			       END AS destination_location
+		),
+		inserted_order AS (
+			INSERT INTO orders (
+				passenger_id, city_id, tariff_id, status,
+				pickup_address, pickup_location,
+				destination_address, destination_location,
+				estimated_price, payment_method, passenger_comment,
+				dispatch_attempt, version, metadata
+			)
+			SELECT $1, $2, t.order_tariff_id, 'searching',
+			       $4,
+			       p.pickup_location,
+			       $7,
+			       p.destination_location,
+			       CASE
+			           WHEN p.destination_location IS NULL THEN GREATEST(t.minimum_price, t.base_price)
+			           ELSE GREATEST(
+			               t.minimum_price,
+			               t.base_price + ((ST_Distance(p.pickup_location, p.destination_location) / 1000.0)::numeric * t.price_per_km)
+			           )
+			       END,
+			       $10, NULLIF($11, ''), 0, 1,
+			       $12::jsonb || jsonb_build_object('taxi_park_tariff_id', t.taxi_park_tariff_id)
+			FROM selected_tariff t
+			CROSS JOIN order_points p
+			RETURNING id
+		)
+		SELECT `+dispatchOrderSelectColumns+`
+		FROM orders
+		WHERE id = (SELECT id FROM inserted_order)`,
+		passengerID,
+		cityID,
+		record.TariffID,
+		record.PickupAddress,
+		record.PickupLocation.Latitude,
+		record.PickupLocation.Longitude,
+		record.DestinationAddress,
+		destinationLatitude,
+		destinationLongitude,
+		record.PaymentMethod,
+		record.Comment,
+		string(metadata),
+		taxiParkID,
+	))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.Order{}, fmt.Errorf("%w: tariff_id %s", taxiparkapp.ErrOrderTariffNotFound, record.TariffID)
+		}
+		return domain.Order{}, fmt.Errorf("insert taxi park order: %w", err)
+	}
+
+	createdPayload, err := json.Marshal(map[string]any{
+		"order_id": order.ID,
+		"status":   domain.OrderStatusCreated,
+	})
+	if err != nil {
+		return domain.Order{}, fmt.Errorf("marshal taxi park order created event: %w", err)
+	}
+	searchingPayload, err := json.Marshal(map[string]any{
+		"order_id": order.ID,
+		"status":   domain.OrderStatusSearching,
+		"version":  order.Version,
+	})
+	if err != nil {
+		return domain.Order{}, fmt.Errorf("marshal taxi park order searching event: %w", err)
+	}
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO order_events (order_id, actor_user_id, event_type, payload)
+		VALUES ($1, $2, 'order.created', $3::jsonb),
+		       ($1, $2, 'order.searching', $4::jsonb)`,
+		order.ID,
+		ownerUserID,
+		string(createdPayload),
+		string(searchingPayload),
+	); err != nil {
+		return domain.Order{}, fmt.Errorf("insert taxi park order events: %w", err)
+	}
+
+	if err := transaction.Commit(ctx); err != nil {
+		return domain.Order{}, fmt.Errorf("commit taxi park order transaction: %w", err)
+	}
+
+	return order, nil
+}
+
 func (repository *PostgresTaxiParkSettingsRepository) CreateDriverByOwnerUserID(ctx context.Context, ownerUserID uuid.UUID, record taxiparkapp.CreateDriverRecord) (taxiparkapp.CreateDriverResult, error) {
 	transaction, err := repository.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
@@ -287,19 +457,19 @@ func (repository *PostgresTaxiParkSettingsRepository) CreateDriverByOwnerUserID(
 			is_verified,
 			taxi_park_comment
 		)
-		VALUES ($1, $2, $3, 'offline', 5.00, 0, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
-		        $18, CASE WHEN $18 = 'verified' THEN now() ELSE NULL END, CASE WHEN $18 = 'verified' THEN $19 ELSE NULL END, $18 = 'verified', $20)
+		VALUES ($1, $2, $3, 'offline', 5.00, 0, $4::date, $5, $6, $7, $8::date, $9::date, $10::date, $11, $12, $13, $14, $15, $16, $17,
+		        $18::text, CASE WHEN $18::text = 'verified' THEN now() ELSE NULL END, CASE WHEN $18::text = 'verified' THEN $19::uuid ELSE NULL END, $18::text = 'verified', $20)
 		RETURNING id`,
 		result.UserID,
 		cityID,
 		taxiParkID,
-		record.BirthDate,
+		nullableDatePtr(record.BirthDate),
 		nullableString(record.LicenseSeries),
 		nullableString(record.LicenseNumber),
 		nullableString(record.LicenseCategory),
-		record.LicenseIssuedAt,
-		record.LicenseExpiresAt,
-		record.DrivingExperienceFrom,
+		nullableDatePtr(record.LicenseIssuedAt),
+		nullableDatePtr(record.LicenseExpiresAt),
+		nullableDatePtr(record.DrivingExperienceFrom),
 		record.HasNoTaxiWorkRestrictions,
 		record.FederalLaw580Compliant,
 		record.RegionalRequirementsCompliant,
@@ -345,26 +515,26 @@ func (repository *PostgresTaxiParkSettingsRepository) UpdateDriverByOwnerUserID(
 
 	result, err := scanTaxiParkDriverResult(transaction.QueryRow(ctx, `
 		UPDATE drivers d
-		SET birth_date = COALESCE($3, birth_date),
-		    license_series = COALESCE($4, license_series),
-		    license_number = COALESCE($5, license_number),
-		    license_issued_at = COALESCE($6, license_issued_at),
-		    license_expires_at = COALESCE($7, license_expires_at),
-		    driving_experience_from = COALESCE($8, driving_experience_from),
-		    verification_status = COALESCE($9, verification_status),
-		    is_verified = COALESCE(($9 = 'verified'), is_verified),
-		    verification_checked_at = CASE WHEN $9 = 'verified' THEN now() ELSE verification_checked_at END,
-		    verification_checked_by = CASE WHEN $9 = 'verified' THEN $1 ELSE verification_checked_by END,
-		    blocked_reason = CASE WHEN $9 = 'blocked' THEN COALESCE($10, blocked_reason) ELSE blocked_reason END,
-		    taxi_park_comment = COALESCE($10, taxi_park_comment),
-		    license_category = COALESCE($11, license_category),
-		    has_no_taxi_work_restrictions = COALESCE($12, has_no_taxi_work_restrictions),
-		    federal_law_580_compliant = COALESCE($13, federal_law_580_compliant),
-		    regional_requirements_compliant = COALESCE($14, regional_requirements_compliant),
-		    medical_check_passed = COALESCE($15, medical_check_passed),
-		    pretrip_control_required = COALESCE($16, pretrip_control_required),
-		    pretrip_control_passed = COALESCE($17, pretrip_control_passed),
-		    no_transport_ban = COALESCE($18, no_transport_ban)
+		SET birth_date = COALESCE($3::date, d.birth_date),
+		    license_series = COALESCE($4::text, d.license_series),
+		    license_number = COALESCE($5::text, d.license_number),
+		    license_issued_at = COALESCE($6::date, d.license_issued_at),
+		    license_expires_at = COALESCE($7::date, d.license_expires_at),
+		    driving_experience_from = COALESCE($8::date, d.driving_experience_from),
+		    verification_status = COALESCE($9::text, d.verification_status),
+		    is_verified = COALESCE(($9::text = 'verified'), d.is_verified),
+		    verification_checked_at = CASE WHEN $9::text = 'verified' THEN now() ELSE d.verification_checked_at END,
+		    verification_checked_by = CASE WHEN $9::text = 'verified' THEN $1::uuid ELSE d.verification_checked_by END,
+		    blocked_reason = CASE WHEN $9::text = 'blocked' THEN COALESCE($10::text, d.blocked_reason) ELSE d.blocked_reason END,
+		    taxi_park_comment = COALESCE($10::text, d.taxi_park_comment),
+		    license_category = COALESCE($11::text, d.license_category),
+		    has_no_taxi_work_restrictions = COALESCE($12::boolean, d.has_no_taxi_work_restrictions),
+		    federal_law_580_compliant = COALESCE($13::boolean, d.federal_law_580_compliant),
+		    regional_requirements_compliant = COALESCE($14::boolean, d.regional_requirements_compliant),
+		    medical_check_passed = COALESCE($15::boolean, d.medical_check_passed),
+		    pretrip_control_required = COALESCE($16::boolean, d.pretrip_control_required),
+		    pretrip_control_passed = COALESCE($17::boolean, d.pretrip_control_passed),
+		    no_transport_ban = COALESCE($18::boolean, d.no_transport_ban)
 		FROM taxi_parks tp, users u
 		WHERE tp.id = d.taxi_park_id
 		  AND u.id = d.user_id
@@ -382,12 +552,12 @@ func (repository *PostgresTaxiParkSettingsRepository) UpdateDriverByOwnerUserID(
 		          d.is_verified, COALESCE(d.taxi_park_comment, '')`,
 		ownerUserID,
 		driverID,
-		record.BirthDate,
+		nullableDatePtr(record.BirthDate),
 		record.LicenseSeries,
 		record.LicenseNumber,
-		record.LicenseIssuedAt,
-		record.LicenseExpiresAt,
-		record.DrivingExperienceFrom,
+		nullableDatePtr(record.LicenseIssuedAt),
+		nullableDatePtr(record.LicenseExpiresAt),
+		nullableDatePtr(record.DrivingExperienceFrom),
 		record.VerificationStatus,
 		record.TaxiParkComment,
 		record.LicenseCategory,
@@ -400,6 +570,9 @@ func (repository *PostgresTaxiParkSettingsRepository) UpdateDriverByOwnerUserID(
 		record.NoTransportBan,
 	))
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return taxiparkapp.CreateDriverResult{}, taxiparkapp.ErrTaxiParkResourceNotFound
+		}
 		return taxiparkapp.CreateDriverResult{}, fmt.Errorf("update taxi park driver: %w", err)
 	}
 	if _, err := transaction.Exec(ctx, `
@@ -428,6 +601,57 @@ func (repository *PostgresTaxiParkSettingsRepository) UpdateDriverByOwnerUserID(
 		return taxiparkapp.CreateDriverResult{}, fmt.Errorf("commit update taxi park driver transaction: %w", err)
 	}
 	return result, nil
+}
+
+func (repository *PostgresTaxiParkSettingsRepository) UpdateDriverPasswordByOwnerUserID(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID, passwordHash string) error {
+	transaction, err := repository.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin taxi park driver password transaction: %w", err)
+	}
+	defer rollbackTx(ctx, transaction)
+
+	var driverExists bool
+	if err := transaction.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM drivers WHERE id = $1 AND deleted_at IS NULL)`, driverID).Scan(&driverExists); err != nil {
+		return fmt.Errorf("check taxi park driver password target: %w", err)
+	}
+	if !driverExists {
+		return taxiparkapp.ErrTaxiParkResourceNotFound
+	}
+
+	commandTag, err := transaction.Exec(ctx, `
+		UPDATE users u
+		SET password_hash = $3,
+		    must_change_password = false
+		FROM drivers d
+		JOIN taxi_parks tp ON tp.id = d.taxi_park_id
+		WHERE u.id = d.user_id
+		  AND tp.owner_user_id = $1
+		  AND d.id = $2
+		  AND d.deleted_at IS NULL
+		  AND tp.deleted_at IS NULL`, ownerUserID, driverID, passwordHash)
+	if err != nil {
+		return fmt.Errorf("update taxi park driver password: %w", err)
+	}
+	if commandTag.RowsAffected() == 0 {
+		return taxiparkapp.ErrTaxiParkResourceForbidden
+	}
+
+	payload, err := json.Marshal(map[string]any{
+		"driver_id": driverID,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal taxi park driver password audit payload: %w", err)
+	}
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO finance_audit_events (actor_user_id, event_type, payload)
+		VALUES ($1, 'taxi_park.driver.password_updated', $2)`, ownerUserID, payload); err != nil {
+		return fmt.Errorf("insert taxi park driver password audit event: %w", err)
+	}
+
+	if err := transaction.Commit(ctx); err != nil {
+		return fmt.Errorf("commit taxi park driver password transaction: %w", err)
+	}
+	return nil
 }
 
 func (repository *PostgresTaxiParkSettingsRepository) BlockDriverByOwnerUserID(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID, reason string) error {
@@ -527,7 +751,7 @@ func (repository *PostgresTaxiParkSettingsRepository) CreateCarByOwnerUserID(ctx
 		)
 		VALUES ($1, $2, $3, $4, NULLIF($5, 0), $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
 		        $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, CASE WHEN $12 = 'verified' THEN now() ELSE NULL END,
-		        CASE WHEN $12 = 'verified' THEN $32 ELSE NULL END, $33)
+		        CASE WHEN $12 = 'verified' THEN $32::uuid ELSE NULL END, $33)
 		RETURNING id, taxi_park_id, driver_id, brand, model, COALESCE(year, 0), plate_number, COALESCE(vin, ''),
 		          COALESCE(sts, ''), COALESCE(pts, ''), color, COALESCE(car_class, ''), verification_status,
 		          COALESCE(owner_details, ''), osago_expires_at, diagnostic_card_expires_at,
@@ -536,18 +760,21 @@ func (repository *PostgresTaxiParkSettingsRepository) CreateCarByOwnerUserID(ctx
 		          regional_requirements_compliant, has_taxi_color_scheme, has_orange_roof_lamp, has_passenger_info,
 		          osago_verified, diagnostic_card_verified, technical_state_verified, localization_compliant,
 		          legal_use_basis_verified, verification_checked_at, verification_checked_by, is_active, created_at, updated_at`,
-		taxiParkID, record.PrimaryDriverID, record.Brand, record.Model, record.Year, record.PlateNumber,
+		taxiParkID, nullableUUIDPtr(record.PrimaryDriverID), record.Brand, record.Model, record.Year, record.PlateNumber,
 		nullableString(record.VIN), nullableString(record.STS), nullableString(record.PTS), record.Color,
 		nullableString(record.CarClass), record.VerificationStatus, nullableString(record.OwnerDetails),
-		record.OSAGOExpiresAt, record.DiagnosticCardExpiresAt, nullableString(record.TaxiPermitNumber),
-		nullableString(record.RegionalRegistryNumber), nullableString(record.PermitRegion), record.PermitIssuedAt,
-		record.PermitExpiresAt, record.TaxiPermitVerified, record.RegionalRegistryVerified,
+		nullableDatePtr(record.OSAGOExpiresAt), nullableDatePtr(record.DiagnosticCardExpiresAt), nullableString(record.TaxiPermitNumber),
+		nullableString(record.RegionalRegistryNumber), nullableString(record.PermitRegion), nullableDatePtr(record.PermitIssuedAt),
+		nullableDatePtr(record.PermitExpiresAt), record.TaxiPermitVerified, record.RegionalRegistryVerified,
 		record.RegionalRequirementsCompliant, record.HasTaxiColorScheme, record.HasOrangeRoofLamp,
 		record.HasPassengerInfo, record.OSAGOVerified, record.DiagnosticCardVerified,
 		record.TechnicalStateVerified, record.LocalizationCompliant, record.LegalUseBasisVerified,
 		ownerUserID, record.IsActive,
 	))
 	if err != nil {
+		if isUniqueViolation(err) {
+			return domain.Car{}, taxiparkapp.ErrCarAlreadyExists
+		}
 		return domain.Car{}, fmt.Errorf("insert taxi park car: %w", err)
 	}
 	if err := repository.replaceCarAssignments(ctx, transaction, taxiParkID, car.ID, record.AttachedDriverIDs); err != nil {
@@ -603,7 +830,7 @@ func (repository *PostgresTaxiParkSettingsRepository) UpdateCarByOwnerUserID(ctx
 		    localization_compliant = COALESCE($31, localization_compliant),
 		    legal_use_basis_verified = COALESCE($32, legal_use_basis_verified),
 		    verification_checked_at = CASE WHEN $13 = 'verified' THEN now() ELSE verification_checked_at END,
-		    verification_checked_by = CASE WHEN $13 = 'verified' THEN $33 ELSE verification_checked_by END,
+		    verification_checked_by = CASE WHEN $13 = 'verified' THEN $33::uuid ELSE verification_checked_by END,
 		    is_active = COALESCE($34, is_active)
 		WHERE taxi_park_id = $1 AND id = $2 AND deleted_at IS NULL
 		RETURNING id, taxi_park_id, driver_id, brand, model, COALESCE(year, 0), plate_number, COALESCE(vin, ''),
@@ -614,10 +841,10 @@ func (repository *PostgresTaxiParkSettingsRepository) UpdateCarByOwnerUserID(ctx
 		          regional_requirements_compliant, has_taxi_color_scheme, has_orange_roof_lamp, has_passenger_info,
 		          osago_verified, diagnostic_card_verified, technical_state_verified, localization_compliant,
 		          legal_use_basis_verified, verification_checked_at, verification_checked_by, is_active, created_at, updated_at`,
-		taxiParkID, carID, record.PrimaryDriverID, record.Brand, record.Model, record.Year, record.PlateNumber,
+		taxiParkID, carID, nullableUUIDPtr(record.PrimaryDriverID), record.Brand, record.Model, nullableIntPtr(record.Year), record.PlateNumber,
 		record.VIN, record.STS, record.PTS, record.Color, record.CarClass, record.VerificationStatus,
-		record.OwnerDetails, record.OSAGOExpiresAt, record.DiagnosticCardExpiresAt, record.TaxiPermitNumber,
-		record.RegionalRegistryNumber, record.PermitRegion, record.PermitIssuedAt, record.PermitExpiresAt,
+		record.OwnerDetails, nullableDatePtr(record.OSAGOExpiresAt), nullableDatePtr(record.DiagnosticCardExpiresAt), record.TaxiPermitNumber,
+		record.RegionalRegistryNumber, record.PermitRegion, nullableDatePtr(record.PermitIssuedAt), nullableDatePtr(record.PermitExpiresAt),
 		record.TaxiPermitVerified, record.RegionalRegistryVerified, record.RegionalRequirementsCompliant,
 		record.HasTaxiColorScheme, record.HasOrangeRoofLamp, record.HasPassengerInfo, record.OSAGOVerified,
 		record.DiagnosticCardVerified, record.TechnicalStateVerified, record.LocalizationCompliant,
@@ -636,6 +863,166 @@ func (repository *PostgresTaxiParkSettingsRepository) UpdateCarByOwnerUserID(ctx
 		return domain.Car{}, fmt.Errorf("commit update taxi park car transaction: %w", err)
 	}
 	return car, nil
+}
+
+func (repository *PostgresTaxiParkSettingsRepository) UnblockDriverByOwnerUserID(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID) error {
+	commandTag, err := repository.pool.Exec(ctx, `
+		UPDATE drivers d
+		SET status = 'offline',
+		    verification_status = CASE WHEN d.is_verified THEN 'verified' ELSE 'pending_verification' END,
+		    blocked_reason = NULL
+		FROM taxi_parks tp
+		WHERE tp.id = d.taxi_park_id
+		  AND tp.owner_user_id = $1
+		  AND d.id = $2
+		  AND d.verification_status <> 'archived'
+		  AND d.deleted_at IS NULL
+		  AND tp.deleted_at IS NULL`, ownerUserID, driverID)
+	if err != nil {
+		return fmt.Errorf("unblock taxi park driver: %w", err)
+	}
+	if commandTag.RowsAffected() == 0 {
+		return taxiparkapp.ErrTaxiParkResourceNotFound
+	}
+	return nil
+}
+
+func (repository *PostgresTaxiParkSettingsRepository) ArchiveCarByOwnerUserID(ctx context.Context, ownerUserID uuid.UUID, carID uuid.UUID) error {
+	transaction, err := repository.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin archive taxi park car transaction: %w", err)
+	}
+	defer rollbackTx(ctx, transaction)
+
+	taxiParkID, err := taxiParkIDByOwner(ctx, transaction, ownerUserID)
+	if err != nil {
+		return err
+	}
+
+	commandTag, err := transaction.Exec(ctx, `
+		UPDATE cars
+		SET verification_status = 'archived',
+		    is_active = false,
+		    deleted_at = now()
+		WHERE taxi_park_id = $1
+		  AND id = $2
+		  AND deleted_at IS NULL`, taxiParkID, carID)
+	if err != nil {
+		return fmt.Errorf("archive taxi park car: %w", err)
+	}
+	if commandTag.RowsAffected() == 0 {
+		return taxiparkapp.ErrTaxiParkResourceNotFound
+	}
+
+	if _, err := transaction.Exec(ctx, `DELETE FROM car_driver_assignments WHERE taxi_park_id = $1 AND car_id = $2`, taxiParkID, carID); err != nil {
+		return fmt.Errorf("delete archived car assignments: %w", err)
+	}
+
+	if err := transaction.Commit(ctx); err != nil {
+		return fmt.Errorf("commit archive taxi park car transaction: %w", err)
+	}
+	return nil
+}
+
+func (repository *PostgresTaxiParkSettingsRepository) AttachCarToDriverByOwnerUserID(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID, carID uuid.UUID) error {
+	transaction, err := repository.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin attach taxi park car transaction: %w", err)
+	}
+	defer rollbackTx(ctx, transaction)
+
+	taxiParkID, err := taxiParkIDByOwner(ctx, transaction, ownerUserID)
+	if err != nil {
+		return err
+	}
+	if err := repository.ensureDriverAndCarBelongToPark(ctx, transaction, taxiParkID, driverID, carID); err != nil {
+		return err
+	}
+	if err := repository.assignCarToDriver(ctx, transaction, taxiParkID, carID, driverID); err != nil {
+		return err
+	}
+	if _, err := transaction.Exec(ctx, `UPDATE cars SET driver_id = COALESCE(driver_id, $3) WHERE taxi_park_id = $1 AND id = $2`, taxiParkID, carID, driverID); err != nil {
+		return fmt.Errorf("set taxi park car primary driver: %w", err)
+	}
+	if err := transaction.Commit(ctx); err != nil {
+		return fmt.Errorf("commit attach taxi park car transaction: %w", err)
+	}
+	return nil
+}
+
+func (repository *PostgresTaxiParkSettingsRepository) DetachCarFromDriverByOwnerUserID(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID, carID uuid.UUID) error {
+	transaction, err := repository.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin detach taxi park car transaction: %w", err)
+	}
+	defer rollbackTx(ctx, transaction)
+
+	taxiParkID, err := taxiParkIDByOwner(ctx, transaction, ownerUserID)
+	if err != nil {
+		return err
+	}
+	if err := repository.ensureDriverAndCarBelongToPark(ctx, transaction, taxiParkID, driverID, carID); err != nil {
+		return err
+	}
+	if _, err := transaction.Exec(ctx, `DELETE FROM car_driver_assignments WHERE taxi_park_id = $1 AND car_id = $2 AND driver_id = $3`, taxiParkID, carID, driverID); err != nil {
+		return fmt.Errorf("detach taxi park car from driver: %w", err)
+	}
+	if _, err := transaction.Exec(ctx, `
+		UPDATE cars
+		SET driver_id = (
+			SELECT driver_id
+			FROM car_driver_assignments
+			WHERE taxi_park_id = $1 AND car_id = $2
+			ORDER BY created_at
+			LIMIT 1
+		)
+		WHERE taxi_park_id = $1 AND id = $2 AND driver_id = $3`, taxiParkID, carID, driverID); err != nil {
+		return fmt.Errorf("reset taxi park car primary driver: %w", err)
+	}
+	if err := transaction.Commit(ctx); err != nil {
+		return fmt.Errorf("commit detach taxi park car transaction: %w", err)
+	}
+	return nil
+}
+
+func (repository *PostgresTaxiParkSettingsRepository) ListDriverDocumentsByOwnerUserID(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID) ([]domain.TaxiParkDocument, error) {
+	var exists bool
+	if err := repository.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM drivers d
+			JOIN taxi_parks tp ON tp.id = d.taxi_park_id
+			WHERE tp.owner_user_id = $1
+			  AND d.id = $2
+			  AND d.deleted_at IS NULL
+			  AND tp.deleted_at IS NULL
+		)`, ownerUserID, driverID).Scan(&exists); err != nil {
+		return nil, fmt.Errorf("check taxi park driver documents owner: %w", err)
+	}
+	if !exists {
+		return nil, taxiparkapp.ErrTaxiParkResourceNotFound
+	}
+	return []domain.TaxiParkDocument{}, nil
+}
+
+func (repository *PostgresTaxiParkSettingsRepository) ListCarDocumentsByOwnerUserID(ctx context.Context, ownerUserID uuid.UUID, carID uuid.UUID) ([]domain.TaxiParkDocument, error) {
+	var exists bool
+	if err := repository.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM cars c
+			JOIN taxi_parks tp ON tp.id = c.taxi_park_id
+			WHERE tp.owner_user_id = $1
+			  AND c.id = $2
+			  AND c.deleted_at IS NULL
+			  AND tp.deleted_at IS NULL
+		)`, ownerUserID, carID).Scan(&exists); err != nil {
+		return nil, fmt.Errorf("check taxi park car documents owner: %w", err)
+	}
+	if !exists {
+		return nil, taxiparkapp.ErrTaxiParkResourceNotFound
+	}
+	return []domain.TaxiParkDocument{}, nil
 }
 
 func (repository *PostgresTaxiParkSettingsRepository) ensureSettings(ctx context.Context, ownerUserID uuid.UUID) error {
@@ -913,6 +1300,38 @@ func datePtr(value pgtype.Date) *time.Time {
 	return &value.Time
 }
 
+func nullableUUIDPtr(value *uuid.UUID) any {
+	if value == nil {
+		return nil
+	}
+	return *value
+}
+
+func nullableIntPtr(value *int) any {
+	if value == nil {
+		return nil
+	}
+	return *value
+}
+
+func nullableDatePtr(value *time.Time) any {
+	if value == nil {
+		return nil
+	}
+	return pgtype.Date{Time: *value, Valid: true}
+}
+
+func splitPassengerName(name string) (string, string) {
+	parts := strings.Fields(name)
+	if len(parts) == 0 {
+		return "", ""
+	}
+	if len(parts) == 1 {
+		return parts[0], ""
+	}
+	return parts[0], strings.Join(parts[1:], " ")
+}
+
 func taxiParkIDByOwner(ctx context.Context, transaction pgx.Tx, ownerUserID uuid.UUID) (uuid.UUID, error) {
 	var taxiParkID uuid.UUID
 	if err := transaction.QueryRow(ctx, `
@@ -928,18 +1347,29 @@ func taxiParkIDByOwner(ctx context.Context, transaction pgx.Tx, ownerUserID uuid
 }
 
 func (repository *PostgresTaxiParkSettingsRepository) assignCarToDriver(ctx context.Context, transaction pgx.Tx, taxiParkID uuid.UUID, carID uuid.UUID, driverID uuid.UUID) error {
+	if err := repository.ensureDriverAndCarBelongToPark(ctx, transaction, taxiParkID, driverID, carID); err != nil {
+		return err
+	}
 	if _, err := transaction.Exec(ctx, `
 		INSERT INTO car_driver_assignments (car_id, driver_id, taxi_park_id)
-		SELECT c.id, d.id, $1
-		FROM cars c, drivers d
-		WHERE c.id = $2
-		  AND d.id = $3
-		  AND c.taxi_park_id = $1
-		  AND d.taxi_park_id = $1
-		  AND c.deleted_at IS NULL
-		  AND d.deleted_at IS NULL
+		VALUES ($2, $3, $1)
 		ON CONFLICT (car_id, driver_id) DO NOTHING`, taxiParkID, carID, driverID); err != nil {
 		return fmt.Errorf("assign taxi park car to driver: %w", err)
+	}
+	return nil
+}
+
+func (repository *PostgresTaxiParkSettingsRepository) ensureDriverAndCarBelongToPark(ctx context.Context, transaction pgx.Tx, taxiParkID uuid.UUID, driverID uuid.UUID, carID uuid.UUID) error {
+	var driverExists bool
+	var carExists bool
+	if err := transaction.QueryRow(ctx, `
+		SELECT
+			EXISTS (SELECT 1 FROM drivers WHERE taxi_park_id = $1 AND id = $2 AND deleted_at IS NULL),
+			EXISTS (SELECT 1 FROM cars WHERE taxi_park_id = $1 AND id = $3 AND deleted_at IS NULL)`, taxiParkID, driverID, carID).Scan(&driverExists, &carExists); err != nil {
+		return fmt.Errorf("check taxi park driver car ownership: %w", err)
+	}
+	if !driverExists || !carExists {
+		return taxiparkapp.ErrTaxiParkResourceNotFound
 	}
 	return nil
 }

@@ -46,12 +46,38 @@ type FinancialTransactionsResponse struct {
 }
 
 type TaxiParkDriverResponse struct {
-	ID        uuid.UUID           `json:"id" example:"22222222-2222-2222-2222-222222222222"`
-	UserID    uuid.UUID           `json:"user_id" example:"66666666-6666-6666-6666-666666666666"`
-	FullName  string              `json:"full_name" example:"Ivan Petrov"`
-	Status    domain.DriverStatus `json:"status" example:"online"`
-	Rating    float64             `json:"rating" example:"4.95"`
-	CreatedAt time.Time           `json:"created_at" example:"2026-05-12T12:00:00Z"`
+	ID                            uuid.UUID                          `json:"id" example:"22222222-2222-2222-2222-222222222222"`
+	UserID                        uuid.UUID                          `json:"user_id" example:"66666666-6666-6666-6666-666666666666"`
+	Phone                         string                             `json:"phone" example:"+79990000001"`
+	Email                         string                             `json:"email,omitempty" example:"driver@example.com"`
+	FirstName                     string                             `json:"first_name,omitempty" example:"Ivan"`
+	LastName                      string                             `json:"last_name,omitempty" example:"Petrov"`
+	FullName                      string                             `json:"full_name" example:"Ivan Petrov"`
+	Status                        domain.DriverStatus                `json:"status" example:"offline"`
+	VerificationStatus            domain.VerificationLifecycleStatus `json:"verification_status" example:"pending_verification"`
+	Rating                        float64                            `json:"rating" example:"4.95"`
+	RatingsCount                  int                                `json:"ratings_count" example:"0"`
+	BirthDate                     *time.Time                         `json:"birth_date,omitempty" example:"1990-01-31T00:00:00Z"`
+	LicenseSeries                 string                             `json:"license_series,omitempty" example:"77 01"`
+	LicenseNumber                 string                             `json:"license_number,omitempty" example:"7700000000"`
+	LicenseCategory               string                             `json:"license_category,omitempty" example:"B"`
+	LicenseIssuedAt               *time.Time                         `json:"license_issued_at,omitempty" example:"2020-01-31T00:00:00Z"`
+	LicenseExpiresAt              *time.Time                         `json:"license_expires_at,omitempty" example:"2030-01-31T00:00:00Z"`
+	DrivingExperienceFrom         *time.Time                         `json:"driving_experience_from,omitempty" example:"2015-01-31T00:00:00Z"`
+	HasNoTaxiWorkRestrictions     bool                               `json:"has_no_taxi_work_restrictions" example:"true"`
+	FederalLaw580Compliant        bool                               `json:"federal_law_580_compliant" example:"true"`
+	RegionalRequirementsCompliant bool                               `json:"regional_requirements_compliant" example:"true"`
+	MedicalCheckPassed            bool                               `json:"medical_check_passed" example:"true"`
+	PretripControlRequired        bool                               `json:"pretrip_control_required" example:"true"`
+	PretripControlPassed          bool                               `json:"pretrip_control_passed" example:"true"`
+	NoTransportBan                bool                               `json:"no_transport_ban" example:"true"`
+	VerificationCheckedAt         *time.Time                         `json:"verification_checked_at,omitempty" example:"2026-05-19T12:00:00Z"`
+	VerificationCheckedBy         *uuid.UUID                         `json:"verification_checked_by,omitempty" example:"11111111-1111-1111-1111-111111111111"`
+	IsVerified                    bool                               `json:"is_verified" example:"false"`
+	BlockedReason                 string                             `json:"blocked_reason,omitempty" example:"Expired license"`
+	TaxiParkComment               string                             `json:"taxi_park_comment,omitempty" example:"Documents checked"`
+	CreatedAt                     time.Time                          `json:"created_at" example:"2026-05-12T12:00:00Z"`
+	UpdatedAt                     time.Time                          `json:"updated_at" example:"2026-05-12T12:00:00Z"`
 }
 
 type TaxiParkDriversResponse struct {

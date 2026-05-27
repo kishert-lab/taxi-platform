@@ -12,6 +12,7 @@ const (
 	CodeValidationError      ErrorCode = "VALIDATION_ERROR"
 	CodeUnauthorized         ErrorCode = "UNAUTHORIZED"
 	CodeForbidden            ErrorCode = "FORBIDDEN"
+	CodeNotFound             ErrorCode = "NOT_FOUND"
 	CodeOrderNotFound        ErrorCode = "ORDER_NOT_FOUND"
 	CodeOrderInvalidState    ErrorCode = "ORDER_INVALID_STATE"
 	CodeDriverNotAvailable   ErrorCode = "DRIVER_NOT_AVAILABLE"

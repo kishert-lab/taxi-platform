@@ -37,12 +37,38 @@ type OrderSnapshot struct {
 }
 
 type TaxiParkDriver struct {
-	ID        uuid.UUID
-	UserID    uuid.UUID
-	FullName  string
-	Status    domain.DriverStatus
-	Rating    float64
-	CreatedAt time.Time
+	ID                            uuid.UUID
+	UserID                        uuid.UUID
+	Phone                         string
+	Email                         string
+	FirstName                     string
+	LastName                      string
+	FullName                      string
+	Status                        domain.DriverStatus
+	VerificationStatus            domain.VerificationLifecycleStatus
+	Rating                        float64
+	RatingsCount                  int
+	BirthDate                     *time.Time
+	LicenseSeries                 string
+	LicenseNumber                 string
+	LicenseCategory               string
+	LicenseIssuedAt               *time.Time
+	LicenseExpiresAt              *time.Time
+	DrivingExperienceFrom         *time.Time
+	HasNoTaxiWorkRestrictions     bool
+	FederalLaw580Compliant        bool
+	RegionalRequirementsCompliant bool
+	MedicalCheckPassed            bool
+	PretripControlRequired        bool
+	PretripControlPassed          bool
+	NoTransportBan                bool
+	VerificationCheckedAt         *time.Time
+	VerificationCheckedBy         *uuid.UUID
+	IsVerified                    bool
+	BlockedReason                 string
+	TaxiParkComment               string
+	CreatedAt                     time.Time
+	UpdatedAt                     time.Time
 }
 
 type TaxiParkOrder struct {

@@ -19,8 +19,14 @@ const defaultDriverPasswordLength = 18
 
 var (
 	ErrTaxiParkNotFound          = errors.New("taxi park not found")
+	ErrTaxiParkResourceNotFound  = errors.New("taxi park resource not found")
+	ErrTaxiParkResourceForbidden = errors.New("taxi park resource forbidden")
 	ErrDriverPhoneAlreadyExists  = errors.New("driver phone already exists")
+	ErrCarAlreadyExists          = errors.New("car already exists")
 	ErrInvalidDriverCreateFields = errors.New("invalid driver create fields")
+	ErrInvalidDriverPassword     = errors.New("invalid driver password")
+	ErrInvalidOrderFields        = errors.New("invalid taxi park order fields")
+	ErrOrderTariffNotFound       = errors.New("taxi park order tariff not found")
 )
 
 type Service struct {
@@ -50,6 +56,14 @@ func (service *Service) CreateTariff(ctx context.Context, ownerUserID uuid.UUID,
 
 func (service *Service) UpdateTariff(ctx context.Context, ownerUserID uuid.UUID, tariffID uuid.UUID, request dto.TaxiParkTariffPatchRequest) (domain.TaxiParkTariff, error) {
 	return service.repository.UpdateTariffByOwnerUserID(ctx, ownerUserID, tariffID, request)
+}
+
+func (service *Service) CreateOrder(ctx context.Context, ownerUserID uuid.UUID, request dto.TaxiParkCreateOrderRequest) (domain.Order, error) {
+	record, err := orderRecordFromRequest(request)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	return service.repository.CreateOrderByOwnerUserID(ctx, ownerUserID, record)
 }
 
 func (service *Service) CreateDriver(ctx context.Context, ownerUserID uuid.UUID, request dto.TaxiParkCreateDriverRequest) (CreateDriverResult, error) {
@@ -184,12 +198,28 @@ func (service *Service) UpdateDriver(ctx context.Context, ownerUserID uuid.UUID,
 	return service.repository.UpdateDriverByOwnerUserID(ctx, ownerUserID, driverID, record)
 }
 
+func (service *Service) UpdateDriverPassword(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID, request dto.TaxiParkDriverPasswordRequest) error {
+	password := strings.TrimSpace(request.Password)
+	if len(password) < 8 {
+		return ErrInvalidDriverPassword
+	}
+	passwordHash, err := service.passwordHasher.HashPassword(password)
+	if err != nil {
+		return fmt.Errorf("hash taxi park driver password: %w", err)
+	}
+	return service.repository.UpdateDriverPasswordByOwnerUserID(ctx, ownerUserID, driverID, passwordHash)
+}
+
 func (service *Service) BlockDriver(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID, reason string) error {
 	return service.repository.BlockDriverByOwnerUserID(ctx, ownerUserID, driverID, strings.TrimSpace(reason))
 }
 
 func (service *Service) ArchiveDriver(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID) error {
 	return service.repository.ArchiveDriverByOwnerUserID(ctx, ownerUserID, driverID)
+}
+
+func (service *Service) UnblockDriver(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID) error {
+	return service.repository.UnblockDriverByOwnerUserID(ctx, ownerUserID, driverID)
 }
 
 func (service *Service) ListCars(ctx context.Context, ownerUserID uuid.UUID) ([]domain.Car, error) {
@@ -217,6 +247,26 @@ func (service *Service) VerifyCar(ctx context.Context, ownerUserID uuid.UUID, ca
 	return service.repository.UpdateCarByOwnerUserID(ctx, ownerUserID, carID, CarPatchRecord{
 		VerificationStatus: &verifiedStatus,
 	})
+}
+
+func (service *Service) ArchiveCar(ctx context.Context, ownerUserID uuid.UUID, carID uuid.UUID) error {
+	return service.repository.ArchiveCarByOwnerUserID(ctx, ownerUserID, carID)
+}
+
+func (service *Service) AttachCarToDriver(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID, carID uuid.UUID) error {
+	return service.repository.AttachCarToDriverByOwnerUserID(ctx, ownerUserID, driverID, carID)
+}
+
+func (service *Service) DetachCarFromDriver(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID, carID uuid.UUID) error {
+	return service.repository.DetachCarFromDriverByOwnerUserID(ctx, ownerUserID, driverID, carID)
+}
+
+func (service *Service) ListDriverDocuments(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID) ([]domain.TaxiParkDocument, error) {
+	return service.repository.ListDriverDocumentsByOwnerUserID(ctx, ownerUserID, driverID)
+}
+
+func (service *Service) ListCarDocuments(ctx context.Context, ownerUserID uuid.UUID, carID uuid.UUID) ([]domain.TaxiParkDocument, error) {
+	return service.repository.ListCarDocumentsByOwnerUserID(ctx, ownerUserID, carID)
 }
 
 func generateTemporaryPassword(length int) (string, error) {
@@ -264,6 +314,87 @@ func trimStringPointer(value *string) *string {
 	}
 	trimmed := strings.TrimSpace(*value)
 	return &trimmed
+}
+
+func orderRecordFromRequest(request dto.TaxiParkCreateOrderRequest) (CreateOrderRecord, error) {
+	if request.TariffID == uuid.Nil {
+		return CreateOrderRecord{}, fmt.Errorf("%w: tariff_id is required", ErrInvalidOrderFields)
+	}
+	if strings.TrimSpace(request.PickupAddress) == "" {
+		return CreateOrderRecord{}, fmt.Errorf("%w: pickup_address is required", ErrInvalidOrderFields)
+	}
+	if request.PickupLocation == nil {
+		return CreateOrderRecord{}, fmt.Errorf("%w: pickup_location is required", ErrInvalidOrderFields)
+	}
+	if strings.TrimSpace(request.DestinationAddress) == "" {
+		return CreateOrderRecord{}, fmt.Errorf("%w: destination_address is required", ErrInvalidOrderFields)
+	}
+	if err := validateOrderCoordinates(*request.PickupLocation); err != nil {
+		return CreateOrderRecord{}, fmt.Errorf("pickup_location: %w", err)
+	}
+	if isZeroOrderCoordinates(*request.PickupLocation) {
+		return CreateOrderRecord{}, fmt.Errorf("%w: pickup_location must be geocoded", ErrInvalidOrderFields)
+	}
+
+	var destinationLocation *domain.Coordinates
+	if request.DestinationLocation != nil && !isZeroOrderCoordinates(*request.DestinationLocation) {
+		if err := validateOrderCoordinates(*request.DestinationLocation); err != nil {
+			return CreateOrderRecord{}, fmt.Errorf("destination_location: %w", err)
+		}
+		destinationLocation = &domain.Coordinates{
+			Latitude:  request.DestinationLocation.Latitude,
+			Longitude: request.DestinationLocation.Longitude,
+		}
+	}
+
+	paymentMethod := request.PaymentMethod
+	if paymentMethod == "" {
+		paymentMethod = request.PaymentType
+	}
+	if paymentMethod == "" {
+		paymentMethod = domain.PaymentMethodCash
+	}
+	if err := paymentMethod.Validate(); err != nil {
+		return CreateOrderRecord{}, err
+	}
+
+	passengerPhone := strings.TrimSpace(request.PassengerPhone)
+	if passengerPhone != "" {
+		normalizedPhone, err := domain.NormalizePhone(passengerPhone)
+		if err != nil {
+			return CreateOrderRecord{}, err
+		}
+		passengerPhone = normalizedPhone
+	}
+
+	return CreateOrderRecord{
+		PassengerPhone: passengerPhone,
+		PassengerName:  strings.TrimSpace(request.PassengerName),
+		TariffID:       request.TariffID,
+		PickupAddress:  strings.TrimSpace(request.PickupAddress),
+		PickupLocation: domain.Coordinates{
+			Latitude:  request.PickupLocation.Latitude,
+			Longitude: request.PickupLocation.Longitude,
+		},
+		DestinationAddress:  strings.TrimSpace(request.DestinationAddress),
+		DestinationLocation: destinationLocation,
+		PaymentMethod:       paymentMethod,
+		Comment:             strings.TrimSpace(request.Comment),
+	}, nil
+}
+
+func validateOrderCoordinates(coordinates dto.TaxiParkOrderCoordinatesRequest) error {
+	if coordinates.Latitude < -90 || coordinates.Latitude > 90 {
+		return fmt.Errorf("%w: latitude must be between -90 and 90", ErrInvalidOrderFields)
+	}
+	if coordinates.Longitude < -180 || coordinates.Longitude > 180 {
+		return fmt.Errorf("%w: longitude must be between -180 and 180", ErrInvalidOrderFields)
+	}
+	return nil
+}
+
+func isZeroOrderCoordinates(coordinates dto.TaxiParkOrderCoordinatesRequest) bool {
+	return coordinates.Latitude == 0 && coordinates.Longitude == 0
 }
 
 func carRecordFromRequest(request dto.TaxiParkCarRequest) (CarRecord, error) {
