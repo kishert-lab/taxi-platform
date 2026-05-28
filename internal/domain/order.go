@@ -38,8 +38,10 @@ const (
 	OrderEventOffer       OrderEventType = "order.offer"
 	OrderEventAccepted    OrderEventType = "order.accepted"
 	OrderEventRejected    OrderEventType = "order.rejected"
+	OrderEventUpdated     OrderEventType = "order.updated"
 	OrderEventCancelled   OrderEventType = "order.cancelled"
 	OrderEventLocation    OrderEventType = "driver.location"
+	OrderEventArriving    OrderEventType = "driver.arriving"
 	OrderEventArrived     OrderEventType = "driver.arrived"
 	OrderEventTripStarted OrderEventType = "trip.started"
 	OrderEventCompleted   OrderEventType = "trip.completed"
@@ -196,6 +198,8 @@ func EventTypeForOrderStatus(status OrderStatus) OrderEventType {
 		return OrderEventSearching
 	case OrderStatusDriverAssigned:
 		return OrderEventAccepted
+	case OrderStatusDriverArriving:
+		return OrderEventArriving
 	case OrderStatusDriverWaiting:
 		return OrderEventArrived
 	case OrderStatusInProgress:

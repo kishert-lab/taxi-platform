@@ -8,6 +8,7 @@ import (
 
 	"github.com/kishert-lab/taxi-platform/configs"
 	authapp "github.com/kishert-lab/taxi-platform/internal/auth"
+	chatapp "github.com/kishert-lab/taxi-platform/internal/chat"
 	dispatchapp "github.com/kishert-lab/taxi-platform/internal/dispatch"
 	driverapp "github.com/kishert-lab/taxi-platform/internal/driver"
 	financeapp "github.com/kishert-lab/taxi-platform/internal/finance"
@@ -30,6 +31,7 @@ type applicationRoutes struct {
 	finance    *handler.FinanceHandler
 	taxiPark   *handler.TaxiParkSettingsHandler
 	legal      *handler.LegalHandler
+	chat       *handler.ChatHandler
 	websocket  *handler.WebSocketHandler
 	dispatch   *dispatchapp.Worker
 }
@@ -116,13 +118,17 @@ func newApplicationRoutes(postgresPool *pgxpool.Pool, redisClient *goredis.Clien
 	})
 	driverMobileRepository := repository.NewPostgresDriverMobileRepository(postgresPool)
 	driverPresenceStore := redisinfra.NewDriverPresenceStore(redisClient)
-	driverMobileService := driverapp.NewMobileServiceWithDispatch(driverMobileRepository, driverPresenceStore, driverLocationService, dispatchService, logger, realtimeGateway)
 	financeRepository := repository.NewPostgresFinanceRepository(postgresPool)
 	financeService := financeapp.NewService(financeRepository, logger)
+	driverMobileService := driverapp.NewMobileServiceWithDispatch(driverMobileRepository, driverPresenceStore, driverLocationService, dispatchService, logger, realtimeGateway).
+		WithFinanceProcessor(financeService)
 	taxiParkSettingsRepository := repository.NewPostgresTaxiParkSettingsRepository(postgresPool)
-	taxiParkSettingsService := taxiparkapp.NewServiceWithDispatch(taxiParkSettingsRepository, passwordHasher, dispatchService)
+	taxiParkSettingsService := taxiparkapp.NewServiceWithDispatch(taxiParkSettingsRepository, passwordHasher, dispatchService, realtimeGateway).
+		WithFinanceProcessor(financeService)
 	legalRepository := repository.NewPostgresLegalRepository(postgresPool)
 	legalService := legalapp.NewService(legalRepository)
+	chatRepository := repository.NewPostgresChatRepository(postgresPool)
+	chatService := chatapp.NewService(chatRepository, realtimeGateway, logger)
 
 	return applicationRoutes{
 		auth:       handler.NewAuthHandler(registrationService),
@@ -133,6 +139,7 @@ func newApplicationRoutes(postgresPool *pgxpool.Pool, redisClient *goredis.Clien
 		finance:    handler.NewFinanceHandler(financeService),
 		taxiPark:   handler.NewTaxiParkSettingsHandler(taxiParkSettingsService),
 		legal:      handler.NewLegalHandler(legalService),
+		chat:       handler.NewChatHandler(chatService),
 		websocket:  handler.NewWebSocketHandler(mobileAuthService, config.HTTP.CORS.AllowedOrigins, redisClient),
 		dispatch:   dispatchWorker,
 	}
@@ -162,5 +169,6 @@ func (routes applicationRoutes) Register(api gin.IRouter) {
 	routes.finance.RegisterRoutes(api)
 	routes.taxiPark.RegisterRoutes(api)
 	routes.legal.RegisterRoutes(api)
+	routes.chat.RegisterRoutes(api)
 	routes.websocket.RegisterRoutes(api)
 }

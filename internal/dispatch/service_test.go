@@ -98,11 +98,43 @@ func TestHandleOfferTimeoutPublishesNextRadiusAttempt(t *testing.T) {
 	if taskQueue.published[0].Attempt != 1 {
 		t.Fatalf("expected next attempt 1, got %d", taskQueue.published[0].Attempt)
 	}
+	if len(taskQueue.published[0].ExcludeDriverIDs) != 1 || taskQueue.published[0].ExcludeDriverIDs[0] != previousDriverID {
+		t.Fatalf("expected timed out driver to be excluded from next attempt")
+	}
 	if !offerStore.removed {
 		t.Fatalf("expected timed out offers to be removed")
 	}
 	if !realtimeGateway.hasDriverEvent(previousDriverID, EventOrderExpired) {
 		t.Fatalf("expected driver offer expiration event")
+	}
+}
+
+func TestProcessTaskWithoutCandidatesSchedulesRadiusExpansionTimeout(t *testing.T) {
+	t.Parallel()
+
+	order := testOrder()
+	order.Status = domain.OrderStatusSearching
+	orderRepository := &fakeOrderRepository{order: order}
+	taskQueue := &fakeTaskQueue{}
+	timeoutQueue := &fakeTimeoutQueue{}
+	service := newTestService(orderRepository, &fakeDriverSearchRepository{}, newFakeOfferStore(), taskQueue, timeoutQueue, &fakeRealtimeGateway{})
+
+	result, err := service.ProcessTask(context.Background(), DispatchTask{OrderID: order.ID, Attempt: 0, QueuedAt: time.Now().UTC()})
+	if err != nil {
+		t.Fatalf("process dispatch task without candidates: %v", err)
+	}
+
+	if result.Status != domain.OrderStatusSearching {
+		t.Fatalf("expected order to stay searching, got %s", result.Status)
+	}
+	if len(taskQueue.published) != 0 {
+		t.Fatalf("expected no immediate next dispatch attempt, got %d", len(taskQueue.published))
+	}
+	if len(timeoutQueue.scheduled) != 1 {
+		t.Fatalf("expected radius expansion timeout to be scheduled")
+	}
+	if orderRepository.order.Status != domain.OrderStatusSearching {
+		t.Fatalf("expected order not to fail immediately, got %s", orderRepository.order.Status)
 	}
 }
 
@@ -121,6 +153,30 @@ func TestProcessTaskUsesConfiguredRadiusAttempts(t *testing.T) {
 	}
 	if result.RadiusMeters != 5000 {
 		t.Fatalf("expected attempt 2 radius 5000, got %d", result.RadiusMeters)
+	}
+}
+
+func TestProcessTaskExcludesPreviouslyOfferedDrivers(t *testing.T) {
+	t.Parallel()
+
+	order := testOrder()
+	order.Status = domain.OrderStatusSearching
+	excludedDriverID := uuid.New()
+	driverSearchRepository := &fakeDriverSearchRepository{candidates: candidatesFromIDs([]uuid.UUID{uuid.New()})}
+	service := newTestService(&fakeOrderRepository{order: order}, driverSearchRepository, newFakeOfferStore(), &fakeTaskQueue{}, &fakeTimeoutQueue{}, &fakeRealtimeGateway{})
+
+	_, err := service.ProcessTask(context.Background(), DispatchTask{
+		OrderID:          order.ID,
+		Attempt:          1,
+		QueuedAt:         time.Now().UTC(),
+		ExcludeDriverIDs: []uuid.UUID{excludedDriverID},
+	})
+	if err != nil {
+		t.Fatalf("process dispatch task: %v", err)
+	}
+
+	if len(driverSearchRepository.lastQuery.ExcludeIDs) != 1 || driverSearchRepository.lastQuery.ExcludeIDs[0] != excludedDriverID {
+		t.Fatalf("expected previous offer driver to be excluded from search")
 	}
 }
 
@@ -341,8 +397,31 @@ func (store *fakeOfferStore) GetOffer(_ context.Context, orderID uuid.UUID, driv
 	return offer, ok, nil
 }
 
+func (store *fakeOfferStore) ListDriverOffers(_ context.Context, driverID uuid.UUID) ([]OrderOffer, error) {
+	result := make([]OrderOffer, 0)
+	for _, offer := range store.offers {
+		if offer.DriverID == driverID {
+			result = append(result, offer)
+		}
+	}
+	return result, nil
+}
+
 func (store *fakeOfferStore) ListOfferedDriverIDs(_ context.Context, orderID uuid.UUID) ([]uuid.UUID, error) {
 	return append([]uuid.UUID(nil), store.driverIDs[orderID]...), nil
+}
+
+func (store *fakeOfferStore) RemoveDriverOffer(_ context.Context, orderID uuid.UUID, driverID uuid.UUID) error {
+	delete(store.offers, offerKey(orderID, driverID))
+	driverIDs := store.driverIDs[orderID]
+	filtered := driverIDs[:0]
+	for _, existingDriverID := range driverIDs {
+		if existingDriverID != driverID {
+			filtered = append(filtered, existingDriverID)
+		}
+	}
+	store.driverIDs[orderID] = filtered
+	return nil
 }
 
 func (store *fakeOfferStore) RemoveOffers(_ context.Context, orderID uuid.UUID) error {
@@ -413,6 +492,7 @@ func (lock fakeLock) Release(_ context.Context) error {
 type fakeRealtimeGateway struct {
 	driverEvents    []fakeRealtimeEvent
 	passengerEvents []fakeRealtimeEvent
+	taxiParkEvents  []fakeRealtimeEvent
 }
 
 type fakeDispatchStateStore struct {
@@ -452,6 +532,11 @@ func (gateway *fakeRealtimeGateway) SendToDriver(_ context.Context, driverID uui
 
 func (gateway *fakeRealtimeGateway) SendToPassenger(_ context.Context, passengerID uuid.UUID, eventName string, _ any) error {
 	gateway.passengerEvents = append(gateway.passengerEvents, fakeRealtimeEvent{targetID: passengerID, name: eventName})
+	return nil
+}
+
+func (gateway *fakeRealtimeGateway) SendToTaxiParkByOrder(_ context.Context, orderID uuid.UUID, eventName string, _ any) error {
+	gateway.taxiParkEvents = append(gateway.taxiParkEvents, fakeRealtimeEvent{targetID: orderID, name: eventName})
 	return nil
 }
 

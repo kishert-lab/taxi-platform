@@ -47,6 +47,19 @@ func (gateway *RealtimeGateway) SendDriverLocationToTaxiPark(ctx context.Context
 	return nil
 }
 
+func (gateway *RealtimeGateway) SendToTaxiParkByOrder(ctx context.Context, orderID uuid.UUID, eventName string, payload any) error {
+	recipientUserIDs, err := gateway.taxiParkRealtimeRecipientUserIDsByOrder(ctx, orderID)
+	if err != nil {
+		return err
+	}
+	for _, userID := range recipientUserIDs {
+		if err := gateway.publishToUser(ctx, userID, eventName, payload); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (gateway *RealtimeGateway) driverUserID(ctx context.Context, driverID uuid.UUID) (uuid.UUID, error) {
 	var userID uuid.UUID
 	if err := gateway.pool.QueryRow(ctx, `
@@ -78,7 +91,7 @@ func (gateway *RealtimeGateway) taxiParkRealtimeRecipientUserIDs(ctx context.Con
 		FROM taxi_park_staff staff
 		JOIN users u ON u.id = staff.user_id
 		JOIN target_park tp ON tp.id = staff.taxi_park_id
-		WHERE staff.role = 'dispatcher'
+		WHERE staff.role IN ('dispatcher', 'taxi_park')
 		  AND staff.is_active = true
 		  AND staff.deleted_at IS NULL
 		  AND u.is_active = true
@@ -101,6 +114,51 @@ func (gateway *RealtimeGateway) taxiParkRealtimeRecipientUserIDs(ctx context.Con
 	}
 	if len(recipients) == 0 {
 		return nil, fmt.Errorf("driver taxi park realtime recipients not found: %w", pgx.ErrNoRows)
+	}
+	return recipients, nil
+}
+
+func (gateway *RealtimeGateway) taxiParkRealtimeRecipientUserIDsByOrder(ctx context.Context, orderID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := gateway.pool.Query(ctx, `
+		WITH target_park AS (
+			SELECT (o.metadata->>'taxi_park_id')::uuid AS id
+			FROM orders o
+			WHERE o.id = $1
+			  AND o.metadata ? 'taxi_park_id'
+			  AND o.deleted_at IS NULL
+		)
+		SELECT tp.owner_user_id
+		FROM taxi_parks tp
+		JOIN target_park target ON target.id = tp.id
+		WHERE tp.deleted_at IS NULL
+		UNION
+		SELECT staff.user_id
+		FROM taxi_park_staff staff
+		JOIN users u ON u.id = staff.user_id
+		JOIN target_park target ON target.id = staff.taxi_park_id
+		WHERE staff.role IN ('dispatcher', 'taxi_park')
+		  AND staff.is_active = true
+		  AND staff.deleted_at IS NULL
+		  AND u.is_active = true
+		  AND u.deleted_at IS NULL`, orderID)
+	if err != nil {
+		return nil, fmt.Errorf("select taxi park order realtime recipients: %w", err)
+	}
+	defer rows.Close()
+
+	recipients := make([]uuid.UUID, 0)
+	for rows.Next() {
+		var userID uuid.UUID
+		if err := rows.Scan(&userID); err != nil {
+			return nil, fmt.Errorf("scan taxi park order realtime recipient: %w", err)
+		}
+		recipients = append(recipients, userID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate taxi park order realtime recipients: %w", err)
+	}
+	if len(recipients) == 0 {
+		return nil, fmt.Errorf("taxi park order realtime recipients not found: %w", pgx.ErrNoRows)
 	}
 	return recipients, nil
 }

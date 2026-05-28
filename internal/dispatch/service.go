@@ -123,14 +123,14 @@ func (service *Service) ProcessTask(ctx context.Context, task DispatchTask) (Dis
 		Pickup:         order.PickupLocation,
 		RadiusMeters:   radiusMeters,
 		Limit:          service.config.MaxDriversPerOffer,
-		ExcludeIDs:     nil,
+		ExcludeIDs:     task.ExcludeDriverIDs,
 		LocationMaxAge: service.config.DriverLocationMaxAge,
 	})
 	if err != nil {
 		return DispatchResult{}, fmt.Errorf("find nearest online drivers: %w", err)
 	}
 	if len(candidates) == 0 {
-		if err := service.scheduleNextAttempt(ctx, task); err != nil {
+		if err := service.scheduleRadiusExpansionAfterTimeout(ctx, task); err != nil {
 			return DispatchResult{}, err
 		}
 		service.logger.Info("no drivers in dispatch radius", zap.String("order_id", task.OrderID.String()), zap.Int("radius_meters", radiusMeters), zap.Int("attempt", task.Attempt))
@@ -192,7 +192,7 @@ func (service *Service) HandleOfferTimeout(ctx context.Context, task DispatchTas
 	if service.metrics != nil {
 		service.metrics.IncrementDispatchTimeouts()
 	}
-	return service.scheduleNextAttempt(ctx, task)
+	return service.scheduleNextAttempt(ctx, task, offeredDriverIDs)
 }
 
 func (service *Service) AcceptOffer(ctx context.Context, orderID uuid.UUID, driverID uuid.UUID) error {
@@ -258,9 +258,66 @@ func (service *Service) AcceptOffer(ctx context.Context, orderID uuid.UUID, driv
 	if err := service.realtimeGateway.SendToPassenger(ctx, order.PassengerID, EventPassengerDriverAssigned, map[string]any{"order_id": orderID, "driver_id": driverID}); err != nil {
 		return fmt.Errorf("send driver assigned event to passenger: %w", err)
 	}
+	if err := service.realtimeGateway.SendToTaxiParkByOrder(ctx, orderID, "order.driver_assigned", map[string]any{"order_id": orderID, "driver_id": driverID}); err != nil {
+		return fmt.Errorf("send driver assigned event to taxi park: %w", err)
+	}
 
 	service.logger.Info("offer accepted", zap.String("order_id", orderID.String()), zap.String("driver_id", driverID.String()))
 	return nil
+}
+
+func (service *Service) RejectOffer(ctx context.Context, orderID uuid.UUID, driverID uuid.UUID, reason string) error {
+	offer, exists, err := service.offerStore.GetOffer(ctx, orderID, driverID)
+	if err != nil {
+		return fmt.Errorf("get active order offer before reject: %w", err)
+	}
+	if !exists || time.Now().UTC().After(offer.ExpiresAt) {
+		return fmt.Errorf("%w: active offer not found", ErrOfferNotAccepted)
+	}
+	if err := service.offerStore.RemoveDriverOffer(ctx, orderID, driverID); err != nil {
+		return fmt.Errorf("remove rejected driver offer: %w", err)
+	}
+	if err := service.orderRepository.AddOrderEvent(ctx, OrderEvent{
+		OrderID:       orderID,
+		ActorDriverID: &driverID,
+		EventType:     domain.OrderEventRejected,
+		Payload: map[string]any{
+			"order_id":  orderID,
+			"driver_id": driverID,
+			"reason":    reason,
+		},
+		CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		return fmt.Errorf("add rejected offer event: %w", err)
+	}
+	if err := service.realtimeGateway.SendToDriver(ctx, driverID, EventOrderOfferCancelled, map[string]any{"order_id": orderID, "reason": reason}); err != nil {
+		return fmt.Errorf("send rejected offer cancellation to driver: %w", err)
+	}
+	service.logger.Info("offer rejected", zap.String("order_id", orderID.String()), zap.String("driver_id", driverID.String()))
+	return nil
+}
+
+func (service *Service) ListDriverOffers(ctx context.Context, driverID uuid.UUID) ([]DriverOrderOffer, error) {
+	offers, err := service.offerStore.ListDriverOffers(ctx, driverID)
+	if err != nil {
+		return nil, fmt.Errorf("list active driver offers: %w", err)
+	}
+	now := time.Now().UTC()
+	result := make([]DriverOrderOffer, 0, len(offers))
+	for _, offer := range offers {
+		if now.After(offer.ExpiresAt) {
+			continue
+		}
+		order, err := service.orderRepository.GetOrderByID(ctx, offer.OrderID)
+		if err != nil {
+			return nil, fmt.Errorf("get active driver offer order: %w", err)
+		}
+		if order.Status != domain.OrderStatusSearching {
+			continue
+		}
+		result = append(result, DriverOrderOffer{Offer: offer, Order: order})
+	}
+	return result, nil
 }
 
 func (service *Service) StopDispatch(ctx context.Context, orderID uuid.UUID) error {
@@ -335,6 +392,16 @@ func (service *Service) offerDrivers(ctx context.Context, order domain.Order, at
 	}); err != nil {
 		return nil, fmt.Errorf("add order offer event: %w", err)
 	}
+	if err := service.realtimeGateway.SendToTaxiParkByOrder(ctx, order.ID, EventOrderOffer, map[string]any{
+		"order_id":             order.ID,
+		"attempt":              attempt,
+		"radius_meters":        radiusMeters,
+		"offered_driver_ids":   offeredDriverIDs,
+		"offer_expires_at":     expiresAt,
+		"offered_driver_count": len(offeredDriverIDs),
+	}); err != nil {
+		return nil, fmt.Errorf("send order offer event to taxi park: %w", err)
+	}
 
 	return offeredDriverIDs, nil
 }
@@ -364,8 +431,13 @@ func (service *Service) cancelRemainingOffers(ctx context.Context, orderID uuid.
 	return nil
 }
 
-func (service *Service) scheduleNextAttempt(ctx context.Context, task DispatchTask) error {
-	nextTask := DispatchTask{OrderID: task.OrderID, Attempt: task.Attempt + 1, QueuedAt: time.Now().UTC()}
+func (service *Service) scheduleNextAttempt(ctx context.Context, task DispatchTask, newlyExcludedDriverIDs []uuid.UUID) error {
+	nextTask := DispatchTask{
+		OrderID:          task.OrderID,
+		Attempt:          task.Attempt + 1,
+		QueuedAt:         time.Now().UTC(),
+		ExcludeDriverIDs: appendUniqueDriverIDs(task.ExcludeDriverIDs, newlyExcludedDriverIDs),
+	}
 	if _, ok := service.radiusForAttempt(nextTask.Attempt); !ok {
 		order, err := service.orderRepository.GetOrderByID(ctx, task.OrderID)
 		if err != nil {
@@ -381,12 +453,59 @@ func (service *Service) scheduleNextAttempt(ctx context.Context, task DispatchTa
 	return nil
 }
 
+func (service *Service) scheduleRadiusExpansionAfterTimeout(ctx context.Context, task DispatchTask) error {
+	if _, ok := service.radiusForAttempt(task.Attempt + 1); !ok {
+		order, err := service.orderRepository.GetOrderByID(ctx, task.OrderID)
+		if err != nil {
+			return fmt.Errorf("get order before no drivers found: %w", err)
+		}
+		_, err = service.failNoDriversFound(ctx, order, service.lastRadius())
+		return err
+	}
+	if err := service.timeoutQueue.Schedule(ctx, task, time.Now().UTC().Add(service.config.OfferTTL)); err != nil {
+		return fmt.Errorf("schedule radius expansion timeout: %w", err)
+	}
+	service.logger.Info(
+		"radius expansion scheduled",
+		zap.String("order_id", task.OrderID.String()),
+		zap.Int("attempt", task.Attempt+1),
+		zap.Duration("after", service.config.OfferTTL),
+	)
+	return nil
+}
+
+func appendUniqueDriverIDs(existing []uuid.UUID, values []uuid.UUID) []uuid.UUID {
+	if len(existing) == 0 && len(values) == 0 {
+		return nil
+	}
+	seen := make(map[uuid.UUID]struct{}, len(existing)+len(values))
+	result := make([]uuid.UUID, 0, len(existing)+len(values))
+	for _, driverID := range existing {
+		if _, ok := seen[driverID]; ok {
+			continue
+		}
+		seen[driverID] = struct{}{}
+		result = append(result, driverID)
+	}
+	for _, driverID := range values {
+		if _, ok := seen[driverID]; ok {
+			continue
+		}
+		seen[driverID] = struct{}{}
+		result = append(result, driverID)
+	}
+	return result
+}
+
 func (service *Service) failNoDriversFound(ctx context.Context, order domain.Order, radiusMeters int) (DispatchResult, error) {
 	if err := service.orderRepository.FailOrder(ctx, order.ID, "no online drivers found in dispatch radius"); err != nil {
 		return DispatchResult{}, fmt.Errorf("fail order after dispatch exhaustion: %w", err)
 	}
 	if err := service.realtimeGateway.SendToPassenger(ctx, order.PassengerID, EventOrderNoDriversFound, map[string]any{"order_id": order.ID}); err != nil {
 		return DispatchResult{}, fmt.Errorf("send no drivers found event to passenger: %w", err)
+	}
+	if err := service.realtimeGateway.SendToTaxiParkByOrder(ctx, order.ID, EventOrderNoDriversFound, map[string]any{"order_id": order.ID}); err != nil {
+		return DispatchResult{}, fmt.Errorf("send no drivers found event to taxi park: %w", err)
 	}
 	if service.metrics != nil {
 		service.metrics.IncrementFailedDispatches()

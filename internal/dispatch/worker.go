@@ -136,9 +136,8 @@ func (worker *Worker) recoverSearchingOrders(ctx context.Context) error {
 		worker.metrics.SetActiveSearches(len(orderIDs))
 	}
 	for _, orderID := range orderIDs {
-		task := DispatchTask{OrderID: orderID, Attempt: 0, QueuedAt: time.Now().UTC()}
-		if err := worker.taskQueue.Publish(ctx, task); err != nil {
-			return fmt.Errorf("publish recovered dispatch task: %w", err)
+		if err := worker.service.EnqueueOrder(ctx, orderID); err != nil {
+			return fmt.Errorf("enqueue recovered dispatch task: %w", err)
 		}
 	}
 

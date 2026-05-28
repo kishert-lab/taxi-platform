@@ -17,6 +17,10 @@ type Repository interface {
 	CreateTariffByOwnerUserID(ctx context.Context, ownerUserID uuid.UUID, request dto.TaxiParkTariffRequest) (domain.TaxiParkTariff, error)
 	UpdateTariffByOwnerUserID(ctx context.Context, ownerUserID uuid.UUID, tariffID uuid.UUID, request dto.TaxiParkTariffPatchRequest) (domain.TaxiParkTariff, error)
 	CreateOrderByOwnerUserID(ctx context.Context, ownerUserID uuid.UUID, record CreateOrderRecord) (domain.Order, error)
+	GetOrderByActorUserID(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID) (domain.Order, error)
+	UpdateOrderByActorUserID(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID, record UpdateOrderRecord) (domain.Order, error)
+	CancelOrderByActorUserID(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID, reason string) (domain.Order, error)
+	CompleteOrderByActorUserID(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID, finalPriceCents int64) (domain.Order, error)
 	CreateDriverByOwnerUserID(ctx context.Context, ownerUserID uuid.UUID, record CreateDriverRecord) (CreateDriverResult, error)
 	ListDriverLocationsByOwnerUserID(ctx context.Context, ownerUserID uuid.UUID, maxAge time.Duration) ([]DriverLocation, error)
 	UpdateDriverByOwnerUserID(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID, record UpdateDriverRecord) (CreateDriverResult, error)
@@ -42,6 +46,17 @@ type PasswordHasher interface {
 
 type DispatchController interface {
 	EnqueueOrder(ctx context.Context, orderID uuid.UUID) error
+	StopDispatch(ctx context.Context, orderID uuid.UUID) error
+}
+
+type RealtimeGateway interface {
+	SendToDriver(ctx context.Context, driverID uuid.UUID, eventName string, payload any) error
+	SendToPassenger(ctx context.Context, passengerID uuid.UUID, eventName string, payload any) error
+	SendToTaxiParkByOrder(ctx context.Context, orderID uuid.UUID, eventName string, payload any) error
+}
+
+type FinanceProcessor interface {
+	SettleCompletedOrder(ctx context.Context, orderID uuid.UUID) (domain.OrderSettlement, error)
 }
 
 type CreateOrderRecord struct {
@@ -54,6 +69,15 @@ type CreateOrderRecord struct {
 	DestinationLocation *domain.Coordinates
 	PaymentMethod       domain.PaymentMethod
 	Comment             string
+}
+
+type UpdateOrderRecord struct {
+	PickupAddress       *string
+	PickupLocation      *domain.Coordinates
+	DestinationAddress  *string
+	DestinationLocation *domain.Coordinates
+	PaymentMethod       *domain.PaymentMethod
+	Comment             *string
 }
 
 type CreateDriverRecord struct {

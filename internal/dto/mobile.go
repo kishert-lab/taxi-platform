@@ -38,16 +38,41 @@ type DriverProfilePatchRequest struct {
 }
 
 type DriverProfileResponse struct {
-	ID            uuid.UUID           `json:"id" example:"22222222-2222-2222-2222-222222222222"`
-	UserID        uuid.UUID           `json:"user_id" example:"33333333-3333-3333-3333-333333333333"`
-	Phone         string              `json:"phone" example:"+79990000001"`
-	Name          string              `json:"name" example:"Ivan"`
-	PhotoURL      string              `json:"photo_url,omitempty" example:"https://cdn.example.com/drivers/222/photo.jpg"`
-	Status        domain.DriverStatus `json:"status" example:"online"`
-	Rating        float64             `json:"rating" example:"4.95"`
-	RatingsCount  int                 `json:"ratings_count" example:"112"`
-	LicenseNumber string              `json:"license_number,omitempty" example:"7700000000"`
-	IsVerified    bool                `json:"is_verified" example:"true"`
+	ID                            uuid.UUID                          `json:"id" example:"22222222-2222-2222-2222-222222222222"`
+	UserID                        uuid.UUID                          `json:"user_id" example:"33333333-3333-3333-3333-333333333333"`
+	Phone                         string                             `json:"phone" example:"+79990000001"`
+	Name                          string                             `json:"name" example:"Ivan"`
+	PhotoURL                      string                             `json:"photo_url,omitempty" example:"https://cdn.example.com/drivers/222/photo.jpg"`
+	Status                        domain.DriverStatus                `json:"status" example:"online"`
+	Rating                        float64                            `json:"rating" example:"4.95"`
+	RatingsCount                  int                                `json:"ratings_count" example:"112"`
+	LicenseNumber                 string                             `json:"license_number,omitempty" example:"7700000000"`
+	IsVerified                    bool                               `json:"is_verified" example:"true"`
+	VerificationStatus            domain.VerificationLifecycleStatus `json:"verification_status" example:"verified"`
+	TaxiParkID                    *uuid.UUID                         `json:"taxi_park_id,omitempty" example:"44444444-4444-4444-4444-444444444444"`
+	TaxiParkIsActive              *bool                              `json:"taxi_park_is_active,omitempty" example:"true"`
+	HasNoTaxiWorkRestrictions     bool                               `json:"has_no_taxi_work_restrictions" example:"true"`
+	FederalLaw580Compliant        bool                               `json:"federal_law_580_compliant" example:"true"`
+	RegionalRequirementsCompliant bool                               `json:"regional_requirements_compliant" example:"true"`
+	MedicalCheckPassed            bool                               `json:"medical_check_passed" example:"true"`
+	PretripControlRequired        bool                               `json:"pretrip_control_required" example:"false"`
+	PretripControlPassed          bool                               `json:"pretrip_control_passed" example:"true"`
+	NoTransportBan                bool                               `json:"no_transport_ban" example:"true"`
+	Car                           *DriverProfileCarResponse          `json:"car,omitempty"`
+}
+
+type DriverProfileCarResponse struct {
+	ID                 uuid.UUID                          `json:"id" example:"55555555-5555-5555-5555-555555555555"`
+	Brand              string                             `json:"brand" example:"Lada"`
+	Model              string                             `json:"model" example:"Vesta"`
+	Year               int                                `json:"year,omitempty" example:"2023"`
+	PlateNumber        string                             `json:"plate_number" example:"A001AA196"`
+	Color              string                             `json:"color,omitempty" example:"White"`
+	CarClass           string                             `json:"car_class,omitempty" example:"economy"`
+	VerificationStatus domain.VerificationLifecycleStatus `json:"verification_status" example:"verified"`
+	IsActive           bool                               `json:"is_active" example:"true"`
+	OSAGOExpiresAt     *time.Time                         `json:"osago_expires_at,omitempty" example:"2027-01-31T00:00:00Z"`
+	PermitExpiresAt    *time.Time                         `json:"permit_expires_at,omitempty" example:"2031-01-31T00:00:00Z"`
 }
 
 type ProfilePhotoUploadRequest struct {
@@ -159,6 +184,37 @@ type OrderHistoryResponse struct {
 
 type DriverOrderHistoryResponse struct {
 	Orders []DriverOrderResponse `json:"orders"`
+}
+
+type DriverOrderOffersResponse struct {
+	Offers []DriverOrderOfferResponse `json:"offers"`
+}
+
+type DriverOrderOfferResponse struct {
+	OrderID          uuid.UUID          `json:"order_id" example:"44444444-4444-4444-4444-444444444444"`
+	PickupPoint      PointDTO           `json:"pickup_point"`
+	DestinationPoint PointDTO           `json:"destination_point"`
+	Status           domain.OrderStatus `json:"status" example:"searching"`
+	EstimatedPrice   *MoneyResponse     `json:"estimated_price,omitempty"`
+	Attempt          int                `json:"attempt" example:"0"`
+	RadiusMeters     int                `json:"radius_meters" example:"1000"`
+	DistanceMeters   float64            `json:"distance_meters" example:"475.2"`
+	ExpiresAt        time.Time          `json:"expires_at" example:"2026-05-12T12:00:15Z"`
+	AllowedActions   []string           `json:"allowed_actions" example:"accept,reject"`
+}
+
+type OrderRoutePointResponse struct {
+	ID             uuid.UUID           `json:"id" example:"88888888-8888-8888-8888-888888888888"`
+	Location       CoordinatesResponse `json:"location"`
+	Heading        *float64            `json:"heading,omitempty" example:"181.5"`
+	SpeedMPS       *float64            `json:"speed_mps,omitempty" example:"9.4"`
+	AccuracyMeters *float64            `json:"accuracy_meters,omitempty" example:"7.2"`
+	RecordedAt     time.Time           `json:"recorded_at" example:"2026-05-12T12:10:00Z"`
+}
+
+type OrderRouteResponse struct {
+	OrderID uuid.UUID                 `json:"order_id" example:"44444444-4444-4444-4444-444444444444"`
+	Points  []OrderRoutePointResponse `json:"points"`
 }
 
 type DriverLocationBatchRequest struct {

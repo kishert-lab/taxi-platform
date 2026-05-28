@@ -9,6 +9,12 @@ import (
 type TaxiParkSettings struct {
 	ID                      uuid.UUID
 	TaxiParkID              uuid.UUID
+	CityID                  uuid.UUID
+	CityName                string
+	CityRegion              string
+	CityCountryCode         string
+	CityTimezone            string
+	CityCenter              Coordinates
 	DisplayName             string
 	ShortName               string
 	SupportPhone            string

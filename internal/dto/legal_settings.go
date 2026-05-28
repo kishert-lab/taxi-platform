@@ -12,6 +12,8 @@ import (
 type TaxiParkSettingsResponse struct {
 	ID                      uuid.UUID          `json:"id" example:"11111111-1111-1111-1111-111111111111"`
 	TaxiParkID              uuid.UUID          `json:"taxi_park_id" example:"22222222-2222-2222-2222-222222222222"`
+	CityID                  uuid.UUID          `json:"city_id" example:"33333333-3333-3333-3333-333333333333"`
+	City                    TaxiParkCityDTO    `json:"city"`
 	DisplayName             string             `json:"display_name" example:"North Taxi"`
 	ShortName               string             `json:"short_name,omitempty" example:"North"`
 	SupportPhone            string             `json:"support_phone,omitempty" example:"+79990000000"`
@@ -35,6 +37,15 @@ type TaxiParkSettingsResponse struct {
 	IsActive                bool               `json:"is_active" example:"true"`
 	CreatedAt               time.Time          `json:"created_at" example:"2026-05-12T12:00:00Z"`
 	UpdatedAt               time.Time          `json:"updated_at" example:"2026-05-12T12:00:00Z"`
+}
+
+type TaxiParkCityDTO struct {
+	ID          uuid.UUID           `json:"id" example:"33333333-3333-3333-3333-333333333333"`
+	Name        string              `json:"name" example:"Yekaterinburg"`
+	Region      string              `json:"region" example:"Sverdlovsk Oblast"`
+	CountryCode string              `json:"country_code" example:"RU"`
+	Timezone    string              `json:"timezone" example:"Asia/Yekaterinburg"`
+	Center      CoordinatesResponse `json:"center"`
 }
 
 type TaxiParkSettingsPatchRequest struct {
@@ -127,8 +138,20 @@ type LegalDocumentsResponse struct {
 
 func TaxiParkSettingsFromDomain(settings domain.TaxiParkSettings) TaxiParkSettingsResponse {
 	response := TaxiParkSettingsResponse{
-		ID:                      settings.ID,
-		TaxiParkID:              settings.TaxiParkID,
+		ID:         settings.ID,
+		TaxiParkID: settings.TaxiParkID,
+		CityID:     settings.CityID,
+		City: TaxiParkCityDTO{
+			ID:          settings.CityID,
+			Name:        settings.CityName,
+			Region:      settings.CityRegion,
+			CountryCode: settings.CityCountryCode,
+			Timezone:    settings.CityTimezone,
+			Center: CoordinatesResponse{
+				Latitude:  settings.CityCenter.Latitude,
+				Longitude: settings.CityCenter.Longitude,
+			},
+		},
 		DisplayName:             settings.DisplayName,
 		ShortName:               settings.ShortName,
 		SupportPhone:            settings.SupportPhone,

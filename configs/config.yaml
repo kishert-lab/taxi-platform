@@ -79,14 +79,14 @@ security:
   refresh_token_reuse_lock: 30s
 
 dispatch:
-  initial_radius_meters: 1000
+  initial_radius_meters: 100000
   max_radius_meters: 10000
   radius_step_meters: 1000
   radius_attempts_meters:
-    - 1000
-    - 3000
-    - 5000
     - 10000
+    - 30000
+    - 50000
+    - 100000
   max_drivers_per_offer: 5
   driver_location_max_age: 30s
   offer_ttl: 15s

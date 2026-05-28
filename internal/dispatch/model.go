@@ -10,6 +10,7 @@ import (
 
 const (
 	EventOrderOffer              = "order.offer"
+	EventOrderOfferCancelled     = "order.offer_cancelled"
 	EventOrderCancelled          = "order.cancelled"
 	EventOrderAssigned           = "order.assigned"
 	EventOrderDispatchSearching  = "order.searching"
@@ -56,10 +57,16 @@ type OrderOffer struct {
 	CreatedAt      time.Time
 }
 
+type DriverOrderOffer struct {
+	Offer OrderOffer
+	Order domain.Order
+}
+
 type DispatchTask struct {
-	OrderID  uuid.UUID `json:"order_id"`
-	Attempt  int       `json:"attempt"`
-	QueuedAt time.Time `json:"queued_at"`
+	OrderID          uuid.UUID   `json:"order_id"`
+	Attempt          int         `json:"attempt"`
+	QueuedAt         time.Time   `json:"queued_at"`
+	ExcludeDriverIDs []uuid.UUID `json:"exclude_driver_ids,omitempty"`
 }
 
 type OrderEvent struct {

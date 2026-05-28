@@ -1,0 +1,2 @@
+-- PostgreSQL does not support removing enum values safely.
+-- Keep order_event_type 'order.updated' on down migration.

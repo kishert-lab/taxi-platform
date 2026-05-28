@@ -29,7 +29,9 @@ type DriverStateRepository interface {
 type OfferStore interface {
 	SaveOffer(ctx context.Context, offer OrderOffer, ttl time.Duration) error
 	GetOffer(ctx context.Context, orderID uuid.UUID, driverID uuid.UUID) (OrderOffer, bool, error)
+	ListDriverOffers(ctx context.Context, driverID uuid.UUID) ([]OrderOffer, error)
 	ListOfferedDriverIDs(ctx context.Context, orderID uuid.UUID) ([]uuid.UUID, error)
+	RemoveDriverOffer(ctx context.Context, orderID uuid.UUID, driverID uuid.UUID) error
 	RemoveOffers(ctx context.Context, orderID uuid.UUID) error
 }
 
@@ -79,4 +81,5 @@ type Lock interface {
 type RealtimeGateway interface {
 	SendToDriver(ctx context.Context, driverID uuid.UUID, eventName string, payload any) error
 	SendToPassenger(ctx context.Context, passengerID uuid.UUID, eventName string, payload any) error
+	SendToTaxiParkByOrder(ctx context.Context, orderID uuid.UUID, eventName string, payload any) error
 }

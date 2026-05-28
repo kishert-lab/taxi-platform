@@ -2,8 +2,10 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/kishert-lab/taxi-platform/internal/domain"
 	driverapp "github.com/kishert-lab/taxi-platform/internal/driver"
+	geoservice "github.com/kishert-lab/taxi-platform/internal/geo"
 )
 
 type PostgresDriverMobileRepository struct {
@@ -130,6 +133,7 @@ func (repository *PostgresDriverMobileRepository) ListCarsByUserID(ctx context.C
 func (repository *PostgresDriverMobileRepository) GetCurrentOrderByUserID(ctx context.Context, userID uuid.UUID) (driverapp.CurrentOrder, error) {
 	order, err := scanDriverCurrentOrder(repository.pool.QueryRow(ctx, `
 		SELECT o.id,
+		       d.id,
 		       p.id,
 		       trim(concat_ws(' ', COALESCE(p.first_name, ''), COALESCE(p.last_name, ''))) AS passenger_name,
 		       p.phone,
@@ -167,6 +171,285 @@ func (repository *PostgresDriverMobileRepository) GetCurrentOrderByUserID(ctx co
 		return driverapp.CurrentOrder{}, fmt.Errorf("select current driver order: %w", err)
 	}
 	return order, nil
+}
+
+func selectDriverCurrentOrderByID(ctx context.Context, transaction pgx.Tx, userID uuid.UUID, orderID uuid.UUID) (driverapp.CurrentOrder, error) {
+	return scanDriverCurrentOrder(transaction.QueryRow(ctx, `
+		SELECT o.id,
+		       d.id,
+		       p.id,
+		       trim(concat_ws(' ', COALESCE(p.first_name, ''), COALESCE(p.last_name, ''))) AS passenger_name,
+		       p.phone,
+		       COALESCE(p.profile_photo_url, '') AS passenger_photo_url,
+		       p.rating::float8,
+		       p.ratings_count,
+		       o.pickup_address,
+		       ST_Y(o.pickup_location::geometry) AS pickup_latitude,
+		       ST_X(o.pickup_location::geometry) AS pickup_longitude,
+		       COALESCE(o.destination_address, '') AS destination_address,
+		       CASE WHEN o.destination_location IS NULL THEN NULL ELSE ST_Y(o.destination_location::geometry) END AS destination_latitude,
+		       CASE WHEN o.destination_location IS NULL THEN NULL ELSE ST_X(o.destination_location::geometry) END AS destination_longitude,
+		       o.status,
+		       CASE
+		           WHEN o.final_price IS NOT NULL THEN (o.final_price * 100)::bigint
+		           WHEN o.estimated_price IS NOT NULL THEN (o.estimated_price * 100)::bigint
+		           ELSE NULL
+		       END AS price_amount,
+		       COALESCE(o.passenger_comment, '') AS passenger_comment,
+		       o.version,
+		       o.created_at
+		FROM orders o
+		JOIN drivers d ON d.id = o.driver_id
+		JOIN users p ON p.id = o.passenger_id
+		WHERE o.id = $1
+		  AND d.user_id = $2
+		  AND d.deleted_at IS NULL
+		  AND o.deleted_at IS NULL`, orderID, userID))
+}
+
+func transitionDispatchOrderStatus(ctx context.Context, transaction pgx.Tx, transition domain.OrderTransition, finalPriceCents *int64) (domain.Order, bool, error) {
+	order, err := scanDispatchOrder(transaction.QueryRow(ctx, `
+		UPDATE orders
+		SET status = $4::order_status,
+		    version = version + 1,
+		    cancelled_at = CASE WHEN $4::order_status = 'cancelled'::order_status THEN $5 ELSE cancelled_at END,
+		    cancellation_reason = CASE WHEN $4::order_status = 'cancelled'::order_status THEN $6::text ELSE cancellation_reason END,
+		    started_at = CASE WHEN $4::order_status = 'in_progress'::order_status THEN $5 ELSE started_at END,
+		    completed_at = CASE WHEN $4::order_status = 'completed'::order_status THEN $5 ELSE completed_at END,
+		    final_price = CASE WHEN $4::order_status = 'completed'::order_status THEN ($7::bigint::numeric / 100) ELSE final_price END
+		WHERE id = $1
+		  AND status = $2::order_status
+		  AND version = $3
+		  AND deleted_at IS NULL
+		RETURNING `+dispatchOrderSelectColumns,
+		transition.OrderID,
+		transition.FromStatus,
+		transition.ExpectedVersion,
+		transition.ToStatus,
+		transition.OccurredAt,
+		nullableString(transition.Reason),
+		finalPriceCents,
+	))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.Order{}, false, nil
+		}
+		return domain.Order{}, false, fmt.Errorf("transition driver order status: %w", err)
+	}
+	return order, true, nil
+}
+
+func insertDriverMobileOrderEvent(ctx context.Context, transaction pgx.Tx, transition domain.OrderTransition, updated domain.Order) error {
+	payloadBytes, err := json.Marshal(map[string]any{
+		"order_id":    updated.ID,
+		"from_status": transition.FromStatus,
+		"to_status":   transition.ToStatus,
+		"version":     updated.Version,
+		"reason":      transition.Reason,
+		"occurred_at": transition.OccurredAt,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal driver order transition event: %w", err)
+	}
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO order_events (order_id, actor_user_id, actor_driver_id, event_type, payload, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6)`,
+		updated.ID,
+		transition.ActorUserID,
+		transition.ActorDriverID,
+		domain.EventTypeForOrderStatus(transition.ToStatus),
+		payloadBytes,
+		transition.OccurredAt,
+	); err != nil {
+		return fmt.Errorf("insert driver order transition event: %w", err)
+	}
+	return nil
+}
+
+func markDriverOnlineInTx(ctx context.Context, transaction pgx.Tx, driverID uuid.UUID) error {
+	if _, err := transaction.Exec(ctx, `
+		UPDATE drivers
+		SET status = 'online'
+		WHERE id = $1
+		  AND status IN ('busy', 'online')
+		  AND deleted_at IS NULL`, driverID); err != nil {
+		return fmt.Errorf("mark driver online after order close: %w", err)
+	}
+	return nil
+}
+
+func selectDriverDomainOrderForTransition(ctx context.Context, transaction pgx.Tx, userID uuid.UUID, orderID uuid.UUID) (domain.Order, error) {
+	var order domain.Order
+	var driverID uuid.UUID
+	if err := transaction.QueryRow(ctx, `
+		SELECT o.id, o.passenger_id, o.driver_id, o.status, o.version
+		FROM orders o
+		JOIN drivers d ON d.id = o.driver_id
+		WHERE o.id = $1
+		  AND d.user_id = $2
+		  AND o.deleted_at IS NULL
+		  AND d.deleted_at IS NULL
+		FOR UPDATE OF o`, orderID, userID).Scan(
+		&order.ID,
+		&order.PassengerID,
+		&driverID,
+		&order.Status,
+		&order.Version,
+	); err != nil {
+		return domain.Order{}, mapDriverMobileScanError("select driver order for transition", err)
+	}
+	order.DriverID = &driverID
+	return order, nil
+}
+
+func (repository *PostgresDriverMobileRepository) TransitionOrderByUserID(ctx context.Context, userID uuid.UUID, orderID uuid.UUID, toStatus domain.OrderStatus, reason string, finalPriceCents *int64) (driverapp.CurrentOrder, error) {
+	transaction, err := repository.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return driverapp.CurrentOrder{}, fmt.Errorf("begin driver order transition: %w", err)
+	}
+	defer rollbackTx(ctx, transaction)
+
+	currentOrder, err := selectDriverDomainOrderForTransition(ctx, transaction, userID, orderID)
+	if err != nil {
+		return driverapp.CurrentOrder{}, err
+	}
+	transition, err := domain.NewOrderTransition(currentOrder, toStatus, &userID, currentOrder.DriverID, reason, time.Now().UTC())
+	if err != nil {
+		return driverapp.CurrentOrder{}, err
+	}
+
+	updated, changed, err := transitionDispatchOrderStatus(ctx, transaction, transition, finalPriceCents)
+	if err != nil {
+		return driverapp.CurrentOrder{}, err
+	}
+	if !changed {
+		return driverapp.CurrentOrder{}, fmt.Errorf("driver order transition concurrent update: %w", domain.ErrInvalidOrderStatusTransition)
+	}
+	if err := insertDriverMobileOrderEvent(ctx, transaction, transition, updated); err != nil {
+		return driverapp.CurrentOrder{}, err
+	}
+	if toStatus == domain.OrderStatusCancelled || toStatus == domain.OrderStatusCompleted {
+		if err := markDriverOnlineInTx(ctx, transaction, *updated.DriverID); err != nil {
+			return driverapp.CurrentOrder{}, err
+		}
+	}
+
+	order, err := selectDriverCurrentOrderByID(ctx, transaction, userID, orderID)
+	if err != nil {
+		return driverapp.CurrentOrder{}, err
+	}
+	if err := transaction.Commit(ctx); err != nil {
+		return driverapp.CurrentOrder{}, fmt.Errorf("commit driver order transition: %w", err)
+	}
+	return order, nil
+}
+
+func (repository *PostgresDriverMobileRepository) ListRoutePointsByUserID(ctx context.Context, userID uuid.UUID, orderID uuid.UUID) ([]driverapp.RoutePoint, error) {
+	var orderExists bool
+	if err := repository.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM orders o
+			JOIN drivers d ON d.id = o.driver_id
+			WHERE o.id = $1
+			  AND d.user_id = $2
+			  AND o.deleted_at IS NULL
+			  AND d.deleted_at IS NULL
+		)`, orderID, userID).Scan(&orderExists); err != nil {
+		return nil, fmt.Errorf("check driver order before route points: %w", err)
+	}
+	if !orderExists {
+		return nil, driverapp.ErrCurrentOrderNotFound
+	}
+
+	rows, err := repository.pool.Query(ctx, `
+		SELECT rp.id,
+		       ST_Y(rp.location::geometry) AS latitude,
+		       ST_X(rp.location::geometry) AS longitude,
+		       rp.heading,
+		       rp.speed_mps,
+		       rp.accuracy_meters,
+		       rp.recorded_at
+		FROM order_route_points rp
+		JOIN orders o ON o.id = rp.order_id
+		JOIN drivers d ON d.id = rp.driver_id AND d.id = o.driver_id
+		WHERE rp.order_id = $1
+		  AND d.user_id = $2
+		  AND o.deleted_at IS NULL
+		  AND d.deleted_at IS NULL
+		ORDER BY rp.recorded_at ASC`, orderID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("select driver order route points: %w", err)
+	}
+	defer rows.Close()
+
+	points := make([]driverapp.RoutePoint, 0)
+	for rows.Next() {
+		var point driverapp.RoutePoint
+		var latitude float64
+		var longitude float64
+		var heading pgtype.Float8
+		var speedMPS pgtype.Float8
+		var accuracyMeters pgtype.Float8
+		if err := rows.Scan(
+			&point.ID,
+			&latitude,
+			&longitude,
+			&heading,
+			&speedMPS,
+			&accuracyMeters,
+			&point.RecordedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan driver order route point: %w", err)
+		}
+		point.Location = domain.Coordinates{Latitude: latitude, Longitude: longitude}
+		point.Heading = nullableFloat64(heading)
+		point.SpeedMPS = nullableFloat64(speedMPS)
+		point.AccuracyMeters = nullableFloat64(accuracyMeters)
+		points = append(points, point)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate driver order route points: %w", err)
+	}
+	return points, nil
+}
+
+func (repository *PostgresDriverMobileRepository) AppendRoutePointByUserID(ctx context.Context, userID uuid.UUID, update geoservice.DriverLocationUpdate) error {
+	commandTag, err := repository.pool.Exec(ctx, `
+		INSERT INTO order_route_points (
+			order_id, driver_id, location, heading, speed_mps, accuracy_meters, recorded_at
+		)
+		SELECT o.id, d.id, ST_SetSRID(ST_MakePoint($3, $2), 4326)::geography,
+		       $4, $5, $6, $7
+		FROM drivers d
+		JOIN orders o ON o.driver_id = d.id
+		WHERE d.user_id = $1
+		  AND d.deleted_at IS NULL
+		  AND o.deleted_at IS NULL
+		  AND o.status = 'in_progress'
+		ORDER BY o.updated_at DESC
+		LIMIT 1`,
+		userID,
+		update.Location.Latitude,
+		update.Location.Longitude,
+		update.Heading,
+		update.SpeedMPS,
+		update.AccuracyMeters,
+		update.RecordedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("append driver route point: %w", err)
+	}
+	_ = commandTag
+	return nil
+}
+
+func nullableFloat64(value pgtype.Float8) *float64 {
+	if !value.Valid {
+		return nil
+	}
+	result := value.Float64
+	return &result
 }
 
 func (repository *PostgresDriverMobileRepository) markOnline(ctx context.Context, userID uuid.UUID) (driverapp.Profile, error) {
@@ -267,9 +550,54 @@ const driverMobileProfileSelect = `
 		       d.rating::float8,
 		       d.ratings_count,
 		       COALESCE(d.license_number, ''),
-		       d.is_verified
+		       d.is_verified,
+		       d.verification_status,
+		       d.taxi_park_id,
+		       tps.is_active,
+		       d.has_no_taxi_work_restrictions,
+		       d.federal_law_580_compliant,
+		       d.regional_requirements_compliant,
+		       d.medical_check_passed,
+		       d.pretrip_control_required,
+		       d.pretrip_control_passed,
+		       d.no_transport_ban,
+		       profile_car.id,
+		       COALESCE(profile_car.brand, ''),
+		       COALESCE(profile_car.model, ''),
+		       COALESCE(profile_car.year, 0),
+		       COALESCE(profile_car.plate_number, ''),
+		       COALESCE(profile_car.color, ''),
+		       COALESCE(profile_car.car_class, ''),
+		       profile_car.verification_status,
+		       COALESCE(profile_car.is_active, false),
+		       profile_car.osago_expires_at,
+		       profile_car.permit_expires_at
 		FROM drivers d
-		JOIN users u ON u.id = d.user_id`
+		JOIN users u ON u.id = d.user_id
+		LEFT JOIN taxi_park_settings tps ON tps.taxi_park_id = d.taxi_park_id
+		LEFT JOIN LATERAL (
+			SELECT c.id,
+			       c.brand,
+			       c.model,
+			       c.year,
+			       c.plate_number,
+			       c.color,
+			       c.car_class,
+			       c.verification_status,
+			       c.is_active,
+			       c.osago_expires_at,
+			       c.permit_expires_at
+			FROM cars c
+			LEFT JOIN car_driver_assignments cda ON cda.car_id = c.id AND cda.driver_id = d.id
+			WHERE c.deleted_at IS NULL
+			  AND (c.driver_id = d.id OR cda.driver_id IS NOT NULL)
+			ORDER BY
+				(c.verification_status = 'verified') DESC,
+				c.is_active DESC,
+				(c.driver_id = d.id) DESC,
+				c.created_at DESC
+			LIMIT 1
+		) profile_car ON true`
 
 func driverMobileProfileQuery(whereClause string) string {
 	return driverMobileProfileSelect + "\n" + whereClause
@@ -277,6 +605,19 @@ func driverMobileProfileQuery(whereClause string) string {
 
 func scanDriverMobileProfile(row pgx.Row) (driverapp.Profile, error) {
 	var profile driverapp.Profile
+	var taxiParkID pgtype.UUID
+	var taxiParkIsActive pgtype.Bool
+	var carID pgtype.UUID
+	var carVerificationStatus pgtype.Text
+	var osagoExpiresAt pgtype.Date
+	var permitExpiresAt pgtype.Date
+	var carBrand string
+	var carModel string
+	var carYear int
+	var carPlateNumber string
+	var carColor string
+	var carClass string
+	var carIsActive bool
 	if err := row.Scan(
 		&profile.DriverID,
 		&profile.UserID,
@@ -290,8 +631,59 @@ func scanDriverMobileProfile(row pgx.Row) (driverapp.Profile, error) {
 		&profile.RatingsCount,
 		&profile.LicenseNumber,
 		&profile.IsVerified,
+		&profile.VerificationStatus,
+		&taxiParkID,
+		&taxiParkIsActive,
+		&profile.HasNoTaxiWorkRestrictions,
+		&profile.FederalLaw580Compliant,
+		&profile.RegionalRequirementsCompliant,
+		&profile.MedicalCheckPassed,
+		&profile.PretripControlRequired,
+		&profile.PretripControlPassed,
+		&profile.NoTransportBan,
+		&carID,
+		&carBrand,
+		&carModel,
+		&carYear,
+		&carPlateNumber,
+		&carColor,
+		&carClass,
+		&carVerificationStatus,
+		&carIsActive,
+		&osagoExpiresAt,
+		&permitExpiresAt,
 	); err != nil {
 		return driverapp.Profile{}, err
+	}
+	if taxiParkID.Valid {
+		value, err := uuid.FromBytes(taxiParkID.Bytes[:])
+		if err != nil {
+			return driverapp.Profile{}, err
+		}
+		profile.TaxiParkID = &value
+	}
+	if taxiParkIsActive.Valid {
+		value := taxiParkIsActive.Bool
+		profile.TaxiParkIsActive = &value
+	}
+	if carID.Valid {
+		value, err := uuid.FromBytes(carID.Bytes[:])
+		if err != nil {
+			return driverapp.Profile{}, err
+		}
+		profile.Car = &driverapp.ProfileCar{
+			ID:                 value,
+			Brand:              carBrand,
+			Model:              carModel,
+			Year:               carYear,
+			PlateNumber:        carPlateNumber,
+			Color:              carColor,
+			CarClass:           carClass,
+			VerificationStatus: domain.VerificationLifecycleStatus(carVerificationStatus.String),
+			IsActive:           carIsActive,
+			OSAGOExpiresAt:     datePtr(osagoExpiresAt),
+			PermitExpiresAt:    datePtr(permitExpiresAt),
+		}
 	}
 	return profile, nil
 }
@@ -306,6 +698,7 @@ func scanDriverCurrentOrder(row pgx.Row) (driverapp.CurrentOrder, error) {
 
 	if err := row.Scan(
 		&order.OrderID,
+		&order.DriverID,
 		&order.PassengerID,
 		&order.PassengerName,
 		&order.PassengerPhone,

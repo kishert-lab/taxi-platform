@@ -33,6 +33,7 @@ func (repository *PostgresTaxiParkSettingsRepository) GetSettingsByOwnerUserID(c
 	settings, err := scanTaxiParkSettings(repository.pool.QueryRow(ctx, `SELECT `+taxiParkSettingsColumns+`
 		FROM taxi_park_settings s
 		JOIN taxi_parks p ON p.id = s.taxi_park_id
+		JOIN cities c ON c.id = p.city_id
 		WHERE p.owner_user_id = $1 AND p.deleted_at IS NULL`, ownerUserID))
 	if err != nil {
 		return domain.TaxiParkSettings{}, fmt.Errorf("select taxi park settings: %w", err)
@@ -46,30 +47,37 @@ func (repository *PostgresTaxiParkSettingsRepository) UpdateSettingsByOwnerUserI
 	}
 
 	settings, err := scanTaxiParkSettings(repository.pool.QueryRow(ctx, `
-		UPDATE taxi_park_settings s
-		SET display_name = COALESCE($2, display_name),
-		    short_name = COALESCE($3, short_name),
-		    support_phone = COALESCE($4, support_phone),
-		    support_email = COALESCE($5, support_email),
-		    legal_name = COALESCE($6, legal_name),
-		    legal_address = COALESCE($7, legal_address),
-		    inn = COALESCE($8, inn),
-		    ogrn = COALESCE($9, ogrn),
-		    website = COALESCE($10, website),
-		    logo_url = COALESCE($11, logo_url),
-		    primary_color = COALESCE($12, primary_color),
-		    secondary_color = COALESCE($13, secondary_color),
-		    commission_percent = COALESCE($14::numeric / 100, commission_percent),
-		    minimum_order_price_cents = COALESCE($15, minimum_order_price_cents),
-		    cancellation_timeout_sec = COALESCE($16, cancellation_timeout_sec),
-		    driver_arrival_timeout_sec = COALESCE($17, driver_arrival_timeout_sec),
-		    allow_cash_payment = COALESCE($18, allow_cash_payment),
-		    allow_card_payment = COALESCE($19, allow_card_payment),
-		    allow_transfer_payment = COALESCE($20, allow_transfer_payment),
-		    is_active = COALESCE($21, is_active)
-		FROM taxi_parks p
-		WHERE p.id = s.taxi_park_id AND p.owner_user_id = $1 AND p.deleted_at IS NULL
-		RETURNING `+taxiParkSettingsColumns,
+		WITH updated_settings AS (
+			UPDATE taxi_park_settings s
+			SET display_name = COALESCE($2, display_name),
+			    short_name = COALESCE($3, short_name),
+			    support_phone = COALESCE($4, support_phone),
+			    support_email = COALESCE($5, support_email),
+			    legal_name = COALESCE($6, legal_name),
+			    legal_address = COALESCE($7, legal_address),
+			    inn = COALESCE($8, inn),
+			    ogrn = COALESCE($9, ogrn),
+			    website = COALESCE($10, website),
+			    logo_url = COALESCE($11, logo_url),
+			    primary_color = COALESCE($12, primary_color),
+			    secondary_color = COALESCE($13, secondary_color),
+			    commission_percent = COALESCE($14::numeric / 100, commission_percent),
+			    minimum_order_price_cents = COALESCE($15, minimum_order_price_cents),
+			    cancellation_timeout_sec = COALESCE($16, cancellation_timeout_sec),
+			    driver_arrival_timeout_sec = COALESCE($17, driver_arrival_timeout_sec),
+			    allow_cash_payment = COALESCE($18, allow_cash_payment),
+			    allow_card_payment = COALESCE($19, allow_card_payment),
+			    allow_transfer_payment = COALESCE($20, allow_transfer_payment),
+			    is_active = COALESCE($21, is_active)
+			FROM taxi_parks p
+			WHERE p.id = s.taxi_park_id AND p.owner_user_id = $1 AND p.deleted_at IS NULL
+			RETURNING s.id
+		)
+		SELECT `+taxiParkSettingsColumns+`
+		FROM taxi_park_settings s
+		JOIN updated_settings updated ON updated.id = s.id
+		JOIN taxi_parks p ON p.id = s.taxi_park_id
+		JOIN cities c ON c.id = p.city_id`,
 		ownerUserID,
 		request.DisplayName,
 		request.ShortName,
@@ -191,14 +199,10 @@ func (repository *PostgresTaxiParkSettingsRepository) CreateOrderByOwnerUserID(c
 	}
 	defer rollbackTx(ctx, transaction)
 
-	var taxiParkID uuid.UUID
-	var cityID uuid.UUID
-	if err := transaction.QueryRow(ctx, `
-		SELECT id, city_id
-		FROM taxi_parks
-		WHERE owner_user_id = $1 AND deleted_at IS NULL`, ownerUserID).Scan(&taxiParkID, &cityID); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return domain.Order{}, taxiparkapp.ErrTaxiParkNotFound
+	taxiParkID, cityID, err := taxiParkIDAndCityByActor(ctx, transaction, ownerUserID)
+	if err != nil {
+		if errors.Is(err, taxiparkapp.ErrTaxiParkNotFound) {
+			return domain.Order{}, err
 		}
 		return domain.Order{}, fmt.Errorf("select taxi park for order creation: %w", err)
 	}
@@ -330,6 +334,189 @@ func (repository *PostgresTaxiParkSettingsRepository) CreateOrderByOwnerUserID(c
 		return domain.Order{}, fmt.Errorf("commit taxi park order transaction: %w", err)
 	}
 
+	return order, nil
+}
+
+func (repository *PostgresTaxiParkSettingsRepository) GetOrderByActorUserID(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID) (domain.Order, error) {
+	transaction, err := repository.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return domain.Order{}, fmt.Errorf("begin taxi park order get transaction: %w", err)
+	}
+	defer rollbackTx(ctx, transaction)
+
+	taxiParkID, err := taxiParkIDByActor(ctx, transaction, actorUserID)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	order, err := scanDispatchOrder(transaction.QueryRow(ctx, `
+		SELECT `+dispatchOrderSelectColumns+`
+		FROM orders
+		WHERE id = $1
+		  AND metadata->>'taxi_park_id' = $2
+		  AND deleted_at IS NULL`,
+		orderID,
+		taxiParkID.String(),
+	))
+	if err != nil {
+		return domain.Order{}, mapTaxiParkOrderScanError("select taxi park order", err)
+	}
+	if err := transaction.Commit(ctx); err != nil {
+		return domain.Order{}, fmt.Errorf("commit taxi park order get transaction: %w", err)
+	}
+	return order, nil
+}
+
+func (repository *PostgresTaxiParkSettingsRepository) UpdateOrderByActorUserID(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID, record taxiparkapp.UpdateOrderRecord) (domain.Order, error) {
+	transaction, err := repository.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return domain.Order{}, fmt.Errorf("begin taxi park order update transaction: %w", err)
+	}
+	defer rollbackTx(ctx, transaction)
+
+	taxiParkID, err := taxiParkIDByActor(ctx, transaction, actorUserID)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	currentOrder, err := taxiParkOrderForUpdate(ctx, transaction, taxiParkID, orderID)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	if currentOrder.Status.IsTerminal() {
+		return domain.Order{}, domain.ErrInvalidOrderStatusTransition
+	}
+
+	order, err := scanDispatchOrder(transaction.QueryRow(ctx, `
+		WITH order_points AS (
+			SELECT
+				CASE WHEN $3::double precision IS NULL OR $4::double precision IS NULL THEN pickup_location
+				     ELSE ST_SetSRID(ST_MakePoint($4, $3), 4326)::geography
+				END AS pickup_location,
+				CASE WHEN $6::double precision IS NULL OR $7::double precision IS NULL THEN destination_location
+				     ELSE ST_SetSRID(ST_MakePoint($7, $6), 4326)::geography
+				END AS destination_location
+			FROM orders
+			WHERE id = $1
+		)
+		UPDATE orders
+		SET pickup_address = COALESCE($2::text, pickup_address),
+		    pickup_location = p.pickup_location,
+		    destination_address = COALESCE($5::text, destination_address),
+		    destination_location = p.destination_location,
+		    payment_method = COALESCE($8::payment_method, payment_method),
+		    passenger_comment = COALESCE($9::text, passenger_comment),
+		    version = version + 1
+		FROM order_points p
+		WHERE id = $1
+		  AND version = $10
+		  AND deleted_at IS NULL
+		RETURNING `+dispatchOrderSelectColumns,
+		orderID,
+		nullableStringPtr(record.PickupAddress),
+		nullableLatitude(record.PickupLocation),
+		nullableLongitude(record.PickupLocation),
+		nullableStringPtr(record.DestinationAddress),
+		nullableLatitude(record.DestinationLocation),
+		nullableLongitude(record.DestinationLocation),
+		nullablePaymentMethod(record.PaymentMethod),
+		nullableStringPtr(record.Comment),
+		currentOrder.Version,
+	))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.Order{}, fmt.Errorf("taxi park order update concurrent update: %w", domain.ErrInvalidOrderStatusTransition)
+		}
+		return domain.Order{}, fmt.Errorf("update taxi park order: %w", err)
+	}
+	if err := insertTaxiParkOrderEvent(ctx, transaction, order, actorUserID, domain.OrderEventUpdated, map[string]any{
+		"order_id": order.ID,
+		"status":   order.Status,
+		"version":  order.Version,
+	}); err != nil {
+		return domain.Order{}, err
+	}
+	if err := transaction.Commit(ctx); err != nil {
+		return domain.Order{}, fmt.Errorf("commit taxi park order update transaction: %w", err)
+	}
+	return order, nil
+}
+
+func (repository *PostgresTaxiParkSettingsRepository) CancelOrderByActorUserID(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID, reason string) (domain.Order, error) {
+	return repository.transitionOrderByActorUserID(ctx, actorUserID, orderID, domain.OrderStatusCancelled, reason, nil)
+}
+
+func (repository *PostgresTaxiParkSettingsRepository) CompleteOrderByActorUserID(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID, finalPriceCents int64) (domain.Order, error) {
+	return repository.transitionOrderByActorUserID(ctx, actorUserID, orderID, domain.OrderStatusCompleted, "", &finalPriceCents)
+}
+
+func (repository *PostgresTaxiParkSettingsRepository) transitionOrderByActorUserID(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID, toStatus domain.OrderStatus, reason string, finalPriceCents *int64) (domain.Order, error) {
+	transaction, err := repository.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return domain.Order{}, fmt.Errorf("begin taxi park order transition transaction: %w", err)
+	}
+	defer rollbackTx(ctx, transaction)
+
+	taxiParkID, err := taxiParkIDByActor(ctx, transaction, actorUserID)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	currentOrder, err := taxiParkOrderForUpdate(ctx, transaction, taxiParkID, orderID)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	transition, err := domain.NewOrderTransition(currentOrder, toStatus, &actorUserID, currentOrder.DriverID, reason, time.Now().UTC())
+	if err != nil {
+		return domain.Order{}, err
+	}
+	order, err := scanDispatchOrder(transaction.QueryRow(ctx, `
+		UPDATE orders
+		SET status = $4::order_status,
+		    version = version + 1,
+		    cancelled_at = CASE WHEN $4::order_status = 'cancelled'::order_status THEN $5 ELSE cancelled_at END,
+		    cancellation_reason = CASE WHEN $4::order_status = 'cancelled'::order_status THEN $6::text ELSE cancellation_reason END,
+		    completed_at = CASE WHEN $4::order_status = 'completed'::order_status THEN $5 ELSE completed_at END,
+		    final_price = CASE WHEN $4::order_status = 'completed'::order_status THEN ($7::bigint::numeric / 100) ELSE final_price END
+		WHERE id = $1
+		  AND status = $2::order_status
+		  AND version = $3
+		  AND deleted_at IS NULL
+		RETURNING `+dispatchOrderSelectColumns,
+		transition.OrderID,
+		transition.FromStatus,
+		transition.ExpectedVersion,
+		transition.ToStatus,
+		transition.OccurredAt,
+		nullableString(transition.Reason),
+		finalPriceCents,
+	))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.Order{}, fmt.Errorf("taxi park order transition concurrent update: %w", domain.ErrInvalidOrderStatusTransition)
+		}
+		return domain.Order{}, fmt.Errorf("transition taxi park order: %w", err)
+	}
+	if err := insertTaxiParkOrderEvent(ctx, transaction, order, actorUserID, domain.EventTypeForOrderStatus(toStatus), map[string]any{
+		"order_id":    order.ID,
+		"from_status": transition.FromStatus,
+		"to_status":   transition.ToStatus,
+		"version":     order.Version,
+		"reason":      reason,
+		"occurred_at": transition.OccurredAt,
+	}); err != nil {
+		return domain.Order{}, err
+	}
+	if order.DriverID != nil && (toStatus == domain.OrderStatusCancelled || toStatus == domain.OrderStatusCompleted) {
+		if _, err := transaction.Exec(ctx, `
+			UPDATE drivers
+			SET status = 'online'
+			WHERE id = $1
+			  AND status IN ('busy', 'online')
+			  AND deleted_at IS NULL`, *order.DriverID); err != nil {
+			return domain.Order{}, fmt.Errorf("mark taxi park order driver online: %w", err)
+		}
+	}
+	if err := transaction.Commit(ctx); err != nil {
+		return domain.Order{}, fmt.Errorf("commit taxi park order transition transaction: %w", err)
+	}
 	return order, nil
 }
 
@@ -1164,7 +1351,9 @@ func (repository *PostgresTaxiParkSettingsRepository) ensureSettings(ctx context
 }
 
 const taxiParkSettingsColumns = `
-	s.id, s.taxi_park_id, s.display_name, COALESCE(s.short_name, ''), COALESCE(s.support_phone, ''),
+	s.id, s.taxi_park_id, p.city_id, c.name, c.region, c.country_code, c.timezone,
+	ST_Y(c.center::geometry), ST_X(c.center::geometry),
+	s.display_name, COALESCE(s.short_name, ''), COALESCE(s.support_phone, ''),
 	COALESCE(s.support_email, ''), COALESCE(s.legal_name, ''), COALESCE(s.legal_address, ''),
 	COALESCE(s.inn, ''), COALESCE(s.ogrn, ''), COALESCE(s.website, ''), COALESCE(s.logo_url, ''),
 	COALESCE(s.primary_color, ''), COALESCE(s.secondary_color, ''), (s.commission_percent * 100)::integer,
@@ -1175,9 +1364,18 @@ const taxiParkSettingsColumns = `
 func scanTaxiParkSettings(row pgx.Row) (domain.TaxiParkSettings, error) {
 	var settings domain.TaxiParkSettings
 	var commissionBasisPoints pgtype.Int4
+	var latitude float64
+	var longitude float64
 	if err := row.Scan(
 		&settings.ID,
 		&settings.TaxiParkID,
+		&settings.CityID,
+		&settings.CityName,
+		&settings.CityRegion,
+		&settings.CityCountryCode,
+		&settings.CityTimezone,
+		&latitude,
+		&longitude,
 		&settings.DisplayName,
 		&settings.ShortName,
 		&settings.SupportPhone,
@@ -1204,6 +1402,11 @@ func scanTaxiParkSettings(row pgx.Row) (domain.TaxiParkSettings, error) {
 		return domain.TaxiParkSettings{}, err
 	}
 	settings.MinimumOrderPrice.Currency = "RUB"
+	coordinates, err := domain.NewCoordinates(latitude, longitude)
+	if err != nil {
+		return domain.TaxiParkSettings{}, fmt.Errorf("scan taxi park city center: %w", err)
+	}
+	settings.CityCenter = coordinates
 	if commissionBasisPoints.Valid {
 		value := commissionBasisPoints.Int32
 		settings.CommissionBasisPoints = &value
@@ -1586,6 +1789,126 @@ func taxiParkIDByOwner(ctx context.Context, transaction pgx.Tx, ownerUserID uuid
 		return uuid.Nil, fmt.Errorf("select taxi park by owner: %w", err)
 	}
 	return taxiParkID, nil
+}
+
+func taxiParkIDByActor(ctx context.Context, transaction pgx.Tx, actorUserID uuid.UUID) (uuid.UUID, error) {
+	var taxiParkID uuid.UUID
+	if err := transaction.QueryRow(ctx, `
+		SELECT id
+		FROM taxi_parks
+		WHERE owner_user_id = $1 AND deleted_at IS NULL
+		UNION
+		SELECT staff.taxi_park_id
+		FROM taxi_park_staff staff
+		JOIN taxi_parks tp ON tp.id = staff.taxi_park_id
+		WHERE staff.user_id = $1
+		  AND staff.is_active = true
+		  AND staff.deleted_at IS NULL
+		  AND staff.role IN ('dispatcher', 'taxi_park')
+		  AND tp.deleted_at IS NULL
+		LIMIT 1`, actorUserID).Scan(&taxiParkID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return uuid.Nil, taxiparkapp.ErrTaxiParkNotFound
+		}
+		return uuid.Nil, fmt.Errorf("select taxi park by actor: %w", err)
+	}
+	return taxiParkID, nil
+}
+
+func taxiParkIDAndCityByActor(ctx context.Context, transaction pgx.Tx, actorUserID uuid.UUID) (uuid.UUID, uuid.UUID, error) {
+	var taxiParkID uuid.UUID
+	var cityID uuid.UUID
+	if err := transaction.QueryRow(ctx, `
+		SELECT id, city_id
+		FROM taxi_parks
+		WHERE owner_user_id = $1 AND deleted_at IS NULL
+		UNION
+		SELECT tp.id, tp.city_id
+		FROM taxi_park_staff staff
+		JOIN taxi_parks tp ON tp.id = staff.taxi_park_id
+		WHERE staff.user_id = $1
+		  AND staff.is_active = true
+		  AND staff.deleted_at IS NULL
+		  AND staff.role IN ('dispatcher', 'taxi_park')
+		  AND tp.deleted_at IS NULL
+		LIMIT 1`, actorUserID).Scan(&taxiParkID, &cityID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return uuid.Nil, uuid.Nil, taxiparkapp.ErrTaxiParkNotFound
+		}
+		return uuid.Nil, uuid.Nil, fmt.Errorf("select taxi park by actor with city: %w", err)
+	}
+	return taxiParkID, cityID, nil
+}
+
+func taxiParkOrderForUpdate(ctx context.Context, transaction pgx.Tx, taxiParkID uuid.UUID, orderID uuid.UUID) (domain.Order, error) {
+	order, err := scanDispatchOrder(transaction.QueryRow(ctx, `
+		SELECT `+dispatchOrderSelectColumns+`
+		FROM orders
+		WHERE id = $1
+		  AND metadata->>'taxi_park_id' = $2
+		  AND deleted_at IS NULL
+		FOR UPDATE`,
+		orderID,
+		taxiParkID.String(),
+	))
+	if err != nil {
+		return domain.Order{}, mapTaxiParkOrderScanError("select taxi park order for update", err)
+	}
+	return order, nil
+}
+
+func mapTaxiParkOrderScanError(operation string, err error) error {
+	if errors.Is(err, pgx.ErrNoRows) {
+		return taxiparkapp.ErrTaxiParkResourceNotFound
+	}
+	return fmt.Errorf("%s: %w", operation, err)
+}
+
+func insertTaxiParkOrderEvent(ctx context.Context, transaction pgx.Tx, order domain.Order, actorUserID uuid.UUID, eventType domain.OrderEventType, payload map[string]any) error {
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal taxi park order event: %w", err)
+	}
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO order_events (order_id, actor_user_id, actor_driver_id, event_type, payload)
+		VALUES ($1, $2, $3, $4, $5::jsonb)`,
+		order.ID,
+		actorUserID,
+		order.DriverID,
+		eventType,
+		string(payloadBytes),
+	); err != nil {
+		return fmt.Errorf("insert taxi park order event: %w", err)
+	}
+	return nil
+}
+
+func nullableStringPtr(value *string) any {
+	if value == nil {
+		return nil
+	}
+	return nullableString(*value)
+}
+
+func nullableLatitude(value *domain.Coordinates) any {
+	if value == nil {
+		return nil
+	}
+	return value.Latitude
+}
+
+func nullableLongitude(value *domain.Coordinates) any {
+	if value == nil {
+		return nil
+	}
+	return value.Longitude
+}
+
+func nullablePaymentMethod(value *domain.PaymentMethod) any {
+	if value == nil {
+		return nil
+	}
+	return *value
 }
 
 func (repository *PostgresTaxiParkSettingsRepository) assignCarToDriver(ctx context.Context, transaction pgx.Tx, taxiParkID uuid.UUID, carID uuid.UUID, driverID uuid.UUID) error {

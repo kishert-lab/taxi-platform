@@ -22,6 +22,10 @@ type TaxiParkSettingsUseCase interface {
 	CreateTariff(ctx context.Context, ownerUserID uuid.UUID, request dto.TaxiParkTariffRequest) (domain.TaxiParkTariff, error)
 	UpdateTariff(ctx context.Context, ownerUserID uuid.UUID, tariffID uuid.UUID, request dto.TaxiParkTariffPatchRequest) (domain.TaxiParkTariff, error)
 	CreateOrder(ctx context.Context, ownerUserID uuid.UUID, request dto.TaxiParkCreateOrderRequest) (domain.Order, error)
+	GetOrder(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID) (domain.Order, error)
+	UpdateOrder(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID, request dto.TaxiParkUpdateOrderRequest) (domain.Order, error)
+	CancelOrder(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID, request dto.CancelOrderRequest) (domain.Order, error)
+	CompleteOrder(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID, request dto.TaxiParkCompleteOrderRequest) (domain.Order, error)
 	CreateDriver(ctx context.Context, ownerUserID uuid.UUID, request dto.TaxiParkCreateDriverRequest) (taxiparkapp.CreateDriverResult, error)
 	ListDriverLocations(ctx context.Context, ownerUserID uuid.UUID, maxAge time.Duration) ([]taxiparkapp.DriverLocation, error)
 	UpdateDriver(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID, request dto.TaxiParkUpdateDriverRequest) (taxiparkapp.CreateDriverResult, error)
@@ -51,10 +55,16 @@ func NewTaxiParkSettingsHandler(useCase TaxiParkSettingsUseCase) *TaxiParkSettin
 }
 
 func (handler *TaxiParkSettingsHandler) RegisterRoutes(router gin.IRouter) {
+	taxiParkOrders := router.Group("/taxi-park", middleware.RequireRole(domain.UserRoleTaxiPark, domain.UserRoleDispatcher))
+	taxiParkOrders.POST("/orders", handler.CreateOrder)
+	taxiParkOrders.GET("/orders/:id", handler.GetOrder)
+	taxiParkOrders.PATCH("/orders/:id", handler.UpdateOrder)
+	taxiParkOrders.POST("/orders/:id/cancel", handler.CancelOrder)
+	taxiParkOrders.POST("/orders/:id/complete", handler.CompleteOrder)
+
 	taxiPark := router.Group("/taxi-park", middleware.RequireRole(domain.UserRoleTaxiPark))
 	taxiPark.GET("/settings", handler.GetSettings)
 	taxiPark.PATCH("/settings", handler.UpdateSettings)
-	taxiPark.POST("/orders", handler.CreateOrder)
 	taxiPark.POST("/drivers", handler.CreateDriver)
 	taxiPark.GET("/drivers/locations", handler.ListDriverLocations)
 	taxiPark.PATCH("/drivers/:id", handler.UpdateDriver)
@@ -114,6 +124,134 @@ func (handler *TaxiParkSettingsHandler) CreateOrder(context *gin.Context) {
 		return
 	}
 	response.Created(context, orderToResponse(order))
+}
+
+// GetOrder godoc
+// @Summary Get taxi park order
+// @Description Returns order state for taxi park owner or active dispatcher dashboard.
+// @Tags taxi-park-orders
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Order ID"
+// @Success 200 {object} OrderSuccessResponse
+// @Failure 400 {object} response.Error
+// @Failure 401 {object} response.Error
+// @Failure 403 {object} response.Error
+// @Failure 404 {object} response.Error
+// @Router /taxi-park/orders/{id} [get]
+func (handler *TaxiParkSettingsHandler) GetOrder(context *gin.Context) {
+	actorUserID, orderID, ok := taxiParkOrderIDs(context)
+	if !ok {
+		return
+	}
+	order, err := handler.useCase.GetOrder(context.Request.Context(), actorUserID, orderID)
+	if err != nil {
+		failByError(context, err)
+		return
+	}
+	response.OK(context, orderToResponse(order))
+}
+
+// UpdateOrder godoc
+// @Summary Update taxi park order addresses or payment/comment
+// @Description Dispatchers can change destination while the order is not terminal. All changes are persisted and published over WebSocket as order.updated.
+// @Tags taxi-park-orders
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Order ID"
+// @Param request body dto.TaxiParkUpdateOrderRequest true "Order patch"
+// @Success 200 {object} OrderSuccessResponse
+// @Failure 400 {object} response.Error
+// @Failure 401 {object} response.Error
+// @Failure 403 {object} response.Error
+// @Failure 404 {object} response.Error
+// @Failure 409 {object} response.Error
+// @Router /taxi-park/orders/{id} [patch]
+func (handler *TaxiParkSettingsHandler) UpdateOrder(context *gin.Context) {
+	actorUserID, orderID, ok := taxiParkOrderIDs(context)
+	if !ok {
+		return
+	}
+	var request dto.TaxiParkUpdateOrderRequest
+	if err := context.ShouldBindJSON(&request); err != nil {
+		failValidationWithDetails(context, "Invalid taxi park order patch", map[string]any{"reason": err.Error()})
+		return
+	}
+	order, err := handler.useCase.UpdateOrder(context.Request.Context(), actorUserID, orderID, request)
+	if err != nil {
+		failByError(context, err)
+		return
+	}
+	response.OK(context, orderToResponse(order))
+}
+
+// CancelOrder godoc
+// @Summary Cancel taxi park order
+// @Description Stops dispatch if the order is still searching and publishes order.cancelled to dashboards, passenger, and driver.
+// @Tags taxi-park-orders
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Order ID"
+// @Param request body dto.CancelOrderRequest true "Cancel reason"
+// @Success 200 {object} OrderSuccessResponse
+// @Failure 400 {object} response.Error
+// @Failure 401 {object} response.Error
+// @Failure 403 {object} response.Error
+// @Failure 404 {object} response.Error
+// @Failure 409 {object} response.Error
+// @Router /taxi-park/orders/{id}/cancel [post]
+func (handler *TaxiParkSettingsHandler) CancelOrder(context *gin.Context) {
+	actorUserID, orderID, ok := taxiParkOrderIDs(context)
+	if !ok {
+		return
+	}
+	var request dto.CancelOrderRequest
+	if err := context.ShouldBindJSON(&request); err != nil {
+		failValidation(context, "Invalid taxi park order cancellation request")
+		return
+	}
+	order, err := handler.useCase.CancelOrder(context.Request.Context(), actorUserID, orderID, request)
+	if err != nil {
+		failByError(context, err)
+		return
+	}
+	response.OK(context, orderToResponse(order))
+}
+
+// CompleteOrder godoc
+// @Summary Complete taxi park order
+// @Description Completes an in-progress order from dispatcher dashboard, stores final price, settles finance, and publishes order.completed.
+// @Tags taxi-park-orders
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Order ID"
+// @Param request body dto.TaxiParkCompleteOrderRequest true "Completion request"
+// @Success 200 {object} OrderSuccessResponse
+// @Failure 400 {object} response.Error
+// @Failure 401 {object} response.Error
+// @Failure 403 {object} response.Error
+// @Failure 404 {object} response.Error
+// @Failure 409 {object} response.Error
+// @Router /taxi-park/orders/{id}/complete [post]
+func (handler *TaxiParkSettingsHandler) CompleteOrder(context *gin.Context) {
+	actorUserID, orderID, ok := taxiParkOrderIDs(context)
+	if !ok {
+		return
+	}
+	var request dto.TaxiParkCompleteOrderRequest
+	if err := context.ShouldBindJSON(&request); err != nil {
+		failValidation(context, "Invalid taxi park order completion request")
+		return
+	}
+	order, err := handler.useCase.CompleteOrder(context.Request.Context(), actorUserID, orderID, request)
+	if err != nil {
+		failByError(context, err)
+		return
+	}
+	response.OK(context, orderToResponse(order))
 }
 
 // GetSettings godoc
@@ -838,6 +976,20 @@ func taxiParkDriverCarIDs(context *gin.Context) (uuid.UUID, uuid.UUID, uuid.UUID
 		return uuid.Nil, uuid.Nil, uuid.Nil, false
 	}
 	return ownerUserID, driverID, carID, true
+}
+
+func taxiParkOrderIDs(context *gin.Context) (uuid.UUID, uuid.UUID, bool) {
+	actorUserID, ok := userIDFromContext(context)
+	if !ok {
+		failUnauthorized(context, "User id is missing")
+		return uuid.Nil, uuid.Nil, false
+	}
+	orderID, err := uuid.Parse(context.Param("id"))
+	if err != nil {
+		failValidation(context, "Invalid order id")
+		return uuid.Nil, uuid.Nil, false
+	}
+	return actorUserID, orderID, true
 }
 
 func taxiParkDocumentsResponse(documents []domain.TaxiParkDocument) dto.TaxiParkDocumentsResponse {

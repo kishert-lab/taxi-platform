@@ -142,6 +142,14 @@ func (useCase *UnavailableUseCase) ListDriverOrderHistory(context.Context, uuid.
 	return dto.DriverOrderHistoryResponse{}, common.ErrNotImplemented
 }
 
+func (useCase *UnavailableUseCase) ListDriverOrderOffers(context.Context, uuid.UUID) (dto.DriverOrderOffersResponse, error) {
+	return dto.DriverOrderOffersResponse{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) GetDriverOrderRoute(context.Context, uuid.UUID, uuid.UUID) (dto.OrderRouteResponse, error) {
+	return dto.OrderRouteResponse{}, common.ErrNotImplemented
+}
+
 func (useCase *UnavailableUseCase) AcceptDriverOrder(context.Context, uuid.UUID, uuid.UUID) (dto.DriverOrderResponse, error) {
 	return dto.DriverOrderResponse{}, common.ErrNotImplemented
 }
@@ -150,7 +158,15 @@ func (useCase *UnavailableUseCase) RejectDriverOrder(context.Context, uuid.UUID,
 	return common.ErrNotImplemented
 }
 
+func (useCase *UnavailableUseCase) MarkDriverArriving(context.Context, uuid.UUID, uuid.UUID) (dto.DriverOrderResponse, error) {
+	return dto.DriverOrderResponse{}, common.ErrNotImplemented
+}
+
 func (useCase *UnavailableUseCase) MarkDriverArrived(context.Context, uuid.UUID, uuid.UUID) (dto.DriverOrderResponse, error) {
+	return dto.DriverOrderResponse{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) CancelDriverOrder(context.Context, uuid.UUID, uuid.UUID, string) (dto.DriverOrderResponse, error) {
 	return dto.DriverOrderResponse{}, common.ErrNotImplemented
 }
 
@@ -215,6 +231,22 @@ func (useCase *UnavailableUseCase) UpdateTariff(context.Context, uuid.UUID, uuid
 }
 
 func (useCase *UnavailableUseCase) CreateOrder(context.Context, uuid.UUID, dto.TaxiParkCreateOrderRequest) (domain.Order, error) {
+	return domain.Order{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) GetOrder(context.Context, uuid.UUID, uuid.UUID) (domain.Order, error) {
+	return domain.Order{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) UpdateOrder(context.Context, uuid.UUID, uuid.UUID, dto.TaxiParkUpdateOrderRequest) (domain.Order, error) {
+	return domain.Order{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) CancelOrder(context.Context, uuid.UUID, uuid.UUID, dto.CancelOrderRequest) (domain.Order, error) {
+	return domain.Order{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) CompleteOrder(context.Context, uuid.UUID, uuid.UUID, dto.TaxiParkCompleteOrderRequest) (domain.Order, error) {
 	return domain.Order{}, common.ErrNotImplemented
 }
 
@@ -312,4 +344,20 @@ func (useCase *UnavailableUseCase) DeactivateDocument(context.Context, uuid.UUID
 
 func (useCase *UnavailableUseCase) AcceptActiveDocument(context.Context, uuid.UUID, domain.LegalDocumentType, string, string, string) (domain.UserDocumentAcceptance, error) {
 	return domain.UserDocumentAcceptance{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) ListOrderMessages(context.Context, uuid.UUID, domain.UserRole, uuid.UUID, domain.ChatType, int) (dto.ChatMessagesResponse, error) {
+	return dto.ChatMessagesResponse{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) SendOrderMessage(context.Context, uuid.UUID, domain.UserRole, uuid.UUID, domain.ChatType, dto.ChatSendMessageRequest) (dto.ChatMessageResponse, error) {
+	return dto.ChatMessageResponse{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) ListPassengerSupportMessages(context.Context, uuid.UUID, int) (dto.ChatMessagesResponse, error) {
+	return dto.ChatMessagesResponse{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) SendPassengerSupportMessage(context.Context, uuid.UUID, dto.ChatSendMessageRequest) (dto.ChatMessageResponse, error) {
+	return dto.ChatMessageResponse{}, common.ErrNotImplemented
 }

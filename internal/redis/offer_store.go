@@ -63,6 +63,29 @@ func (store *OfferStore) GetOffer(ctx context.Context, orderID uuid.UUID, driver
 	return offer, true, nil
 }
 
+func (store *OfferStore) ListDriverOffers(ctx context.Context, driverID uuid.UUID) ([]dispatch.OrderOffer, error) {
+	values, err := store.client.SMembers(ctx, driverOffersKey(driverID)).Result()
+	if err != nil {
+		return nil, fmt.Errorf("list driver offered orders: %w", err)
+	}
+
+	offers := make([]dispatch.OrderOffer, 0, len(values))
+	for _, value := range values {
+		orderID, err := uuid.Parse(value)
+		if err != nil {
+			return nil, fmt.Errorf("parse driver offer order id: %w", err)
+		}
+		offer, exists, err := store.GetOffer(ctx, orderID, driverID)
+		if err != nil {
+			return nil, err
+		}
+		if exists {
+			offers = append(offers, offer)
+		}
+	}
+	return offers, nil
+}
+
 func (store *OfferStore) ListOfferedDriverIDs(ctx context.Context, orderID uuid.UUID) ([]uuid.UUID, error) {
 	values, err := store.client.SMembers(ctx, orderOffersKey(orderID)).Result()
 	if err != nil {
@@ -79,6 +102,19 @@ func (store *OfferStore) ListOfferedDriverIDs(ctx context.Context, orderID uuid.
 	}
 
 	return driverIDs, nil
+}
+
+func (store *OfferStore) RemoveDriverOffer(ctx context.Context, orderID uuid.UUID, driverID uuid.UUID) error {
+	if err := store.client.Del(ctx, offerKey(orderID, driverID)).Err(); err != nil {
+		return fmt.Errorf("remove driver order offer: %w", err)
+	}
+	if err := store.client.SRem(ctx, orderOffersKey(orderID), driverID.String()).Err(); err != nil {
+		return fmt.Errorf("remove driver from order offers index: %w", err)
+	}
+	if err := store.client.SRem(ctx, driverOffersKey(driverID), orderID.String()).Err(); err != nil {
+		return fmt.Errorf("remove order from driver offers index: %w", err)
+	}
+	return nil
 }
 
 func (store *OfferStore) RemoveOffers(ctx context.Context, orderID uuid.UUID) error {

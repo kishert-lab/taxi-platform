@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/kishert-lab/taxi-platform/internal/auth"
+	chatapp "github.com/kishert-lab/taxi-platform/internal/chat"
 	"github.com/kishert-lab/taxi-platform/internal/common"
 	"github.com/kishert-lab/taxi-platform/internal/dispatch"
 	"github.com/kishert-lab/taxi-platform/internal/domain"
@@ -50,7 +51,7 @@ func failByError(context *gin.Context, err error) {
 		response.Fail(context, http.StatusUnauthorized, response.CodeUnauthorized, "Unauthorized", nil)
 	case errors.Is(err, auth.ErrDriverAccessDenied):
 		response.Fail(context, http.StatusForbidden, response.CodeForbidden, "Driver access is blocked", nil)
-	case errors.Is(err, domain.ErrInvalidPhone), errors.Is(err, domain.ErrInvalidEmail), errors.Is(err, domain.ErrInvalidUserRole), errors.Is(err, domain.ErrInvalidVerificationStatus), errors.Is(err, domain.ErrInvalidPaymentMethod):
+	case errors.Is(err, domain.ErrInvalidPhone), errors.Is(err, domain.ErrInvalidEmail), errors.Is(err, domain.ErrInvalidUserRole), errors.Is(err, domain.ErrInvalidVerificationStatus), errors.Is(err, domain.ErrInvalidPaymentMethod), errors.Is(err, domain.ErrInvalidChatType), errors.Is(err, domain.ErrInvalidChatMessage):
 		response.Fail(context, http.StatusBadRequest, response.CodeValidationError, "Invalid request", nil)
 	case errors.Is(err, ErrMobileOrderNotFound):
 		response.Fail(context, http.StatusNotFound, response.CodeOrderNotFound, "Order not found", nil)
@@ -60,6 +61,8 @@ func failByError(context *gin.Context, err error) {
 		response.Fail(context, http.StatusConflict, response.CodeOrderInvalidState, "Order invalid state", nil)
 	case errors.Is(err, dispatch.ErrOrderAlreadyAssigned):
 		response.Fail(context, http.StatusConflict, response.CodeOrderAlreadyAssigned, "Order already assigned", nil)
+	case errors.Is(err, dispatch.ErrOfferNotAccepted):
+		response.Fail(context, http.StatusConflict, response.CodeOrderInvalidState, "Order offer is not active", nil)
 	case errors.Is(err, ErrMobileDriverUnavailable), errors.Is(err, driverapp.ErrDriverNotAvailable):
 		response.Fail(context, http.StatusConflict, response.CodeDriverNotAvailable, "Driver is not available", nil)
 	case errors.Is(err, driverapp.ErrDriverNotFound):
@@ -70,6 +73,10 @@ func failByError(context *gin.Context, err error) {
 		response.Fail(context, http.StatusConflict, response.CodeDispatchInProgress, "Dispatch is already in progress", nil)
 	case errors.Is(err, orderapp.ErrOrderConcurrentUpdate):
 		response.Fail(context, http.StatusConflict, response.CodeOrderInvalidState, "Order was changed concurrently", nil)
+	case errors.Is(err, chatapp.ErrChatForbidden):
+		response.Fail(context, http.StatusForbidden, response.CodeForbidden, "Chat is forbidden", nil)
+	case errors.Is(err, chatapp.ErrChatUnavailable):
+		response.Fail(context, http.StatusConflict, response.CodeOrderInvalidState, "Chat is not available for this order state", nil)
 	case errors.Is(err, finance.ErrFinancialSettlementDuplicate):
 		response.Fail(context, http.StatusConflict, response.CodeOrderInvalidState, "Financial settlement already exists", nil)
 	case errors.Is(err, taxiparkapp.ErrTaxiParkNotFound):

@@ -23,3 +23,18 @@ type TaxiParkCreateOrderRequest struct {
 	PaymentMethod       domain.PaymentMethod             `json:"payment_method,omitempty" example:"cash"`
 	Comment             string                           `json:"comment,omitempty" example:"Entrance 2"`
 }
+
+type TaxiParkUpdateOrderRequest struct {
+	PickupAddress       *string                          `json:"pickup_address,omitempty" example:"Mira 8"`
+	PickupLocation      *TaxiParkOrderCoordinatesRequest `json:"pickup_location,omitempty"`
+	DestinationAddress  *string                          `json:"destination_address,omitempty" example:"Lenina 50"`
+	DestinationLocation *TaxiParkOrderCoordinatesRequest `json:"destination_location,omitempty"`
+	PaymentType         *domain.PaymentMethod            `json:"payment_type,omitempty" example:"cash"`
+	PaymentMethod       *domain.PaymentMethod            `json:"payment_method,omitempty" example:"cash"`
+	Comment             *string                          `json:"comment,omitempty" example:"Entrance 2"`
+}
+
+type TaxiParkCompleteOrderRequest struct {
+	FinalPrice int64  `json:"final_price" binding:"required,min=0" example:"25000"`
+	Currency   string `json:"currency" binding:"required" example:"RUB"`
+}

@@ -367,6 +367,14 @@ func (useCase *fakeDriverMobileUseCase) ListDriverOrderHistory(_ context.Context
 	return dto.DriverOrderHistoryResponse{}, nil
 }
 
+func (useCase *fakeDriverMobileUseCase) ListDriverOrderOffers(_ context.Context, _ uuid.UUID) (dto.DriverOrderOffersResponse, error) {
+	return dto.DriverOrderOffersResponse{}, nil
+}
+
+func (useCase *fakeDriverMobileUseCase) GetDriverOrderRoute(_ context.Context, _ uuid.UUID, orderID uuid.UUID) (dto.OrderRouteResponse, error) {
+	return dto.OrderRouteResponse{OrderID: orderID, Points: []dto.OrderRoutePointResponse{}}, nil
+}
+
 func (useCase *fakeDriverMobileUseCase) AcceptDriverOrder(_ context.Context, driverID uuid.UUID, orderID uuid.UUID) (dto.DriverOrderResponse, error) {
 	useCase.acceptDriverID = driverID
 	useCase.acceptOrderID = orderID
@@ -380,7 +388,15 @@ func (useCase *fakeDriverMobileUseCase) RejectDriverOrder(_ context.Context, _ u
 	return nil
 }
 
+func (useCase *fakeDriverMobileUseCase) MarkDriverArriving(_ context.Context, _ uuid.UUID, _ uuid.UUID) (dto.DriverOrderResponse, error) {
+	return dto.DriverOrderResponse{}, nil
+}
+
 func (useCase *fakeDriverMobileUseCase) MarkDriverArrived(_ context.Context, _ uuid.UUID, _ uuid.UUID) (dto.DriverOrderResponse, error) {
+	return dto.DriverOrderResponse{}, nil
+}
+
+func (useCase *fakeDriverMobileUseCase) CancelDriverOrder(_ context.Context, _ uuid.UUID, _ uuid.UUID, _ string) (dto.DriverOrderResponse, error) {
 	return dto.DriverOrderResponse{}, nil
 }
 

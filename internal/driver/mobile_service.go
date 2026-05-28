@@ -12,6 +12,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/kishert-lab/taxi-platform/internal/common"
+	dispatchapp "github.com/kishert-lab/taxi-platform/internal/dispatch"
 	"github.com/kishert-lab/taxi-platform/internal/domain"
 	"github.com/kishert-lab/taxi-platform/internal/dto"
 	geoservice "github.com/kishert-lab/taxi-platform/internal/geo"
@@ -29,6 +30,9 @@ type MobileRepository interface {
 	SetStatusByUserID(ctx context.Context, userID uuid.UUID, status domain.DriverStatus) (Profile, error)
 	ListCarsByUserID(ctx context.Context, userID uuid.UUID) ([]domain.Car, error)
 	GetCurrentOrderByUserID(ctx context.Context, userID uuid.UUID) (CurrentOrder, error)
+	ListRoutePointsByUserID(ctx context.Context, userID uuid.UUID, orderID uuid.UUID) ([]RoutePoint, error)
+	TransitionOrderByUserID(ctx context.Context, userID uuid.UUID, orderID uuid.UUID, toStatus domain.OrderStatus, reason string, finalPriceCents *int64) (CurrentOrder, error)
+	AppendRoutePointByUserID(ctx context.Context, userID uuid.UUID, update geoservice.DriverLocationUpdate) error
 }
 
 type PresenceStore interface {
@@ -43,10 +47,19 @@ type LocationService interface {
 
 type DispatchController interface {
 	AcceptOffer(ctx context.Context, orderID uuid.UUID, driverID uuid.UUID) error
+	RejectOffer(ctx context.Context, orderID uuid.UUID, driverID uuid.UUID, reason string) error
+	ListDriverOffers(ctx context.Context, driverID uuid.UUID) ([]dispatchapp.DriverOrderOffer, error)
 }
 
 type RealtimeGateway interface {
 	SendDriverLocationToTaxiPark(ctx context.Context, driverID uuid.UUID, payload any) error
+	SendToDriver(ctx context.Context, driverID uuid.UUID, eventName string, payload any) error
+	SendToPassenger(ctx context.Context, passengerID uuid.UUID, eventName string, payload any) error
+	SendToTaxiParkByOrder(ctx context.Context, orderID uuid.UUID, eventName string, payload any) error
+}
+
+type FinanceProcessor interface {
+	SettleCompletedOrder(ctx context.Context, orderID uuid.UUID) (domain.OrderSettlement, error)
 }
 
 type MobileService struct {
@@ -55,23 +68,49 @@ type MobileService struct {
 	locationService    LocationService
 	dispatchController DispatchController
 	realtimeGateway    RealtimeGateway
+	financeProcessor   FinanceProcessor
 	logger             *zap.Logger
 	presenceTTL        time.Duration
 }
 
 type Profile struct {
-	DriverID      uuid.UUID
-	UserID        uuid.UUID
-	CityID        uuid.UUID
-	Phone         string
-	FirstName     string
-	LastName      string
-	PhotoURL      string
-	Status        domain.DriverStatus
-	Rating        float64
-	RatingsCount  int
-	LicenseNumber string
-	IsVerified    bool
+	DriverID                      uuid.UUID
+	UserID                        uuid.UUID
+	CityID                        uuid.UUID
+	Phone                         string
+	FirstName                     string
+	LastName                      string
+	PhotoURL                      string
+	Status                        domain.DriverStatus
+	Rating                        float64
+	RatingsCount                  int
+	LicenseNumber                 string
+	IsVerified                    bool
+	VerificationStatus            domain.VerificationLifecycleStatus
+	TaxiParkID                    *uuid.UUID
+	TaxiParkIsActive              *bool
+	HasNoTaxiWorkRestrictions     bool
+	FederalLaw580Compliant        bool
+	RegionalRequirementsCompliant bool
+	MedicalCheckPassed            bool
+	PretripControlRequired        bool
+	PretripControlPassed          bool
+	NoTransportBan                bool
+	Car                           *ProfileCar
+}
+
+type ProfileCar struct {
+	ID                 uuid.UUID
+	Brand              string
+	Model              string
+	Year               int
+	PlateNumber        string
+	Color              string
+	CarClass           string
+	VerificationStatus domain.VerificationLifecycleStatus
+	IsActive           bool
+	OSAGOExpiresAt     *time.Time
+	PermitExpiresAt    *time.Time
 }
 
 type ProfilePatch struct {
@@ -83,6 +122,7 @@ type ProfilePatch struct {
 
 type CurrentOrder struct {
 	OrderID               uuid.UUID
+	DriverID              uuid.UUID
 	PassengerID           uuid.UUID
 	PassengerName         string
 	PassengerPhone        string
@@ -98,6 +138,15 @@ type CurrentOrder struct {
 	Comment               string
 	Version               int
 	CreatedAt             time.Time
+}
+
+type RoutePoint struct {
+	ID             uuid.UUID
+	Location       domain.Coordinates
+	Heading        *float64
+	SpeedMPS       *float64
+	AccuracyMeters *float64
+	RecordedAt     time.Time
 }
 
 func NewMobileService(repository MobileRepository, presenceStore PresenceStore, locationService LocationService, logger *zap.Logger) *MobileService {
@@ -116,6 +165,11 @@ func NewMobileServiceWithDispatch(repository MobileRepository, presenceStore Pre
 	if len(realtimeGateways) > 0 {
 		service.realtimeGateway = realtimeGateways[0]
 	}
+	return service
+}
+
+func (service *MobileService) WithFinanceProcessor(financeProcessor FinanceProcessor) *MobileService {
+	service.financeProcessor = financeProcessor
 	return service
 }
 
@@ -190,7 +244,13 @@ func (service *MobileService) UpdateDriverLocation(ctx context.Context, userID u
 	if err := service.locationService.UpdateLocation(ctx, update); err != nil {
 		return err
 	}
-	return service.publishLocationUpdated(ctx, profile, update)
+	if err := service.repository.AppendRoutePointByUserID(ctx, userID, update); err != nil {
+		return err
+	}
+	if err := service.publishLocationUpdated(ctx, profile, update); err != nil {
+		return err
+	}
+	return service.publishPassengerDriverLocation(ctx, userID, profile, update)
 }
 
 func (service *MobileService) UpdateDriverLocationBatch(ctx context.Context, userID uuid.UUID, request dto.DriverLocationBatchRequest) error {
@@ -208,7 +268,16 @@ func (service *MobileService) UpdateDriverLocationBatch(ctx context.Context, use
 	if len(updates) == 0 {
 		return nil
 	}
-	return service.publishLocationUpdated(ctx, profile, updates[len(updates)-1])
+	for _, update := range updates {
+		if err := service.repository.AppendRoutePointByUserID(ctx, userID, update); err != nil {
+			return err
+		}
+	}
+	lastUpdate := updates[len(updates)-1]
+	if err := service.publishLocationUpdated(ctx, profile, lastUpdate); err != nil {
+		return err
+	}
+	return service.publishPassengerDriverLocation(ctx, userID, profile, lastUpdate)
 }
 
 func (service *MobileService) GetCurrentDriverOrder(ctx context.Context, userID uuid.UUID) (dto.DriverOrderResponse, error) {
@@ -221,6 +290,50 @@ func (service *MobileService) GetCurrentDriverOrder(ctx context.Context, userID 
 
 func (service *MobileService) ListDriverOrderHistory(context.Context, uuid.UUID) (dto.DriverOrderHistoryResponse, error) {
 	return dto.DriverOrderHistoryResponse{}, common.ErrNotImplemented
+}
+
+func (service *MobileService) ListDriverOrderOffers(ctx context.Context, userID uuid.UUID) (dto.DriverOrderOffersResponse, error) {
+	if service.dispatchController == nil {
+		return dto.DriverOrderOffersResponse{}, common.ErrNotImplemented
+	}
+	profile, err := service.repository.GetProfileByUserID(ctx, userID)
+	if err != nil {
+		return dto.DriverOrderOffersResponse{}, err
+	}
+	offers, err := service.dispatchController.ListDriverOffers(ctx, profile.DriverID)
+	if err != nil {
+		return dto.DriverOrderOffersResponse{}, err
+	}
+	response := dto.DriverOrderOffersResponse{Offers: make([]dto.DriverOrderOfferResponse, 0, len(offers))}
+	for _, offer := range offers {
+		response.Offers = append(response.Offers, driverOrderOfferResponse(offer))
+	}
+	return response, nil
+}
+
+func (service *MobileService) GetDriverOrderRoute(ctx context.Context, userID uuid.UUID, orderID uuid.UUID) (dto.OrderRouteResponse, error) {
+	points, err := service.repository.ListRoutePointsByUserID(ctx, userID, orderID)
+	if err != nil {
+		return dto.OrderRouteResponse{}, err
+	}
+	response := dto.OrderRouteResponse{
+		OrderID: orderID,
+		Points:  make([]dto.OrderRoutePointResponse, 0, len(points)),
+	}
+	for _, point := range points {
+		response.Points = append(response.Points, dto.OrderRoutePointResponse{
+			ID: point.ID,
+			Location: dto.CoordinatesResponse{
+				Latitude:  point.Location.Latitude,
+				Longitude: point.Location.Longitude,
+			},
+			Heading:        point.Heading,
+			SpeedMPS:       point.SpeedMPS,
+			AccuracyMeters: point.AccuracyMeters,
+			RecordedAt:     point.RecordedAt,
+		})
+	}
+	return response, nil
 }
 
 func (service *MobileService) AcceptDriverOrder(ctx context.Context, userID uuid.UUID, orderID uuid.UUID) (dto.DriverOrderResponse, error) {
@@ -237,20 +350,82 @@ func (service *MobileService) AcceptDriverOrder(ctx context.Context, userID uuid
 	return service.GetCurrentDriverOrder(ctx, userID)
 }
 
-func (service *MobileService) RejectDriverOrder(context.Context, uuid.UUID, uuid.UUID, dto.RejectOrderRequest) error {
-	return common.ErrNotImplemented
+func (service *MobileService) RejectDriverOrder(ctx context.Context, userID uuid.UUID, orderID uuid.UUID, request dto.RejectOrderRequest) error {
+	if service.dispatchController == nil {
+		return common.ErrNotImplemented
+	}
+	profile, err := service.repository.GetProfileByUserID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	return service.dispatchController.RejectOffer(ctx, orderID, profile.DriverID, request.Reason)
 }
 
-func (service *MobileService) MarkDriverArrived(context.Context, uuid.UUID, uuid.UUID) (dto.DriverOrderResponse, error) {
-	return dto.DriverOrderResponse{}, common.ErrNotImplemented
+func (service *MobileService) MarkDriverArriving(ctx context.Context, userID uuid.UUID, orderID uuid.UUID) (dto.DriverOrderResponse, error) {
+	order, err := service.repository.TransitionOrderByUserID(ctx, userID, orderID, domain.OrderStatusDriverArriving, "", nil)
+	if err != nil {
+		return dto.DriverOrderResponse{}, err
+	}
+	if err := service.publishOrderState(ctx, order, "order.driver_arriving"); err != nil {
+		return dto.DriverOrderResponse{}, err
+	}
+	return currentOrderResponse(order), nil
 }
 
-func (service *MobileService) StartDriverTrip(context.Context, uuid.UUID, uuid.UUID) (dto.DriverOrderResponse, error) {
-	return dto.DriverOrderResponse{}, common.ErrNotImplemented
+func (service *MobileService) MarkDriverArrived(ctx context.Context, userID uuid.UUID, orderID uuid.UUID) (dto.DriverOrderResponse, error) {
+	order, err := service.repository.TransitionOrderByUserID(ctx, userID, orderID, domain.OrderStatusDriverWaiting, "", nil)
+	if err != nil {
+		return dto.DriverOrderResponse{}, err
+	}
+	if err := service.publishOrderState(ctx, order, "order.driver_waiting"); err != nil {
+		return dto.DriverOrderResponse{}, err
+	}
+	return currentOrderResponse(order), nil
 }
 
-func (service *MobileService) CompleteDriverTrip(context.Context, uuid.UUID, uuid.UUID, dto.CompleteOrderRequest) (dto.DriverOrderResponse, error) {
-	return dto.DriverOrderResponse{}, common.ErrNotImplemented
+func (service *MobileService) CancelDriverOrder(ctx context.Context, userID uuid.UUID, orderID uuid.UUID, reason string) (dto.DriverOrderResponse, error) {
+	order, err := service.repository.TransitionOrderByUserID(ctx, userID, orderID, domain.OrderStatusCancelled, reason, nil)
+	if err != nil {
+		return dto.DriverOrderResponse{}, err
+	}
+	if err := service.markProfileOnline(ctx, userID); err != nil {
+		return dto.DriverOrderResponse{}, err
+	}
+	if err := service.publishOrderState(ctx, order, "order.cancelled"); err != nil {
+		return dto.DriverOrderResponse{}, err
+	}
+	return currentOrderResponse(order), nil
+}
+
+func (service *MobileService) StartDriverTrip(ctx context.Context, userID uuid.UUID, orderID uuid.UUID) (dto.DriverOrderResponse, error) {
+	order, err := service.repository.TransitionOrderByUserID(ctx, userID, orderID, domain.OrderStatusInProgress, "", nil)
+	if err != nil {
+		return dto.DriverOrderResponse{}, err
+	}
+	if err := service.publishOrderState(ctx, order, "order.trip_started"); err != nil {
+		return dto.DriverOrderResponse{}, err
+	}
+	return currentOrderResponse(order), nil
+}
+
+func (service *MobileService) CompleteDriverTrip(ctx context.Context, userID uuid.UUID, orderID uuid.UUID, request dto.CompleteOrderRequest) (dto.DriverOrderResponse, error) {
+	finalPriceCents := request.FinalPrice
+	order, err := service.repository.TransitionOrderByUserID(ctx, userID, orderID, domain.OrderStatusCompleted, "", &finalPriceCents)
+	if err != nil {
+		return dto.DriverOrderResponse{}, err
+	}
+	if service.financeProcessor != nil {
+		if _, err := service.financeProcessor.SettleCompletedOrder(ctx, orderID); err != nil {
+			return dto.DriverOrderResponse{}, fmt.Errorf("settle completed order: %w", err)
+		}
+	}
+	if err := service.markProfileOnline(ctx, userID); err != nil {
+		return dto.DriverOrderResponse{}, err
+	}
+	if err := service.publishOrderState(ctx, order, "order.completed"); err != nil {
+		return dto.DriverOrderResponse{}, err
+	}
+	return currentOrderResponse(order), nil
 }
 
 func (service *MobileService) RatePassenger(context.Context, uuid.UUID, uuid.UUID, dto.RateOrderRequest) (dto.DriverOrderResponse, error) {
@@ -297,20 +472,103 @@ func (service *MobileService) publishLocationUpdated(ctx context.Context, profil
 	return nil
 }
 
+func (service *MobileService) publishPassengerDriverLocation(ctx context.Context, userID uuid.UUID, profile Profile, update geoservice.DriverLocationUpdate) error {
+	if service.realtimeGateway == nil {
+		return nil
+	}
+	order, err := service.repository.GetCurrentOrderByUserID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, ErrCurrentOrderNotFound) {
+			return nil
+		}
+		return err
+	}
+	payload := map[string]any{
+		"order_id":  order.OrderID,
+		"driver_id": profile.DriverID,
+		"status":    order.Status,
+		"location": map[string]float64{
+			"latitude":  update.Location.Latitude,
+			"longitude": update.Location.Longitude,
+		},
+		"heading":         update.Heading,
+		"speed_mps":       update.SpeedMPS,
+		"accuracy_meters": update.AccuracyMeters,
+		"recorded_at":     update.RecordedAt,
+	}
+	if err := service.realtimeGateway.SendToPassenger(ctx, order.PassengerID, "driver.location_updated", payload); err != nil {
+		return fmt.Errorf("publish passenger driver location websocket event: %w", err)
+	}
+	return nil
+}
+
+func (service *MobileService) markProfileOnline(ctx context.Context, userID uuid.UUID) error {
+	profile, err := service.repository.GetProfileByUserID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	return service.presenceStore.MarkOnline(ctx, profile.CityID, profile.DriverID, service.presenceTTL)
+}
+
+func (service *MobileService) publishOrderState(ctx context.Context, order CurrentOrder, eventName string) error {
+	if service.realtimeGateway == nil {
+		return nil
+	}
+	payload := map[string]any{
+		"order_id":  order.OrderID,
+		"status":    order.Status,
+		"version":   order.Version,
+		"driver_id": order.DriverID,
+	}
+	if err := service.realtimeGateway.SendToPassenger(ctx, order.PassengerID, eventName, payload); err != nil {
+		return fmt.Errorf("publish order state to passenger: %w", err)
+	}
+	if err := service.realtimeGateway.SendToTaxiParkByOrder(ctx, order.OrderID, eventName, payload); err != nil {
+		return fmt.Errorf("publish order state to taxi park: %w", err)
+	}
+	return service.realtimeGateway.SendToDriver(ctx, order.DriverID, eventName, payload)
+}
+
 func profileResponse(profile Profile) dto.DriverProfileResponse {
 	name := strings.TrimSpace(strings.TrimSpace(profile.FirstName) + " " + strings.TrimSpace(profile.LastName))
-	return dto.DriverProfileResponse{
-		ID:            profile.DriverID,
-		UserID:        profile.UserID,
-		Phone:         profile.Phone,
-		Name:          name,
-		PhotoURL:      profile.PhotoURL,
-		Status:        profile.Status,
-		Rating:        profile.Rating,
-		RatingsCount:  profile.RatingsCount,
-		LicenseNumber: profile.LicenseNumber,
-		IsVerified:    profile.IsVerified,
+	response := dto.DriverProfileResponse{
+		ID:                            profile.DriverID,
+		UserID:                        profile.UserID,
+		Phone:                         profile.Phone,
+		Name:                          name,
+		PhotoURL:                      profile.PhotoURL,
+		Status:                        profile.Status,
+		Rating:                        profile.Rating,
+		RatingsCount:                  profile.RatingsCount,
+		LicenseNumber:                 profile.LicenseNumber,
+		IsVerified:                    profile.IsVerified,
+		VerificationStatus:            profile.VerificationStatus,
+		TaxiParkID:                    profile.TaxiParkID,
+		TaxiParkIsActive:              profile.TaxiParkIsActive,
+		HasNoTaxiWorkRestrictions:     profile.HasNoTaxiWorkRestrictions,
+		FederalLaw580Compliant:        profile.FederalLaw580Compliant,
+		RegionalRequirementsCompliant: profile.RegionalRequirementsCompliant,
+		MedicalCheckPassed:            profile.MedicalCheckPassed,
+		PretripControlRequired:        profile.PretripControlRequired,
+		PretripControlPassed:          profile.PretripControlPassed,
+		NoTransportBan:                profile.NoTransportBan,
 	}
+	if profile.Car != nil {
+		response.Car = &dto.DriverProfileCarResponse{
+			ID:                 profile.Car.ID,
+			Brand:              profile.Car.Brand,
+			Model:              profile.Car.Model,
+			Year:               profile.Car.Year,
+			PlateNumber:        profile.Car.PlateNumber,
+			Color:              profile.Car.Color,
+			CarClass:           profile.Car.CarClass,
+			VerificationStatus: profile.Car.VerificationStatus,
+			IsActive:           profile.Car.IsActive,
+			OSAGOExpiresAt:     profile.Car.OSAGOExpiresAt,
+			PermitExpiresAt:    profile.Car.PermitExpiresAt,
+		}
+	}
+	return response
 }
 
 func driverCarsResponse(cars []domain.Car) dto.TaxiParkCarsResponse {
@@ -358,6 +616,46 @@ func driverCarsResponse(cars []domain.Car) dto.TaxiParkCarsResponse {
 		})
 	}
 	return responseBody
+}
+
+func driverOrderOfferResponse(offer dispatchapp.DriverOrderOffer) dto.DriverOrderOfferResponse {
+	destinationLocation := dto.CoordinatesResponse{}
+	if offer.Order.DestinationLocation != nil {
+		destinationLocation = dto.CoordinatesResponse{
+			Latitude:  offer.Order.DestinationLocation.Latitude,
+			Longitude: offer.Order.DestinationLocation.Longitude,
+		}
+	}
+
+	var estimatedPrice *dto.MoneyResponse
+	if offer.Order.EstimatedPrice != nil {
+		estimatedPrice = &dto.MoneyResponse{
+			Amount:   offer.Order.EstimatedPrice.Amount,
+			Currency: offer.Order.EstimatedPrice.Currency,
+		}
+	}
+
+	return dto.DriverOrderOfferResponse{
+		OrderID: offer.Order.ID,
+		PickupPoint: dto.PointDTO{
+			Address: offer.Order.PickupAddress,
+			Location: dto.CoordinatesResponse{
+				Latitude:  offer.Order.PickupLocation.Latitude,
+				Longitude: offer.Order.PickupLocation.Longitude,
+			},
+		},
+		DestinationPoint: dto.PointDTO{
+			Address:  offer.Order.DestinationAddress,
+			Location: destinationLocation,
+		},
+		Status:         offer.Order.Status,
+		EstimatedPrice: estimatedPrice,
+		Attempt:        offer.Offer.Attempt,
+		RadiusMeters:   offer.Offer.RadiusMeters,
+		DistanceMeters: offer.Offer.DistanceMeters,
+		ExpiresAt:      offer.Offer.ExpiresAt,
+		AllowedActions: []string{"accept", "reject"},
+	}
 }
 
 func currentOrderResponse(order CurrentOrder) dto.DriverOrderResponse {
@@ -409,10 +707,12 @@ func currentOrderResponse(order CurrentOrder) dto.DriverOrderResponse {
 
 func driverAllowedActions(status domain.OrderStatus) []string {
 	switch status {
-	case domain.OrderStatusDriverAssigned, domain.OrderStatusDriverArriving:
-		return []string{"arrived", "call_passenger"}
+	case domain.OrderStatusDriverAssigned:
+		return []string{"arriving", "cancel", "call_passenger"}
+	case domain.OrderStatusDriverArriving:
+		return []string{"arrived", "cancel", "call_passenger"}
 	case domain.OrderStatusDriverWaiting:
-		return []string{"start", "call_passenger"}
+		return []string{"start", "cancel", "call_passenger"}
 	case domain.OrderStatusInProgress:
 		return []string{"complete"}
 	default:

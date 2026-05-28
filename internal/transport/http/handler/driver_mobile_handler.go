@@ -23,9 +23,13 @@ type DriverMobileUseCase interface {
 	UpdateDriverLocationBatch(ctx context.Context, driverID uuid.UUID, request dto.DriverLocationBatchRequest) error
 	GetCurrentDriverOrder(ctx context.Context, driverID uuid.UUID) (dto.DriverOrderResponse, error)
 	ListDriverOrderHistory(ctx context.Context, driverID uuid.UUID) (dto.DriverOrderHistoryResponse, error)
+	ListDriverOrderOffers(ctx context.Context, driverID uuid.UUID) (dto.DriverOrderOffersResponse, error)
+	GetDriverOrderRoute(ctx context.Context, driverID uuid.UUID, orderID uuid.UUID) (dto.OrderRouteResponse, error)
 	AcceptDriverOrder(ctx context.Context, driverID uuid.UUID, orderID uuid.UUID) (dto.DriverOrderResponse, error)
 	RejectDriverOrder(ctx context.Context, driverID uuid.UUID, orderID uuid.UUID, request dto.RejectOrderRequest) error
+	MarkDriverArriving(ctx context.Context, driverID uuid.UUID, orderID uuid.UUID) (dto.DriverOrderResponse, error)
 	MarkDriverArrived(ctx context.Context, driverID uuid.UUID, orderID uuid.UUID) (dto.DriverOrderResponse, error)
+	CancelDriverOrder(ctx context.Context, driverID uuid.UUID, orderID uuid.UUID, reason string) (dto.DriverOrderResponse, error)
 	StartDriverTrip(ctx context.Context, driverID uuid.UUID, orderID uuid.UUID) (dto.DriverOrderResponse, error)
 	CompleteDriverTrip(ctx context.Context, driverID uuid.UUID, orderID uuid.UUID, request dto.CompleteOrderRequest) (dto.DriverOrderResponse, error)
 	RatePassenger(ctx context.Context, driverID uuid.UUID, orderID uuid.UUID, request dto.RateOrderRequest) (dto.DriverOrderResponse, error)
@@ -51,9 +55,13 @@ func (handler *DriverMobileHandler) RegisterRoutes(router gin.IRouter) {
 	driver.POST("/location/batch", handler.UpdateLocationBatch)
 	driver.GET("/orders/current", handler.CurrentOrder)
 	driver.GET("/orders/history", handler.OrderHistory)
+	driver.GET("/orders/offers", handler.OrderOffers)
+	driver.GET("/orders/:id/route", handler.OrderRoute)
 	driver.POST("/orders/:id/accept", handler.AcceptOrder)
 	driver.POST("/orders/:id/reject", handler.RejectOrder)
+	driver.POST("/orders/:id/arriving", handler.Arriving)
 	driver.POST("/orders/:id/arrived", handler.Arrived)
+	driver.POST("/orders/:id/cancel", handler.CancelOrder)
 	driver.POST("/orders/:id/start", handler.StartTrip)
 	driver.POST("/orders/:id/complete", handler.CompleteTrip)
 	driver.POST("/orders/:id/rate-passenger", handler.RatePassenger)
@@ -349,6 +357,59 @@ func (handler *DriverMobileHandler) OrderHistory(context *gin.Context) {
 	response.OK(context, result)
 }
 
+// OrderOffers godoc
+// @Summary List active order offers for current driver
+// @Description Fallback sync endpoint for reconnect or weak internet. Returns Redis-backed active offers still available for accept/reject.
+// @Tags driver-orders
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} DriverOrderOffersSuccessResponse
+// @Failure 401 {object} response.Error
+// @Failure 403 {object} response.Error
+// @Router /driver/orders/offers [get]
+func (handler *DriverMobileHandler) OrderOffers(context *gin.Context) {
+	driverID, ok := userIDFromContext(context)
+	if !ok {
+		failUnauthorized(context, "User id is missing")
+		return
+	}
+
+	result, err := handler.useCase.ListDriverOrderOffers(context.Request.Context(), driverID)
+	if err != nil {
+		failByError(context, err)
+		return
+	}
+
+	response.OK(context, result)
+}
+
+// OrderRoute godoc
+// @Summary Get recorded route points for driver order
+// @Description Route points are recorded from trip start until completion while driver location updates are received.
+// @Tags driver-orders
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Order ID"
+// @Success 200 {object} DriverOrderRouteSuccessResponse
+// @Failure 401 {object} response.Error
+// @Failure 403 {object} response.Error
+// @Failure 404 {object} response.Error
+// @Router /driver/orders/{id}/route [get]
+func (handler *DriverMobileHandler) OrderRoute(context *gin.Context) {
+	driverID, orderID, ok := driverOrderIDs(context)
+	if !ok {
+		return
+	}
+
+	result, err := handler.useCase.GetDriverOrderRoute(context.Request.Context(), driverID, orderID)
+	if err != nil {
+		failByError(context, err)
+		return
+	}
+
+	response.OK(context, result)
+}
+
 // AcceptOrder godoc
 // @Summary Accept offered order
 // @Tags driver-orders
@@ -409,6 +470,33 @@ func (handler *DriverMobileHandler) RejectOrder(context *gin.Context) {
 	response.OK(context, gin.H{"accepted": true})
 }
 
+// Arriving godoc
+// @Summary Mark driver is going to pickup point
+// @Tags driver-orders
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Order ID"
+// @Success 200 {object} DriverOrderSuccessResponse
+// @Failure 401 {object} response.Error
+// @Failure 403 {object} response.Error
+// @Failure 404 {object} response.Error
+// @Failure 409 {object} response.Error
+// @Router /driver/orders/{id}/arriving [post]
+func (handler *DriverMobileHandler) Arriving(context *gin.Context) {
+	driverID, orderID, ok := driverOrderIDs(context)
+	if !ok {
+		return
+	}
+
+	result, err := handler.useCase.MarkDriverArriving(context.Request.Context(), driverID, orderID)
+	if err != nil {
+		failByError(context, err)
+		return
+	}
+
+	response.OK(context, result)
+}
+
 // Arrived godoc
 // @Summary Mark driver arrived
 // @Tags driver-orders
@@ -428,6 +516,43 @@ func (handler *DriverMobileHandler) Arrived(context *gin.Context) {
 	}
 
 	result, err := handler.useCase.MarkDriverArrived(context.Request.Context(), driverID, orderID)
+	if err != nil {
+		failByError(context, err)
+		return
+	}
+
+	response.OK(context, result)
+}
+
+// CancelOrder godoc
+// @Summary Cancel assigned order by driver
+// @Description Driver can cancel before trip starts, for example after waiting too long.
+// @Tags driver-orders
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Order ID"
+// @Param request body dto.CancelOrderRequest true "Cancellation reason"
+// @Success 200 {object} DriverOrderSuccessResponse
+// @Failure 400 {object} response.Error
+// @Failure 401 {object} response.Error
+// @Failure 403 {object} response.Error
+// @Failure 404 {object} response.Error
+// @Failure 409 {object} response.Error
+// @Router /driver/orders/{id}/cancel [post]
+func (handler *DriverMobileHandler) CancelOrder(context *gin.Context) {
+	driverID, orderID, ok := driverOrderIDs(context)
+	if !ok {
+		return
+	}
+
+	var request dto.CancelOrderRequest
+	if err := context.ShouldBindJSON(&request); err != nil {
+		failValidation(context, "Invalid cancellation request")
+		return
+	}
+
+	result, err := handler.useCase.CancelDriverOrder(context.Request.Context(), driverID, orderID, request.Reason)
 	if err != nil {
 		failByError(context, err)
 		return

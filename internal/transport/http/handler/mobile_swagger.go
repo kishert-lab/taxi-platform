@@ -50,6 +50,16 @@ type DriverOrderHistorySuccessResponse struct {
 	Meta response.Meta                  `json:"meta"`
 }
 
+type DriverOrderOffersSuccessResponse struct {
+	Data dto.DriverOrderOffersResponse `json:"data"`
+	Meta response.Meta                 `json:"meta"`
+}
+
+type DriverOrderRouteSuccessResponse struct {
+	Data dto.OrderRouteResponse `json:"data"`
+	Meta response.Meta          `json:"meta"`
+}
+
 type AuthCodeSentSuccessResponse struct {
 	Data dto.AuthCodeSentResponse `json:"data"`
 	Meta response.Meta            `json:"meta"`

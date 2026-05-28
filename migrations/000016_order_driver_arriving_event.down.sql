@@ -1,0 +1,2 @@
+-- PostgreSQL does not support removing enum values safely.
+-- Keep order_event_type value 'driver.arriving' for existing audit rows.

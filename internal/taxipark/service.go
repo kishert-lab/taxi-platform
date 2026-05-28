@@ -33,14 +33,25 @@ type Service struct {
 	repository         Repository
 	passwordHasher     PasswordHasher
 	dispatchController DispatchController
+	realtimeGateway    RealtimeGateway
+	financeProcessor   FinanceProcessor
 }
 
 func NewService(repository Repository, passwordHasher PasswordHasher) *Service {
 	return &Service{repository: repository, passwordHasher: passwordHasher}
 }
 
-func NewServiceWithDispatch(repository Repository, passwordHasher PasswordHasher, dispatchController DispatchController) *Service {
-	return &Service{repository: repository, passwordHasher: passwordHasher, dispatchController: dispatchController}
+func NewServiceWithDispatch(repository Repository, passwordHasher PasswordHasher, dispatchController DispatchController, realtimeGateways ...RealtimeGateway) *Service {
+	service := &Service{repository: repository, passwordHasher: passwordHasher, dispatchController: dispatchController}
+	if len(realtimeGateways) > 0 {
+		service.realtimeGateway = realtimeGateways[0]
+	}
+	return service
+}
+
+func (service *Service) WithFinanceProcessor(financeProcessor FinanceProcessor) *Service {
+	service.financeProcessor = financeProcessor
+	return service
 }
 
 func (service *Service) GetSettings(ctx context.Context, ownerUserID uuid.UUID) (domain.TaxiParkSettings, error) {
@@ -78,6 +89,81 @@ func (service *Service) CreateOrder(ctx context.Context, ownerUserID uuid.UUID, 
 		}
 	}
 	return order, nil
+}
+
+func (service *Service) GetOrder(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID) (domain.Order, error) {
+	return service.repository.GetOrderByActorUserID(ctx, actorUserID, orderID)
+}
+
+func (service *Service) UpdateOrder(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID, request dto.TaxiParkUpdateOrderRequest) (domain.Order, error) {
+	record, err := updateOrderRecordFromRequest(request)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	order, err := service.repository.UpdateOrderByActorUserID(ctx, actorUserID, orderID, record)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	if err := service.publishOrderEvent(ctx, order, "order.updated"); err != nil {
+		return domain.Order{}, err
+	}
+	return order, nil
+}
+
+func (service *Service) CancelOrder(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID, request dto.CancelOrderRequest) (domain.Order, error) {
+	order, err := service.repository.CancelOrderByActorUserID(ctx, actorUserID, orderID, strings.TrimSpace(request.Reason))
+	if err != nil {
+		return domain.Order{}, err
+	}
+	if service.dispatchController != nil {
+		if err := service.dispatchController.StopDispatch(ctx, order.ID); err != nil {
+			return domain.Order{}, fmt.Errorf("stop taxi park order dispatch after cancel: %w", err)
+		}
+	}
+	if err := service.publishOrderEvent(ctx, order, "order.cancelled"); err != nil {
+		return domain.Order{}, err
+	}
+	return order, nil
+}
+
+func (service *Service) CompleteOrder(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID, request dto.TaxiParkCompleteOrderRequest) (domain.Order, error) {
+	order, err := service.repository.CompleteOrderByActorUserID(ctx, actorUserID, orderID, request.FinalPrice)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	if service.financeProcessor != nil {
+		if _, err := service.financeProcessor.SettleCompletedOrder(ctx, order.ID); err != nil {
+			return domain.Order{}, fmt.Errorf("settle taxi park completed order: %w", err)
+		}
+	}
+	if err := service.publishOrderEvent(ctx, order, "order.completed"); err != nil {
+		return domain.Order{}, err
+	}
+	return order, nil
+}
+
+func (service *Service) publishOrderEvent(ctx context.Context, order domain.Order, eventName string) error {
+	if service.realtimeGateway == nil {
+		return nil
+	}
+	payload := map[string]any{
+		"order_id":  order.ID,
+		"status":    order.Status,
+		"version":   order.Version,
+		"driver_id": order.DriverID,
+	}
+	if err := service.realtimeGateway.SendToTaxiParkByOrder(ctx, order.ID, eventName, payload); err != nil {
+		return fmt.Errorf("publish taxi park order websocket event: %w", err)
+	}
+	if err := service.realtimeGateway.SendToPassenger(ctx, order.PassengerID, eventName, payload); err != nil {
+		return fmt.Errorf("publish passenger order websocket event: %w", err)
+	}
+	if order.DriverID != nil {
+		if err := service.realtimeGateway.SendToDriver(ctx, *order.DriverID, eventName, payload); err != nil {
+			return fmt.Errorf("publish driver order websocket event: %w", err)
+		}
+	}
+	return nil
 }
 
 func (service *Service) CreateDriver(ctx context.Context, ownerUserID uuid.UUID, request dto.TaxiParkCreateDriverRequest) (CreateDriverResult, error) {
@@ -410,6 +496,39 @@ func orderRecordFromRequest(request dto.TaxiParkCreateOrderRequest) (CreateOrder
 		PaymentMethod:       paymentMethod,
 		Comment:             strings.TrimSpace(request.Comment),
 	}, nil
+}
+
+func updateOrderRecordFromRequest(request dto.TaxiParkUpdateOrderRequest) (UpdateOrderRecord, error) {
+	record := UpdateOrderRecord{
+		PickupAddress:      trimStringPointer(request.PickupAddress),
+		DestinationAddress: trimStringPointer(request.DestinationAddress),
+		Comment:            trimStringPointer(request.Comment),
+	}
+	if request.PickupLocation != nil {
+		coordinates, err := domain.NewCoordinates(request.PickupLocation.Latitude, request.PickupLocation.Longitude)
+		if err != nil {
+			return UpdateOrderRecord{}, fmt.Errorf("%w: pickup_location is invalid", ErrInvalidOrderFields)
+		}
+		record.PickupLocation = &coordinates
+	}
+	if request.DestinationLocation != nil {
+		coordinates, err := domain.NewCoordinates(request.DestinationLocation.Latitude, request.DestinationLocation.Longitude)
+		if err != nil {
+			return UpdateOrderRecord{}, fmt.Errorf("%w: destination_location is invalid", ErrInvalidOrderFields)
+		}
+		record.DestinationLocation = &coordinates
+	}
+	paymentMethod := request.PaymentMethod
+	if paymentMethod == nil {
+		paymentMethod = request.PaymentType
+	}
+	if paymentMethod != nil {
+		if err := (*paymentMethod).Validate(); err != nil {
+			return UpdateOrderRecord{}, fmt.Errorf("%w: payment_method is invalid", ErrInvalidOrderFields)
+		}
+		record.PaymentMethod = paymentMethod
+	}
+	return record, nil
 }
 
 func validateOrderCoordinates(coordinates dto.TaxiParkOrderCoordinatesRequest) error {

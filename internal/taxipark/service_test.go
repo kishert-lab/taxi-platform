@@ -155,6 +155,22 @@ func (repository *fakeRepository) CreateOrderByOwnerUserID(_ context.Context, _ 
 	return domain.Order{}, nil
 }
 
+func (repository *fakeRepository) GetOrderByActorUserID(context.Context, uuid.UUID, uuid.UUID) (domain.Order, error) {
+	return domain.Order{}, nil
+}
+
+func (repository *fakeRepository) UpdateOrderByActorUserID(context.Context, uuid.UUID, uuid.UUID, UpdateOrderRecord) (domain.Order, error) {
+	return domain.Order{}, nil
+}
+
+func (repository *fakeRepository) CancelOrderByActorUserID(context.Context, uuid.UUID, uuid.UUID, string) (domain.Order, error) {
+	return domain.Order{}, nil
+}
+
+func (repository *fakeRepository) CompleteOrderByActorUserID(context.Context, uuid.UUID, uuid.UUID, int64) (domain.Order, error) {
+	return domain.Order{}, nil
+}
+
 func (repository *fakeRepository) CreateDriverByOwnerUserID(_ context.Context, _ uuid.UUID, record CreateDriverRecord) (CreateDriverResult, error) {
 	repository.createdRecord = record
 	return CreateDriverResult{
