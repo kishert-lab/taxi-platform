@@ -104,6 +104,10 @@ func (repository *fakeFinanceRepository) CreateOrderSettlement(_ context.Context
 	return settlement, nil
 }
 
+func (repository *fakeFinanceRepository) GetDriverIDByUserID(_ context.Context, userID uuid.UUID) (uuid.UUID, error) {
+	return userID, nil
+}
+
 func (repository *fakeFinanceRepository) GetDriverBalance(_ context.Context, driverID uuid.UUID) (domain.DriverBalance, error) {
 	return domain.DriverBalance{DriverID: driverID}, nil
 }

@@ -16,6 +16,7 @@ var (
 	ErrOrderWithoutFinalPrice       = errors.New("completed order has no final price")
 	ErrOrderWithoutAssignedDriver   = errors.New("completed order has no assigned driver")
 	ErrFinancialSettlementDuplicate = errors.New("financial settlement already exists")
+	ErrDriverFinanceAccountNotFound = errors.New("driver finance account not found")
 )
 
 type Service struct {
@@ -103,11 +104,19 @@ func (service *Service) SettleCompletedOrder(ctx context.Context, orderID uuid.U
 	return createdSettlement, nil
 }
 
-func (service *Service) GetDriverBalance(ctx context.Context, driverID uuid.UUID) (domain.DriverBalance, error) {
+func (service *Service) GetDriverBalance(ctx context.Context, userID uuid.UUID) (domain.DriverBalance, error) {
+	driverID, err := service.repository.GetDriverIDByUserID(ctx, userID)
+	if err != nil {
+		return domain.DriverBalance{}, fmt.Errorf("resolve driver balance owner: %w", err)
+	}
 	return service.repository.GetDriverBalance(ctx, driverID)
 }
 
-func (service *Service) ListDriverTransactions(ctx context.Context, driverID uuid.UUID, limit int) ([]domain.FinancialTransaction, error) {
+func (service *Service) ListDriverTransactions(ctx context.Context, userID uuid.UUID, limit int) ([]domain.FinancialTransaction, error) {
+	driverID, err := service.repository.GetDriverIDByUserID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve driver transaction owner: %w", err)
+	}
 	return service.repository.ListDriverTransactions(ctx, driverID, normalizeLimit(limit))
 }
 

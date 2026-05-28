@@ -79,6 +79,8 @@ func failByError(context *gin.Context, err error) {
 		response.Fail(context, http.StatusConflict, response.CodeOrderInvalidState, "Chat is not available for this order state", nil)
 	case errors.Is(err, finance.ErrFinancialSettlementDuplicate):
 		response.Fail(context, http.StatusConflict, response.CodeOrderInvalidState, "Financial settlement already exists", nil)
+	case errors.Is(err, finance.ErrDriverFinanceAccountNotFound):
+		response.Fail(context, http.StatusNotFound, response.CodeNotFound, "Driver finance account not found", nil)
 	case errors.Is(err, taxiparkapp.ErrTaxiParkNotFound):
 		response.Fail(context, http.StatusForbidden, response.CodeForbidden, "Taxi park account is not available", nil)
 	case errors.Is(err, taxiparkapp.ErrTaxiParkResourceNotFound), errors.Is(err, pgx.ErrNoRows):

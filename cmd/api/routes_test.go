@@ -69,6 +69,7 @@ func TestMobileAndFinanceRoutesAreRegistered(t *testing.T) {
 		http.MethodPost + " /api/v1/driver/location/batch",
 		http.MethodGet + " /api/v1/driver/orders/current",
 		http.MethodGet + " /api/v1/driver/orders/history",
+		http.MethodGet + " /api/v1/driver/orders/:id",
 		http.MethodPost + " /api/v1/driver/orders/:id/accept",
 		http.MethodPost + " /api/v1/driver/orders/:id/reject",
 		http.MethodPost + " /api/v1/driver/orders/:id/arrived",

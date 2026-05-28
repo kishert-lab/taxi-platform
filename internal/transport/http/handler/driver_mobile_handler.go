@@ -22,6 +22,7 @@ type DriverMobileUseCase interface {
 	UpdateDriverLocation(ctx context.Context, driverID uuid.UUID, request dto.DriverLocationRequest) error
 	UpdateDriverLocationBatch(ctx context.Context, driverID uuid.UUID, request dto.DriverLocationBatchRequest) error
 	GetCurrentDriverOrder(ctx context.Context, driverID uuid.UUID) (dto.DriverOrderResponse, error)
+	GetDriverOrder(ctx context.Context, driverID uuid.UUID, orderID uuid.UUID) (dto.DriverOrderResponse, error)
 	ListDriverOrderHistory(ctx context.Context, driverID uuid.UUID) (dto.DriverOrderHistoryResponse, error)
 	ListDriverOrderOffers(ctx context.Context, driverID uuid.UUID) (dto.DriverOrderOffersResponse, error)
 	GetDriverOrderRoute(ctx context.Context, driverID uuid.UUID, orderID uuid.UUID) (dto.OrderRouteResponse, error)
@@ -56,6 +57,7 @@ func (handler *DriverMobileHandler) RegisterRoutes(router gin.IRouter) {
 	driver.GET("/orders/current", handler.CurrentOrder)
 	driver.GET("/orders/history", handler.OrderHistory)
 	driver.GET("/orders/offers", handler.OrderOffers)
+	driver.GET("/orders/:id", handler.OrderDetails)
 	driver.GET("/orders/:id/route", handler.OrderRoute)
 	driver.POST("/orders/:id/accept", handler.AcceptOrder)
 	driver.POST("/orders/:id/reject", handler.RejectOrder)
@@ -652,6 +654,33 @@ func (handler *DriverMobileHandler) RatePassenger(context *gin.Context) {
 	}
 
 	result, err := handler.useCase.RatePassenger(context.Request.Context(), driverID, orderID, request)
+	if err != nil {
+		failByError(context, err)
+		return
+	}
+
+	response.OK(context, result)
+}
+
+// OrderDetails godoc
+// @Summary Get driver order details
+// @Description Returns full trip card for current or historical order owned by authenticated driver.
+// @Tags driver-orders
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Order ID"
+// @Success 200 {object} DriverOrderSuccessResponse
+// @Failure 401 {object} response.Error
+// @Failure 403 {object} response.Error
+// @Failure 404 {object} response.Error
+// @Router /driver/orders/{id} [get]
+func (handler *DriverMobileHandler) OrderDetails(context *gin.Context) {
+	driverID, orderID, ok := driverOrderIDs(context)
+	if !ok {
+		return
+	}
+
+	result, err := handler.useCase.GetDriverOrder(context.Request.Context(), driverID, orderID)
 	if err != nil {
 		failByError(context, err)
 		return

@@ -138,6 +138,10 @@ func (useCase *UnavailableUseCase) GetCurrentDriverOrder(context.Context, uuid.U
 	return dto.DriverOrderResponse{}, common.ErrNotImplemented
 }
 
+func (useCase *UnavailableUseCase) GetDriverOrder(context.Context, uuid.UUID, uuid.UUID) (dto.DriverOrderResponse, error) {
+	return dto.DriverOrderResponse{}, common.ErrNotImplemented
+}
+
 func (useCase *UnavailableUseCase) ListDriverOrderHistory(context.Context, uuid.UUID) (dto.DriverOrderHistoryResponse, error) {
 	return dto.DriverOrderHistoryResponse{}, common.ErrNotImplemented
 }

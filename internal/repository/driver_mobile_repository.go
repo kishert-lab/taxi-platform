@@ -173,6 +173,103 @@ func (repository *PostgresDriverMobileRepository) GetCurrentOrderByUserID(ctx co
 	return order, nil
 }
 
+func (repository *PostgresDriverMobileRepository) GetOrderByUserID(ctx context.Context, userID uuid.UUID, orderID uuid.UUID) (driverapp.CurrentOrder, error) {
+	order, err := scanDriverCurrentOrder(repository.pool.QueryRow(ctx, `
+		SELECT o.id,
+		       d.id,
+		       p.id,
+		       trim(concat_ws(' ', COALESCE(p.first_name, ''), COALESCE(p.last_name, ''))) AS passenger_name,
+		       p.phone,
+		       COALESCE(p.profile_photo_url, '') AS passenger_photo_url,
+		       p.rating::float8,
+		       p.ratings_count,
+		       o.pickup_address,
+		       ST_Y(o.pickup_location::geometry) AS pickup_latitude,
+		       ST_X(o.pickup_location::geometry) AS pickup_longitude,
+		       COALESCE(o.destination_address, '') AS destination_address,
+		       CASE WHEN o.destination_location IS NULL THEN NULL ELSE ST_Y(o.destination_location::geometry) END AS destination_latitude,
+		       CASE WHEN o.destination_location IS NULL THEN NULL ELSE ST_X(o.destination_location::geometry) END AS destination_longitude,
+		       o.status,
+		       CASE
+		           WHEN o.final_price IS NOT NULL THEN (o.final_price * 100)::bigint
+		           WHEN o.estimated_price IS NOT NULL THEN (o.estimated_price * 100)::bigint
+		           ELSE NULL
+		       END AS price_amount,
+		       COALESCE(o.passenger_comment, '') AS passenger_comment,
+		       o.version,
+		       o.created_at
+		FROM orders o
+		JOIN drivers d ON d.id = o.driver_id
+		JOIN users p ON p.id = o.passenger_id
+		WHERE o.id = $1
+		  AND d.user_id = $2
+		  AND d.deleted_at IS NULL
+		  AND o.deleted_at IS NULL`, orderID, userID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return driverapp.CurrentOrder{}, driverapp.ErrCurrentOrderNotFound
+		}
+		return driverapp.CurrentOrder{}, fmt.Errorf("select driver order details: %w", err)
+	}
+	return order, nil
+}
+
+func (repository *PostgresDriverMobileRepository) ListOrderHistoryByUserID(ctx context.Context, userID uuid.UUID, limit int) ([]driverapp.CurrentOrder, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	rows, err := repository.pool.Query(ctx, `
+		SELECT o.id,
+		       d.id,
+		       p.id,
+		       trim(concat_ws(' ', COALESCE(p.first_name, ''), COALESCE(p.last_name, ''))) AS passenger_name,
+		       p.phone,
+		       COALESCE(p.profile_photo_url, '') AS passenger_photo_url,
+		       p.rating::float8,
+		       p.ratings_count,
+		       o.pickup_address,
+		       ST_Y(o.pickup_location::geometry) AS pickup_latitude,
+		       ST_X(o.pickup_location::geometry) AS pickup_longitude,
+		       COALESCE(o.destination_address, '') AS destination_address,
+		       CASE WHEN o.destination_location IS NULL THEN NULL ELSE ST_Y(o.destination_location::geometry) END AS destination_latitude,
+		       CASE WHEN o.destination_location IS NULL THEN NULL ELSE ST_X(o.destination_location::geometry) END AS destination_longitude,
+		       o.status,
+		       CASE
+		           WHEN o.final_price IS NOT NULL THEN (o.final_price * 100)::bigint
+		           WHEN o.estimated_price IS NOT NULL THEN (o.estimated_price * 100)::bigint
+		           ELSE NULL
+		       END AS price_amount,
+		       COALESCE(o.passenger_comment, '') AS passenger_comment,
+		       o.version,
+		       o.created_at
+		FROM orders o
+		JOIN drivers d ON d.id = o.driver_id
+		JOIN users p ON p.id = o.passenger_id
+		WHERE d.user_id = $1
+		  AND d.deleted_at IS NULL
+		  AND o.deleted_at IS NULL
+		  AND o.status IN ('completed', 'cancelled', 'failed')
+		ORDER BY COALESCE(o.completed_at, o.cancelled_at, o.updated_at, o.created_at) DESC
+		LIMIT $2`, userID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("select driver order history: %w", err)
+	}
+	defer rows.Close()
+
+	orders := make([]driverapp.CurrentOrder, 0, limit)
+	for rows.Next() {
+		order, err := scanDriverCurrentOrder(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan driver order history: %w", err)
+		}
+		orders = append(orders, order)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate driver order history: %w", err)
+	}
+	return orders, nil
+}
+
 func selectDriverCurrentOrderByID(ctx context.Context, transaction pgx.Tx, userID uuid.UUID, orderID uuid.UUID) (driverapp.CurrentOrder, error) {
 	return scanDriverCurrentOrder(transaction.QueryRow(ctx, `
 		SELECT o.id,

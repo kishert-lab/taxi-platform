@@ -12,6 +12,7 @@ import (
 type Repository interface {
 	GetOrderSnapshot(ctx context.Context, orderID uuid.UUID) (OrderSnapshot, error)
 	CreateOrderSettlement(ctx context.Context, settlement domain.OrderSettlement) (domain.OrderSettlement, error)
+	GetDriverIDByUserID(ctx context.Context, userID uuid.UUID) (uuid.UUID, error)
 	GetDriverBalance(ctx context.Context, driverID uuid.UUID) (domain.DriverBalance, error)
 	ListDriverTransactions(ctx context.Context, driverID uuid.UUID, limit int) ([]domain.FinancialTransaction, error)
 	GetTaxiParkBalance(ctx context.Context, ownerUserID uuid.UUID) (domain.TaxiParkBalance, error)

@@ -171,6 +171,20 @@ func (repository *PostgresFinanceRepository) CreateOrderSettlement(ctx context.C
 	return settlement, nil
 }
 
+func (repository *PostgresFinanceRepository) GetDriverIDByUserID(ctx context.Context, userID uuid.UUID) (uuid.UUID, error) {
+	var driverID uuid.UUID
+	if err := repository.pool.QueryRow(ctx, `
+		SELECT id
+		FROM drivers
+		WHERE user_id = $1 AND deleted_at IS NULL`, userID).Scan(&driverID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return uuid.Nil, finance.ErrDriverFinanceAccountNotFound
+		}
+		return uuid.Nil, fmt.Errorf("select driver finance owner: %w", err)
+	}
+	return driverID, nil
+}
+
 func (repository *PostgresFinanceRepository) GetDriverBalance(ctx context.Context, driverID uuid.UUID) (domain.DriverBalance, error) {
 	const query = `
 		SELECT driver_id, available_balance_cents, pending_balance_cents, currency, updated_at

@@ -3345,6 +3345,40 @@ paths:
       summary: Put driver online
       tags:
       - driver
+  /driver/orders/{id}:
+    get:
+      description: Returns full trip card for current or historical order owned by
+        authenticated driver.
+      parameters:
+      - description: Order ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_handler.DriverOrderSuccessResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+      security:
+      - BearerAuth: []
+      summary: Get driver order details
+      tags:
+      - driver-orders
   /driver/orders/{id}/accept:
     post:
       parameters:

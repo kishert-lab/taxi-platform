@@ -363,6 +363,10 @@ func (useCase *fakeDriverMobileUseCase) GetCurrentDriverOrder(_ context.Context,
 	return dto.DriverOrderResponse{}, ErrMobileOrderNotFound
 }
 
+func (useCase *fakeDriverMobileUseCase) GetDriverOrder(_ context.Context, _ uuid.UUID, orderID uuid.UUID) (dto.DriverOrderResponse, error) {
+	return dto.DriverOrderResponse{OrderID: orderID}, nil
+}
+
 func (useCase *fakeDriverMobileUseCase) ListDriverOrderHistory(_ context.Context, _ uuid.UUID) (dto.DriverOrderHistoryResponse, error) {
 	return dto.DriverOrderHistoryResponse{}, nil
 }

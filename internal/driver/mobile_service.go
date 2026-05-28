@@ -30,6 +30,8 @@ type MobileRepository interface {
 	SetStatusByUserID(ctx context.Context, userID uuid.UUID, status domain.DriverStatus) (Profile, error)
 	ListCarsByUserID(ctx context.Context, userID uuid.UUID) ([]domain.Car, error)
 	GetCurrentOrderByUserID(ctx context.Context, userID uuid.UUID) (CurrentOrder, error)
+	GetOrderByUserID(ctx context.Context, userID uuid.UUID, orderID uuid.UUID) (CurrentOrder, error)
+	ListOrderHistoryByUserID(ctx context.Context, userID uuid.UUID, limit int) ([]CurrentOrder, error)
 	ListRoutePointsByUserID(ctx context.Context, userID uuid.UUID, orderID uuid.UUID) ([]RoutePoint, error)
 	TransitionOrderByUserID(ctx context.Context, userID uuid.UUID, orderID uuid.UUID, toStatus domain.OrderStatus, reason string, finalPriceCents *int64) (CurrentOrder, error)
 	AppendRoutePointByUserID(ctx context.Context, userID uuid.UUID, update geoservice.DriverLocationUpdate) error
@@ -288,8 +290,24 @@ func (service *MobileService) GetCurrentDriverOrder(ctx context.Context, userID 
 	return currentOrderResponse(order), nil
 }
 
-func (service *MobileService) ListDriverOrderHistory(context.Context, uuid.UUID) (dto.DriverOrderHistoryResponse, error) {
-	return dto.DriverOrderHistoryResponse{}, common.ErrNotImplemented
+func (service *MobileService) GetDriverOrder(ctx context.Context, userID uuid.UUID, orderID uuid.UUID) (dto.DriverOrderResponse, error) {
+	order, err := service.repository.GetOrderByUserID(ctx, userID, orderID)
+	if err != nil {
+		return dto.DriverOrderResponse{}, err
+	}
+	return currentOrderResponse(order), nil
+}
+
+func (service *MobileService) ListDriverOrderHistory(ctx context.Context, userID uuid.UUID) (dto.DriverOrderHistoryResponse, error) {
+	orders, err := service.repository.ListOrderHistoryByUserID(ctx, userID, 50)
+	if err != nil {
+		return dto.DriverOrderHistoryResponse{}, err
+	}
+	response := dto.DriverOrderHistoryResponse{Orders: make([]dto.DriverOrderResponse, 0, len(orders))}
+	for _, order := range orders {
+		response.Orders = append(response.Orders, currentOrderResponse(order))
+	}
+	return response, nil
 }
 
 func (service *MobileService) ListDriverOrderOffers(ctx context.Context, userID uuid.UUID) (dto.DriverOrderOffersResponse, error) {
