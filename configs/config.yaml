@@ -80,7 +80,7 @@ security:
 
 dispatch:
   initial_radius_meters: 100000
-  max_radius_meters: 10000
+  max_radius_meters: 100000
   radius_step_meters: 1000
   radius_attempts_meters:
     - 10000
@@ -89,7 +89,7 @@ dispatch:
     - 100000
   max_drivers_per_offer: 5
   driver_location_max_age: 30s
-  offer_ttl: 15s
-  accept_lock_ttl: 30s
-  worker_poll_timeout: 5s
+  offer_ttl: 45s
+  accept_lock_ttl: 90s
+  worker_poll_timeout: 10s
   recovery_interval: 30s
