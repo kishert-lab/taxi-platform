@@ -76,7 +76,7 @@ security:
   rate_limit_per_minute: 120
   login_attempt_ttl: 15m
   max_login_attempts: 5
-  refresh_token_reuse_lock: 30s
+  refresh_token_reuse_lock: 90s
 
 dispatch:
   initial_radius_meters: 100000
@@ -88,8 +88,8 @@ dispatch:
     - 50000
     - 100000
   max_drivers_per_offer: 5
-  driver_location_max_age: 30s
-  offer_ttl: 45s
+  driver_location_max_age: 120s
+  offer_ttl: 60s
   accept_lock_ttl: 90s
-  worker_poll_timeout: 10s
+  worker_poll_timeout: 30s
   recovery_interval: 30s
