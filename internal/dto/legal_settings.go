@@ -10,33 +10,34 @@ import (
 )
 
 type TaxiParkSettingsResponse struct {
-	ID                      uuid.UUID          `json:"id" example:"11111111-1111-1111-1111-111111111111"`
-	TaxiParkID              uuid.UUID          `json:"taxi_park_id" example:"22222222-2222-2222-2222-222222222222"`
-	CityID                  uuid.UUID          `json:"city_id" example:"33333333-3333-3333-3333-333333333333"`
-	City                    TaxiParkCityDTO    `json:"city"`
-	DisplayName             string             `json:"display_name" example:"North Taxi"`
-	ShortName               string             `json:"short_name,omitempty" example:"North"`
-	SupportPhone            string             `json:"support_phone,omitempty" example:"+79990000000"`
-	SupportEmail            string             `json:"support_email,omitempty" example:"support@example.com"`
-	LegalName               string             `json:"legal_name,omitempty" example:"ООО Северное такси"`
-	LegalAddress            string             `json:"legal_address,omitempty" example:"Екатеринбург, Ленина 1"`
-	INN                     string             `json:"inn,omitempty" example:"7700000000"`
-	OGRN                    string             `json:"ogrn,omitempty" example:"1027700000000"`
-	Website                 string             `json:"website,omitempty" example:"https://taxi.example.com"`
-	LogoURL                 string             `json:"logo_url,omitempty" example:"https://cdn.example.com/logo.png"`
-	PrimaryColor            string             `json:"primary_color,omitempty" example:"#111827"`
-	SecondaryColor          string             `json:"secondary_color,omitempty" example:"#F59E0B"`
-	CommissionBasisPoints   *int32             `json:"commission_basis_points,omitempty" example:"100"`
-	CommissionPercent       string             `json:"commission_percent,omitempty" example:"1.00"`
-	MinimumOrderPrice       MoneyCentsResponse `json:"minimum_order_price"`
-	CancellationTimeoutSec  int                `json:"cancellation_timeout_sec" example:"300"`
-	DriverArrivalTimeoutSec int                `json:"driver_arrival_timeout_sec" example:"900"`
-	AllowCashPayment        bool               `json:"allow_cash_payment" example:"true"`
-	AllowCardPayment        bool               `json:"allow_card_payment" example:"true"`
-	AllowTransferPayment    bool               `json:"allow_transfer_payment" example:"false"`
-	IsActive                bool               `json:"is_active" example:"true"`
-	CreatedAt               time.Time          `json:"created_at" example:"2026-05-12T12:00:00Z"`
-	UpdatedAt               time.Time          `json:"updated_at" example:"2026-05-12T12:00:00Z"`
+	ID                      uuid.UUID                        `json:"id" example:"11111111-1111-1111-1111-111111111111"`
+	TaxiParkID              uuid.UUID                        `json:"taxi_park_id" example:"22222222-2222-2222-2222-222222222222"`
+	CityID                  uuid.UUID                        `json:"city_id" example:"33333333-3333-3333-3333-333333333333"`
+	City                    TaxiParkCityDTO                  `json:"city"`
+	DisplayName             string                           `json:"display_name" example:"North Taxi"`
+	ShortName               string                           `json:"short_name,omitempty" example:"North"`
+	SupportPhone            string                           `json:"support_phone,omitempty" example:"+79990000000"`
+	SupportEmail            string                           `json:"support_email,omitempty" example:"support@example.com"`
+	LegalName               string                           `json:"legal_name,omitempty" example:"ООО Северное такси"`
+	LegalAddress            string                           `json:"legal_address,omitempty" example:"Екатеринбург, Ленина 1"`
+	INN                     string                           `json:"inn,omitempty" example:"7700000000"`
+	OGRN                    string                           `json:"ogrn,omitempty" example:"1027700000000"`
+	Website                 string                           `json:"website,omitempty" example:"https://taxi.example.com"`
+	LogoURL                 string                           `json:"logo_url,omitempty" example:"https://cdn.example.com/logo.png"`
+	PrimaryColor            string                           `json:"primary_color,omitempty" example:"#111827"`
+	SecondaryColor          string                           `json:"secondary_color,omitempty" example:"#F59E0B"`
+	CommissionBasisPoints   *int32                           `json:"commission_basis_points,omitempty" example:"100"`
+	CommissionPercent       string                           `json:"commission_percent,omitempty" example:"1.00"`
+	MinimumOrderPrice       MoneyCentsResponse               `json:"minimum_order_price"`
+	CancellationTimeoutSec  int                              `json:"cancellation_timeout_sec" example:"300"`
+	DriverArrivalTimeoutSec int                              `json:"driver_arrival_timeout_sec" example:"900"`
+	AllowCashPayment        bool                             `json:"allow_cash_payment" example:"true"`
+	AllowCardPayment        bool                             `json:"allow_card_payment" example:"true"`
+	AllowTransferPayment    bool                             `json:"allow_transfer_payment" example:"false"`
+	Dispatch                TaxiParkDispatchSettingsResponse `json:"dispatch"`
+	IsActive                bool                             `json:"is_active" example:"true"`
+	CreatedAt               time.Time                        `json:"created_at" example:"2026-05-12T12:00:00Z"`
+	UpdatedAt               time.Time                        `json:"updated_at" example:"2026-05-12T12:00:00Z"`
 }
 
 type TaxiParkCityDTO struct {
@@ -48,27 +49,54 @@ type TaxiParkCityDTO struct {
 	Center      CoordinatesResponse `json:"center"`
 }
 
+type TaxiParkDispatchSettingsResponse struct {
+	InitialRadiusMeters     int   `json:"initial_radius_meters" example:"10000"`
+	MaxRadiusMeters         int   `json:"max_radius_meters" example:"100000"`
+	RadiusStepMeters        int   `json:"radius_step_meters" example:"1000"`
+	RadiusAttemptsMeters    []int `json:"radius_attempts_meters" example:"10000,30000,50000,100000"`
+	MaxDriversPerOffer      int   `json:"max_drivers_per_offer" example:"5"`
+	DriverLocationMaxAgeSec int   `json:"driver_location_max_age_sec" example:"120"`
+	OfferTTLSec             int   `json:"offer_ttl_sec" example:"60"`
+	AcceptLockTTLSec        int   `json:"accept_lock_ttl_sec" example:"90"`
+	WorkerPollTimeoutSec    int   `json:"worker_poll_timeout_sec" example:"30"`
+	RecoveryIntervalSec     int   `json:"recovery_interval_sec" example:"30"`
+}
+
 type TaxiParkSettingsPatchRequest struct {
-	DisplayName             *string `json:"display_name,omitempty" example:"North Taxi"`
-	ShortName               *string `json:"short_name,omitempty" example:"North"`
-	SupportPhone            *string `json:"support_phone,omitempty" example:"+79990000000"`
-	SupportEmail            *string `json:"support_email,omitempty" binding:"omitempty,email" example:"support@example.com"`
-	LegalName               *string `json:"legal_name,omitempty" example:"ООО Северное такси"`
-	LegalAddress            *string `json:"legal_address,omitempty" example:"Екатеринбург, Ленина 1"`
-	INN                     *string `json:"inn,omitempty" example:"7700000000"`
-	OGRN                    *string `json:"ogrn,omitempty" example:"1027700000000"`
-	Website                 *string `json:"website,omitempty" binding:"omitempty,url" example:"https://taxi.example.com"`
-	LogoURL                 *string `json:"logo_url,omitempty" binding:"omitempty,url" example:"https://cdn.example.com/logo.png"`
-	PrimaryColor            *string `json:"primary_color,omitempty" example:"#111827"`
-	SecondaryColor          *string `json:"secondary_color,omitempty" example:"#F59E0B"`
-	CommissionBasisPoints   *int32  `json:"commission_basis_points,omitempty" binding:"omitempty,min=0,max=10000" example:"100"`
-	MinimumOrderPriceCents  *int64  `json:"minimum_order_price_cents,omitempty" binding:"omitempty,min=0" example:"25000"`
-	CancellationTimeoutSec  *int    `json:"cancellation_timeout_sec,omitempty" binding:"omitempty,min=1" example:"300"`
-	DriverArrivalTimeoutSec *int    `json:"driver_arrival_timeout_sec,omitempty" binding:"omitempty,min=1" example:"900"`
-	AllowCashPayment        *bool   `json:"allow_cash_payment,omitempty" example:"true"`
-	AllowCardPayment        *bool   `json:"allow_card_payment,omitempty" example:"true"`
-	AllowTransferPayment    *bool   `json:"allow_transfer_payment,omitempty" example:"false"`
-	IsActive                *bool   `json:"is_active,omitempty" example:"true"`
+	DisplayName             *string                               `json:"display_name,omitempty" example:"North Taxi"`
+	ShortName               *string                               `json:"short_name,omitempty" example:"North"`
+	SupportPhone            *string                               `json:"support_phone,omitempty" example:"+79990000000"`
+	SupportEmail            *string                               `json:"support_email,omitempty" binding:"omitempty,email" example:"support@example.com"`
+	LegalName               *string                               `json:"legal_name,omitempty" example:"ООО Северное такси"`
+	LegalAddress            *string                               `json:"legal_address,omitempty" example:"Екатеринбург, Ленина 1"`
+	INN                     *string                               `json:"inn,omitempty" example:"7700000000"`
+	OGRN                    *string                               `json:"ogrn,omitempty" example:"1027700000000"`
+	Website                 *string                               `json:"website,omitempty" binding:"omitempty,url" example:"https://taxi.example.com"`
+	LogoURL                 *string                               `json:"logo_url,omitempty" binding:"omitempty,url" example:"https://cdn.example.com/logo.png"`
+	PrimaryColor            *string                               `json:"primary_color,omitempty" example:"#111827"`
+	SecondaryColor          *string                               `json:"secondary_color,omitempty" example:"#F59E0B"`
+	CommissionBasisPoints   *int32                                `json:"commission_basis_points,omitempty" binding:"omitempty,min=0,max=10000" example:"100"`
+	MinimumOrderPriceCents  *int64                                `json:"minimum_order_price_cents,omitempty" binding:"omitempty,min=0" example:"25000"`
+	CancellationTimeoutSec  *int                                  `json:"cancellation_timeout_sec,omitempty" binding:"omitempty,min=1" example:"300"`
+	DriverArrivalTimeoutSec *int                                  `json:"driver_arrival_timeout_sec,omitempty" binding:"omitempty,min=1" example:"900"`
+	AllowCashPayment        *bool                                 `json:"allow_cash_payment,omitempty" example:"true"`
+	AllowCardPayment        *bool                                 `json:"allow_card_payment,omitempty" example:"true"`
+	AllowTransferPayment    *bool                                 `json:"allow_transfer_payment,omitempty" example:"false"`
+	Dispatch                *TaxiParkDispatchSettingsPatchRequest `json:"dispatch,omitempty"`
+	IsActive                *bool                                 `json:"is_active,omitempty" example:"true"`
+}
+
+type TaxiParkDispatchSettingsPatchRequest struct {
+	InitialRadiusMeters     *int  `json:"initial_radius_meters,omitempty" binding:"omitempty,min=1" example:"10000"`
+	MaxRadiusMeters         *int  `json:"max_radius_meters,omitempty" binding:"omitempty,min=1" example:"100000"`
+	RadiusStepMeters        *int  `json:"radius_step_meters,omitempty" binding:"omitempty,min=1" example:"1000"`
+	RadiusAttemptsMeters    []int `json:"radius_attempts_meters,omitempty" binding:"omitempty,min=1,dive,min=1" example:"10000,30000,50000,100000"`
+	MaxDriversPerOffer      *int  `json:"max_drivers_per_offer,omitempty" binding:"omitempty,min=1" example:"5"`
+	DriverLocationMaxAgeSec *int  `json:"driver_location_max_age_sec,omitempty" binding:"omitempty,min=1" example:"120"`
+	OfferTTLSec             *int  `json:"offer_ttl_sec,omitempty" binding:"omitempty,min=1" example:"60"`
+	AcceptLockTTLSec        *int  `json:"accept_lock_ttl_sec,omitempty" binding:"omitempty,min=1" example:"90"`
+	WorkerPollTimeoutSec    *int  `json:"worker_poll_timeout_sec,omitempty" binding:"omitempty,min=1" example:"30"`
+	RecoveryIntervalSec     *int  `json:"recovery_interval_sec,omitempty" binding:"omitempty,min=1" example:"30"`
 }
 
 type TaxiParkTariffRequest struct {
@@ -171,9 +199,21 @@ func TaxiParkSettingsFromDomain(settings domain.TaxiParkSettings) TaxiParkSettin
 		AllowCashPayment:        settings.AllowCashPayment,
 		AllowCardPayment:        settings.AllowCardPayment,
 		AllowTransferPayment:    settings.AllowTransferPayment,
-		IsActive:                settings.IsActive,
-		CreatedAt:               settings.CreatedAt,
-		UpdatedAt:               settings.UpdatedAt,
+		Dispatch: TaxiParkDispatchSettingsResponse{
+			InitialRadiusMeters:     settings.DispatchInitialRadiusMeters,
+			MaxRadiusMeters:         settings.DispatchMaxRadiusMeters,
+			RadiusStepMeters:        settings.DispatchRadiusStepMeters,
+			RadiusAttemptsMeters:    settings.DispatchRadiusAttemptsMeters,
+			MaxDriversPerOffer:      settings.DispatchMaxDriversPerOffer,
+			DriverLocationMaxAgeSec: settings.DispatchDriverLocationMaxAgeSec,
+			OfferTTLSec:             settings.DispatchOfferTTLSec,
+			AcceptLockTTLSec:        settings.DispatchAcceptLockTTLSec,
+			WorkerPollTimeoutSec:    settings.DispatchWorkerPollTimeoutSec,
+			RecoveryIntervalSec:     settings.DispatchRecoveryIntervalSec,
+		},
+		IsActive:  settings.IsActive,
+		CreatedAt: settings.CreatedAt,
+		UpdatedAt: settings.UpdatedAt,
 	}
 	if settings.CommissionBasisPoints != nil {
 		response.CommissionPercent = FormatBasisPoints(*settings.CommissionBasisPoints)

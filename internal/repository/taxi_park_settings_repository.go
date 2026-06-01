@@ -46,29 +46,68 @@ func (repository *PostgresTaxiParkSettingsRepository) UpdateSettingsByOwnerUserI
 		return domain.TaxiParkSettings{}, err
 	}
 
+	var dispatchRadiusAttempts []byte
+	var dispatchInitialRadiusMeters *int
+	var dispatchMaxRadiusMeters *int
+	var dispatchRadiusStepMeters *int
+	var dispatchMaxDriversPerOffer *int
+	var dispatchDriverLocationMaxAgeSec *int
+	var dispatchOfferTTLSec *int
+	var dispatchAcceptLockTTLSec *int
+	var dispatchWorkerPollTimeoutSec *int
+	var dispatchRecoveryIntervalSec *int
+	if request.Dispatch != nil {
+		dispatchInitialRadiusMeters = request.Dispatch.InitialRadiusMeters
+		dispatchMaxRadiusMeters = request.Dispatch.MaxRadiusMeters
+		dispatchRadiusStepMeters = request.Dispatch.RadiusStepMeters
+		dispatchMaxDriversPerOffer = request.Dispatch.MaxDriversPerOffer
+		dispatchDriverLocationMaxAgeSec = request.Dispatch.DriverLocationMaxAgeSec
+		dispatchOfferTTLSec = request.Dispatch.OfferTTLSec
+		dispatchAcceptLockTTLSec = request.Dispatch.AcceptLockTTLSec
+		dispatchWorkerPollTimeoutSec = request.Dispatch.WorkerPollTimeoutSec
+		dispatchRecoveryIntervalSec = request.Dispatch.RecoveryIntervalSec
+		if len(request.Dispatch.RadiusAttemptsMeters) > 0 {
+			var err error
+			dispatchRadiusAttempts, err = json.Marshal(request.Dispatch.RadiusAttemptsMeters)
+			if err != nil {
+				return domain.TaxiParkSettings{}, fmt.Errorf("marshal taxi park dispatch radius attempts: %w", err)
+			}
+		}
+	}
+
 	settings, err := scanTaxiParkSettings(repository.pool.QueryRow(ctx, `
 		WITH updated_settings AS (
 			UPDATE taxi_park_settings s
-			SET display_name = COALESCE($2, display_name),
-			    short_name = COALESCE($3, short_name),
-			    support_phone = COALESCE($4, support_phone),
-			    support_email = COALESCE($5, support_email),
-			    legal_name = COALESCE($6, legal_name),
-			    legal_address = COALESCE($7, legal_address),
-			    inn = COALESCE($8, inn),
-			    ogrn = COALESCE($9, ogrn),
-			    website = COALESCE($10, website),
-			    logo_url = COALESCE($11, logo_url),
-			    primary_color = COALESCE($12, primary_color),
-			    secondary_color = COALESCE($13, secondary_color),
-			    commission_percent = COALESCE($14::numeric / 100, commission_percent),
-			    minimum_order_price_cents = COALESCE($15, minimum_order_price_cents),
-			    cancellation_timeout_sec = COALESCE($16, cancellation_timeout_sec),
-			    driver_arrival_timeout_sec = COALESCE($17, driver_arrival_timeout_sec),
-			    allow_cash_payment = COALESCE($18, allow_cash_payment),
-			    allow_card_payment = COALESCE($19, allow_card_payment),
-			    allow_transfer_payment = COALESCE($20, allow_transfer_payment),
-			    is_active = COALESCE($21, is_active)
+			SET display_name = COALESCE($2, s.display_name),
+			    short_name = COALESCE($3, s.short_name),
+			    support_phone = COALESCE($4, s.support_phone),
+			    support_email = COALESCE($5, s.support_email),
+			    legal_name = COALESCE($6, s.legal_name),
+			    legal_address = COALESCE($7, s.legal_address),
+			    inn = COALESCE($8, s.inn),
+			    ogrn = COALESCE($9, s.ogrn),
+			    website = COALESCE($10, s.website),
+			    logo_url = COALESCE($11, s.logo_url),
+			    primary_color = COALESCE($12, s.primary_color),
+			    secondary_color = COALESCE($13, s.secondary_color),
+			    commission_percent = COALESCE($14::numeric / 100, s.commission_percent),
+			    minimum_order_price_cents = COALESCE($15, s.minimum_order_price_cents),
+			    cancellation_timeout_sec = COALESCE($16, s.cancellation_timeout_sec),
+			    driver_arrival_timeout_sec = COALESCE($17, s.driver_arrival_timeout_sec),
+			    allow_cash_payment = COALESCE($18, s.allow_cash_payment),
+			    allow_card_payment = COALESCE($19, s.allow_card_payment),
+			    allow_transfer_payment = COALESCE($20, s.allow_transfer_payment),
+			    is_active = COALESCE($21, s.is_active),
+			    dispatch_initial_radius_meters = COALESCE($22, s.dispatch_initial_radius_meters),
+			    dispatch_max_radius_meters = COALESCE($23, s.dispatch_max_radius_meters),
+			    dispatch_radius_step_meters = COALESCE($24, s.dispatch_radius_step_meters),
+			    dispatch_radius_attempts_meters = COALESCE($25::jsonb, s.dispatch_radius_attempts_meters),
+			    dispatch_max_drivers_per_offer = COALESCE($26, s.dispatch_max_drivers_per_offer),
+			    dispatch_driver_location_max_age_sec = COALESCE($27, s.dispatch_driver_location_max_age_sec),
+			    dispatch_offer_ttl_sec = COALESCE($28, s.dispatch_offer_ttl_sec),
+			    dispatch_accept_lock_ttl_sec = COALESCE($29, s.dispatch_accept_lock_ttl_sec),
+			    dispatch_worker_poll_timeout_sec = COALESCE($30, s.dispatch_worker_poll_timeout_sec),
+			    dispatch_recovery_interval_sec = COALESCE($31, s.dispatch_recovery_interval_sec)
 			FROM taxi_parks p
 			WHERE p.id = s.taxi_park_id AND p.owner_user_id = $1 AND p.deleted_at IS NULL
 			RETURNING s.id
@@ -99,7 +138,18 @@ func (repository *PostgresTaxiParkSettingsRepository) UpdateSettingsByOwnerUserI
 		request.AllowCardPayment,
 		request.AllowTransferPayment,
 		request.IsActive,
+		dispatchInitialRadiusMeters,
+		dispatchMaxRadiusMeters,
+		dispatchRadiusStepMeters,
+		dispatchRadiusAttempts,
+		dispatchMaxDriversPerOffer,
+		dispatchDriverLocationMaxAgeSec,
+		dispatchOfferTTLSec,
+		dispatchAcceptLockTTLSec,
+		dispatchWorkerPollTimeoutSec,
+		dispatchRecoveryIntervalSec,
 	))
+
 	if err != nil {
 		return domain.TaxiParkSettings{}, fmt.Errorf("update taxi park settings: %w", err)
 	}
@@ -1339,8 +1389,16 @@ func (repository *PostgresTaxiParkSettingsRepository) ListCarDocumentsByOwnerUse
 
 func (repository *PostgresTaxiParkSettingsRepository) ensureSettings(ctx context.Context, ownerUserID uuid.UUID) error {
 	const query = `
-		INSERT INTO taxi_park_settings (taxi_park_id, display_name, short_name, support_phone, support_email, legal_name)
-		SELECT id, name, name, contact_phone, contact_email, legal_name
+		INSERT INTO taxi_park_settings (
+			taxi_park_id, display_name, short_name, support_phone, support_email, legal_name,
+			dispatch_initial_radius_meters, dispatch_max_radius_meters, dispatch_radius_step_meters,
+			dispatch_radius_attempts_meters, dispatch_max_drivers_per_offer,
+			dispatch_driver_location_max_age_sec, dispatch_offer_ttl_sec, dispatch_accept_lock_ttl_sec,
+			dispatch_worker_poll_timeout_sec, dispatch_recovery_interval_sec
+		)
+		SELECT id, name, name, contact_phone, contact_email, legal_name,
+		       10000, 100000, 1000, '[10000,30000,50000,100000]'::jsonb, 5,
+		       120, 60, 90, 30, 30
 		FROM taxi_parks
 		WHERE owner_user_id = $1 AND deleted_at IS NULL
 		ON CONFLICT (taxi_park_id) DO NOTHING`
@@ -1358,12 +1416,17 @@ const taxiParkSettingsColumns = `
 	COALESCE(s.inn, ''), COALESCE(s.ogrn, ''), COALESCE(s.website, ''), COALESCE(s.logo_url, ''),
 	COALESCE(s.primary_color, ''), COALESCE(s.secondary_color, ''), (s.commission_percent * 100)::integer,
 	s.minimum_order_price_cents, s.cancellation_timeout_sec, s.driver_arrival_timeout_sec,
+	s.dispatch_initial_radius_meters, s.dispatch_max_radius_meters, s.dispatch_radius_step_meters,
+	s.dispatch_radius_attempts_meters, s.dispatch_max_drivers_per_offer,
+	s.dispatch_driver_location_max_age_sec, s.dispatch_offer_ttl_sec, s.dispatch_accept_lock_ttl_sec,
+	s.dispatch_worker_poll_timeout_sec, s.dispatch_recovery_interval_sec,
 	s.allow_cash_payment, s.allow_card_payment, s.allow_transfer_payment, s.is_active,
 	s.created_at, s.updated_at`
 
 func scanTaxiParkSettings(row pgx.Row) (domain.TaxiParkSettings, error) {
 	var settings domain.TaxiParkSettings
 	var commissionBasisPoints pgtype.Int4
+	var dispatchRadiusAttempts []byte
 	var latitude float64
 	var longitude float64
 	if err := row.Scan(
@@ -1392,6 +1455,16 @@ func scanTaxiParkSettings(row pgx.Row) (domain.TaxiParkSettings, error) {
 		&settings.MinimumOrderPrice.Amount,
 		&settings.CancellationTimeoutSec,
 		&settings.DriverArrivalTimeoutSec,
+		&settings.DispatchInitialRadiusMeters,
+		&settings.DispatchMaxRadiusMeters,
+		&settings.DispatchRadiusStepMeters,
+		&dispatchRadiusAttempts,
+		&settings.DispatchMaxDriversPerOffer,
+		&settings.DispatchDriverLocationMaxAgeSec,
+		&settings.DispatchOfferTTLSec,
+		&settings.DispatchAcceptLockTTLSec,
+		&settings.DispatchWorkerPollTimeoutSec,
+		&settings.DispatchRecoveryIntervalSec,
 		&settings.AllowCashPayment,
 		&settings.AllowCardPayment,
 		&settings.AllowTransferPayment,
@@ -1410,6 +1483,11 @@ func scanTaxiParkSettings(row pgx.Row) (domain.TaxiParkSettings, error) {
 	if commissionBasisPoints.Valid {
 		value := commissionBasisPoints.Int32
 		settings.CommissionBasisPoints = &value
+	}
+	if len(dispatchRadiusAttempts) > 0 {
+		if err := json.Unmarshal(dispatchRadiusAttempts, &settings.DispatchRadiusAttemptsMeters); err != nil {
+			return domain.TaxiParkSettings{}, fmt.Errorf("parse taxi park dispatch radius attempts: %w", err)
+		}
 	}
 	return settings, nil
 }

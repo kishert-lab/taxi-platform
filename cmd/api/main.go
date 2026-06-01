@@ -127,6 +127,7 @@ func buildRouter(config *configs.Config, log *zap.Logger, routes applicationRout
 	router := gin.New()
 	router.Use(middleware.RequestID())
 	router.Use(middleware.DebugRequestLogger(log, debugHTTPLoggingEnabled(config)))
+	router.Use(middleware.JSONCharset())
 	router.Use(gin.Recovery())
 
 	router.Use(cors.New(cors.Config{

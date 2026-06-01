@@ -1,0 +1,123 @@
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: taxi_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-taxi}
+      POSTGRES_USER: ${POSTGRES_USER:-taxi}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      TZ: ${TZ:-Asia/Yekaterinburg}
+    volumes:
+      - taxi_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-taxi} -d ${POSTGRES_DB:-taxi}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - taxi-platform
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: taxi_redis
+    restart: unless-stopped
+    command:
+      [
+        "redis-server",
+        "--appendonly",
+        "yes",
+        "--requirepass",
+        "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"
+      ]
+    volumes:
+      - taxi_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - taxi-platform
+
+  migrate:
+    image: migrate/migrate:v4.18.1
+    container_name: taxi_migrate
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./migrations:/migrations:ro
+    command:
+      [
+        "-path",
+        "/migrations",
+        "-database",
+        "postgres://${POSTGRES_USER:-taxi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-taxi}?sslmode=disable",
+        "up"
+      ]
+    networks:
+      - taxi-platform
+
+  backend:
+    image: registry.dev.it59com.ru/taxi-platform/api:${IMAGE_TAG:-latest}
+    container_name: taxi_backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "${HTTP_PORT:-8080}:8080"
+    environment:
+      TZ: ${TZ:-Asia/Yekaterinburg}
+      GIN_MODE: release
+      TAXI_APP_ENV: ${APP_ENV:-production}
+      TAXI_SERVER_HOST: 0.0.0.0
+      TAXI_SERVER_PORT: 8080
+      TAXI_SERVER_MODE: release
+      TAXI_HTTP_CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173}
+      TAXI_DATABASE_HOST: postgres
+      TAXI_DATABASE_PORT: 5432
+      TAXI_DATABASE_USER: ${POSTGRES_USER:-taxi}
+      TAXI_DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
+      TAXI_DATABASE_NAME: ${POSTGRES_DB:-taxi}
+      TAXI_DATABASE_SSL_MODE: disable
+      TAXI_REDIS_HOST: redis
+      TAXI_REDIS_PORT: 6379
+      TAXI_REDIS_PASSWORD: ${REDIS_PASSWORD}
+      TAXI_JWT_ACCESS_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      TAXI_JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET is required}
+      TAXI_LOGGER_LEVEL: ${LOGGER_LEVEL:-info}
+      TAXI_LOGGER_ENCODING: json
+      TAXI_LOGGER_DEVELOPMENT: "false"
+      TAXI_SECURITY_RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-120}
+      TAXI_DISPATCH_INITIAL_RADIUS_METERS: ${DISPATCH_INITIAL_RADIUS_METERS:-10000}
+      TAXI_DISPATCH_MAX_RADIUS_METERS: ${DISPATCH_MAX_RADIUS_METERS:-100000}
+      TAXI_DISPATCH_RADIUS_STEP_METERS: ${DISPATCH_RADIUS_STEP_METERS:-1000}
+      TAXI_DISPATCH_MAX_DRIVERS_PER_OFFER: ${DISPATCH_MAX_DRIVERS_PER_OFFER:-5}
+      TAXI_DISPATCH_DRIVER_LOCATION_MAX_AGE: ${DISPATCH_DRIVER_LOCATION_MAX_AGE:-90s}
+      TAXI_DISPATCH_OFFER_TTL: ${DISPATCH_OFFER_TTL:-45s}
+      TAXI_DISPATCH_ACCEPT_LOCK_TTL: ${DISPATCH_ACCEPT_LOCK_TTL:-90s}
+      TAXI_DISPATCH_WORKER_POLL_TIMEOUT: ${DISPATCH_WORKER_POLL_TIMEOUT:-10s}
+      TAXI_DISPATCH_RECOVERY_INTERVAL: ${DISPATCH_RECOVERY_INTERVAL:-30s}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - taxi-platform
+
+volumes:
+  taxi_pg_data:
+  taxi_redis_data:
+
+networks:
+  taxi-platform:
+    driver: bridge

@@ -1796,6 +1796,94 @@ definitions:
     required:
     - tariff_id
     type: object
+  github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkDispatchSettingsPatchRequest:
+    properties:
+      accept_lock_ttl_sec:
+        example: 90
+        minimum: 1
+        type: integer
+      driver_location_max_age_sec:
+        example: 120
+        minimum: 1
+        type: integer
+      initial_radius_meters:
+        example: 10000
+        minimum: 1
+        type: integer
+      max_drivers_per_offer:
+        example: 5
+        minimum: 1
+        type: integer
+      max_radius_meters:
+        example: 100000
+        minimum: 1
+        type: integer
+      offer_ttl_sec:
+        example: 60
+        minimum: 1
+        type: integer
+      radius_attempts_meters:
+        example:
+        - 10000
+        - 30000
+        - 50000
+        - 100000
+        items:
+          type: integer
+        minItems: 1
+        type: array
+      radius_step_meters:
+        example: 1000
+        minimum: 1
+        type: integer
+      recovery_interval_sec:
+        example: 30
+        minimum: 1
+        type: integer
+      worker_poll_timeout_sec:
+        example: 30
+        minimum: 1
+        type: integer
+    type: object
+  github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkDispatchSettingsResponse:
+    properties:
+      accept_lock_ttl_sec:
+        example: 90
+        type: integer
+      driver_location_max_age_sec:
+        example: 120
+        type: integer
+      initial_radius_meters:
+        example: 10000
+        type: integer
+      max_drivers_per_offer:
+        example: 5
+        type: integer
+      max_radius_meters:
+        example: 100000
+        type: integer
+      offer_ttl_sec:
+        example: 60
+        type: integer
+      radius_attempts_meters:
+        example:
+        - 10000
+        - 30000
+        - 50000
+        - 100000
+        items:
+          type: integer
+        type: array
+      radius_step_meters:
+        example: 1000
+        type: integer
+      recovery_interval_sec:
+        example: 30
+        type: integer
+      worker_poll_timeout_sec:
+        example: 30
+        type: integer
+    type: object
   github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkDocumentResponse:
     properties:
       comment:
@@ -2114,6 +2202,8 @@ definitions:
         maximum: 10000
         minimum: 0
         type: integer
+      dispatch:
+        $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkDispatchSettingsPatchRequest'
       display_name:
         example: North Taxi
         type: string
@@ -2190,6 +2280,8 @@ definitions:
       created_at:
         example: "2026-05-12T12:00:00Z"
         type: string
+      dispatch:
+        $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkDispatchSettingsResponse'
       display_name:
         example: North Taxi
         type: string

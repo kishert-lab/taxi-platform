@@ -48,13 +48,14 @@ type DriverCandidate struct {
 }
 
 type OrderOffer struct {
-	OrderID        uuid.UUID
-	DriverID       uuid.UUID
-	Attempt        int
-	RadiusMeters   int
-	DistanceMeters float64
-	ExpiresAt      time.Time
-	CreatedAt      time.Time
+	OrderID              uuid.UUID
+	DriverID             uuid.UUID
+	Attempt              int
+	RadiusMeters         int
+	DistanceMeters       float64
+	ExpiresAt            time.Time
+	CreatedAt            time.Time
+	AcceptLockTTLSeconds int
 }
 
 type DriverOrderOffer struct {
@@ -67,6 +68,7 @@ type DispatchTask struct {
 	Attempt          int         `json:"attempt"`
 	QueuedAt         time.Time   `json:"queued_at"`
 	ExcludeDriverIDs []uuid.UUID `json:"exclude_driver_ids,omitempty"`
+	Config           *Config     `json:"config,omitempty"`
 }
 
 type OrderEvent struct {

@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
+	dispatchapp "github.com/kishert-lab/taxi-platform/internal/dispatch"
 	"github.com/kishert-lab/taxi-platform/internal/domain"
 	"github.com/kishert-lab/taxi-platform/internal/dto"
 )
@@ -46,6 +47,7 @@ type PasswordHasher interface {
 
 type DispatchController interface {
 	EnqueueOrder(ctx context.Context, orderID uuid.UUID) error
+	EnqueueOrderWithConfig(ctx context.Context, orderID uuid.UUID, config dispatchapp.Config) error
 	StopDispatch(ctx context.Context, orderID uuid.UUID) error
 }
 

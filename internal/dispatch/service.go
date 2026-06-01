@@ -66,6 +66,15 @@ func NewService(params NewServiceParams) *Service {
 }
 
 func (service *Service) EnqueueOrder(ctx context.Context, orderID uuid.UUID) error {
+	return service.enqueueOrder(ctx, orderID, nil)
+}
+
+func (service *Service) EnqueueOrderWithConfig(ctx context.Context, orderID uuid.UUID, config Config) error {
+	normalized := normalizeConfig(config)
+	return service.enqueueOrder(ctx, orderID, &normalized)
+}
+
+func (service *Service) enqueueOrder(ctx context.Context, orderID uuid.UUID, config *Config) error {
 	if service.dispatchStateStore != nil {
 		started, err := service.dispatchStateStore.BeginDispatch(ctx, orderID, 30*time.Minute)
 		if err != nil {
@@ -79,7 +88,7 @@ func (service *Service) EnqueueOrder(ctx context.Context, orderID uuid.UUID) err
 	if err := service.orderRepository.MarkOrderSearching(ctx, orderID); err != nil {
 		return fmt.Errorf("mark order searching before enqueue dispatch: %w", err)
 	}
-	task := DispatchTask{OrderID: orderID, Attempt: 0, QueuedAt: time.Now().UTC()}
+	task := DispatchTask{OrderID: orderID, Attempt: 0, QueuedAt: time.Now().UTC(), Config: config}
 	if err := service.taskQueue.Publish(ctx, task); err != nil {
 		return fmt.Errorf("publish dispatch task: %w", err)
 	}
@@ -89,6 +98,7 @@ func (service *Service) EnqueueOrder(ctx context.Context, orderID uuid.UUID) err
 }
 
 func (service *Service) ProcessTask(ctx context.Context, task DispatchTask) (DispatchResult, error) {
+	config := service.configForTask(task)
 	startedAt := time.Now()
 	defer func() {
 		if service.metrics != nil {
@@ -110,7 +120,7 @@ func (service *Service) ProcessTask(ctx context.Context, task DispatchTask) (Dis
 		order.Status = domain.OrderStatusSearching
 	}
 
-	radiusMeters, ok := service.radiusForAttempt(task.Attempt)
+	radiusMeters, ok := radiusForAttempt(config, task.Attempt)
 	if !ok {
 		return service.failNoDriversFound(ctx, order, radiusMeters)
 	}
@@ -122,30 +132,30 @@ func (service *Service) ProcessTask(ctx context.Context, task DispatchTask) (Dis
 		CityID:         order.CityID,
 		Pickup:         order.PickupLocation,
 		RadiusMeters:   radiusMeters,
-		Limit:          service.config.MaxDriversPerOffer,
+		Limit:          config.MaxDriversPerOffer,
 		ExcludeIDs:     task.ExcludeDriverIDs,
-		LocationMaxAge: service.config.DriverLocationMaxAge,
+		LocationMaxAge: config.DriverLocationMaxAge,
 	})
 	if err != nil {
 		return DispatchResult{}, fmt.Errorf("find nearest online drivers: %w", err)
 	}
 	if len(candidates) == 0 {
-		if err := service.scheduleRadiusExpansionAfterTimeout(ctx, task); err != nil {
+		if err := service.scheduleRadiusExpansionAfterTimeout(ctx, task, config); err != nil {
 			return DispatchResult{}, err
 		}
 		service.logger.Info("no drivers in dispatch radius", zap.String("order_id", task.OrderID.String()), zap.Int("radius_meters", radiusMeters), zap.Int("attempt", task.Attempt))
-		return DispatchResult{OrderID: task.OrderID, Status: domain.OrderStatusSearching, Attempt: task.Attempt, RadiusMeters: radiusMeters, NextRetryAfter: service.config.OfferTTL}, nil
+		return DispatchResult{OrderID: task.OrderID, Status: domain.OrderStatusSearching, Attempt: task.Attempt, RadiusMeters: radiusMeters, NextRetryAfter: config.OfferTTL}, nil
 	}
 
-	offeredDriverIDs, err := service.offerDrivers(ctx, order, task.Attempt, candidates, radiusMeters)
+	offeredDriverIDs, err := service.offerDrivers(ctx, order, task.Attempt, candidates, radiusMeters, config)
 	if err != nil {
 		return DispatchResult{}, err
 	}
-	if err := service.timeoutQueue.Schedule(ctx, task, time.Now().UTC().Add(service.config.OfferTTL)); err != nil {
+	if err := service.timeoutQueue.Schedule(ctx, task, time.Now().UTC().Add(config.OfferTTL)); err != nil {
 		return DispatchResult{}, fmt.Errorf("schedule offer timeout: %w", err)
 	}
 	if service.dispatchStateStore != nil {
-		if err := service.dispatchStateStore.MarkActiveOffer(ctx, task.OrderID, service.config.OfferTTL); err != nil {
+		if err := service.dispatchStateStore.MarkActiveOffer(ctx, task.OrderID, config.OfferTTL); err != nil {
 			return DispatchResult{}, fmt.Errorf("mark active dispatch offer: %w", err)
 		}
 	}
@@ -156,11 +166,12 @@ func (service *Service) ProcessTask(ctx context.Context, task DispatchTask) (Dis
 		Attempt:          task.Attempt,
 		RadiusMeters:     radiusMeters,
 		OfferedDriverIDs: offeredDriverIDs,
-		NextRetryAfter:   service.config.OfferTTL,
+		NextRetryAfter:   config.OfferTTL,
 	}, nil
 }
 
 func (service *Service) HandleOfferTimeout(ctx context.Context, task DispatchTask) error {
+	config := service.configForTask(task)
 	order, err := service.orderRepository.GetOrderByID(ctx, task.OrderID)
 	if err != nil {
 		return fmt.Errorf("get order for offer timeout: %w", err)
@@ -192,7 +203,7 @@ func (service *Service) HandleOfferTimeout(ctx context.Context, task DispatchTas
 	if service.metrics != nil {
 		service.metrics.IncrementDispatchTimeouts()
 	}
-	return service.scheduleNextAttempt(ctx, task, offeredDriverIDs)
+	return service.scheduleNextAttempt(ctx, task, offeredDriverIDs, config)
 }
 
 func (service *Service) AcceptOffer(ctx context.Context, orderID uuid.UUID, driverID uuid.UUID) error {
@@ -211,7 +222,11 @@ func (service *Service) AcceptOffer(ctx context.Context, orderID uuid.UUID, driv
 		return fmt.Errorf("%w: active offer not found", ErrOfferNotAccepted)
 	}
 
-	lock, acquired, err := service.lockManager.Acquire(ctx, fmt.Sprintf("order:%s:accept_lock", orderID), service.config.AcceptLockTTL)
+	acceptLockTTL := service.config.AcceptLockTTL
+	if offer.AcceptLockTTLSeconds > 0 {
+		acceptLockTTL = time.Duration(offer.AcceptLockTTLSeconds) * time.Second
+	}
+	lock, acquired, err := service.lockManager.Acquire(ctx, fmt.Sprintf("order:%s:accept_lock", orderID), acceptLockTTL)
 	if err != nil {
 		return fmt.Errorf("acquire order accept lock: %w", err)
 	}
@@ -341,11 +356,11 @@ func (service *Service) StopDispatch(ctx context.Context, orderID uuid.UUID) err
 	return nil
 }
 
-func (service *Service) offerDrivers(ctx context.Context, order domain.Order, attempt int, candidates []DriverCandidate, radiusMeters int) ([]uuid.UUID, error) {
+func (service *Service) offerDrivers(ctx context.Context, order domain.Order, attempt int, candidates []DriverCandidate, radiusMeters int, config Config) ([]uuid.UUID, error) {
 	now := time.Now().UTC()
-	expiresAt := now.Add(service.config.OfferTTL)
-	if len(candidates) > service.config.MaxDriversPerOffer {
-		candidates = candidates[:service.config.MaxDriversPerOffer]
+	expiresAt := now.Add(config.OfferTTL)
+	if len(candidates) > config.MaxDriversPerOffer {
+		candidates = candidates[:config.MaxDriversPerOffer]
 	}
 	offeredDriverIDs := make([]uuid.UUID, 0, len(candidates))
 
@@ -360,15 +375,16 @@ func (service *Service) offerDrivers(ctx context.Context, order domain.Order, at
 		}
 
 		offer := OrderOffer{
-			OrderID:        order.ID,
-			DriverID:       candidate.DriverID,
-			Attempt:        attempt,
-			RadiusMeters:   radiusMeters,
-			DistanceMeters: candidate.DistanceMeters,
-			ExpiresAt:      expiresAt,
-			CreatedAt:      now,
+			OrderID:              order.ID,
+			DriverID:             candidate.DriverID,
+			Attempt:              attempt,
+			RadiusMeters:         radiusMeters,
+			DistanceMeters:       candidate.DistanceMeters,
+			ExpiresAt:            expiresAt,
+			CreatedAt:            now,
+			AcceptLockTTLSeconds: int(config.AcceptLockTTL / time.Second),
 		}
-		if err := service.offerStore.SaveOffer(ctx, offer, service.config.OfferTTL); err != nil {
+		if err := service.offerStore.SaveOffer(ctx, offer, config.OfferTTL); err != nil {
 			return nil, fmt.Errorf("save order offer: %w", err)
 		}
 		if err := service.realtimeGateway.SendToDriver(ctx, candidate.DriverID, EventOrderOffer, offerPayload(order, offer)); err != nil {
@@ -386,7 +402,7 @@ func (service *Service) offerDrivers(ctx context.Context, order domain.Order, at
 			"radius_meters":         radiusMeters,
 			"offered_driver_ids":    offeredDriverIDs,
 			"expires_at":            expiresAt,
-			"max_drivers_per_offer": service.config.MaxDriversPerOffer,
+			"max_drivers_per_offer": config.MaxDriversPerOffer,
 		},
 		CreatedAt: now,
 	}); err != nil {
@@ -431,19 +447,20 @@ func (service *Service) cancelRemainingOffers(ctx context.Context, orderID uuid.
 	return nil
 }
 
-func (service *Service) scheduleNextAttempt(ctx context.Context, task DispatchTask, newlyExcludedDriverIDs []uuid.UUID) error {
+func (service *Service) scheduleNextAttempt(ctx context.Context, task DispatchTask, newlyExcludedDriverIDs []uuid.UUID, config Config) error {
 	nextTask := DispatchTask{
 		OrderID:          task.OrderID,
 		Attempt:          task.Attempt + 1,
 		QueuedAt:         time.Now().UTC(),
 		ExcludeDriverIDs: appendUniqueDriverIDs(task.ExcludeDriverIDs, newlyExcludedDriverIDs),
+		Config:           task.Config,
 	}
-	if _, ok := service.radiusForAttempt(nextTask.Attempt); !ok {
+	if _, ok := radiusForAttempt(config, nextTask.Attempt); !ok {
 		order, err := service.orderRepository.GetOrderByID(ctx, task.OrderID)
 		if err != nil {
 			return fmt.Errorf("get order before no drivers found: %w", err)
 		}
-		_, err = service.failNoDriversFound(ctx, order, service.lastRadius())
+		_, err = service.failNoDriversFound(ctx, order, lastRadius(config))
 		return err
 	}
 	if err := service.taskQueue.Publish(ctx, nextTask); err != nil {
@@ -453,23 +470,23 @@ func (service *Service) scheduleNextAttempt(ctx context.Context, task DispatchTa
 	return nil
 }
 
-func (service *Service) scheduleRadiusExpansionAfterTimeout(ctx context.Context, task DispatchTask) error {
-	if _, ok := service.radiusForAttempt(task.Attempt + 1); !ok {
+func (service *Service) scheduleRadiusExpansionAfterTimeout(ctx context.Context, task DispatchTask, config Config) error {
+	if _, ok := radiusForAttempt(config, task.Attempt+1); !ok {
 		order, err := service.orderRepository.GetOrderByID(ctx, task.OrderID)
 		if err != nil {
 			return fmt.Errorf("get order before no drivers found: %w", err)
 		}
-		_, err = service.failNoDriversFound(ctx, order, service.lastRadius())
+		_, err = service.failNoDriversFound(ctx, order, lastRadius(config))
 		return err
 	}
-	if err := service.timeoutQueue.Schedule(ctx, task, time.Now().UTC().Add(service.config.OfferTTL)); err != nil {
+	if err := service.timeoutQueue.Schedule(ctx, task, time.Now().UTC().Add(config.OfferTTL)); err != nil {
 		return fmt.Errorf("schedule radius expansion timeout: %w", err)
 	}
 	service.logger.Info(
 		"radius expansion scheduled",
 		zap.String("order_id", task.OrderID.String()),
 		zap.Int("attempt", task.Attempt+1),
-		zap.Duration("after", service.config.OfferTTL),
+		zap.Duration("after", config.OfferTTL),
 	)
 	return nil
 }
@@ -519,18 +536,25 @@ func (service *Service) failNoDriversFound(ctx context.Context, order domain.Ord
 	return DispatchResult{OrderID: order.ID, Status: domain.OrderStatusFailed, RadiusMeters: radiusMeters, NoDriversAvailable: true}, nil
 }
 
-func (service *Service) radiusForAttempt(attempt int) (int, bool) {
-	if attempt < 0 || attempt >= len(service.config.RadiusAttemptsMeters) {
-		return service.lastRadius(), false
+func (service *Service) configForTask(task DispatchTask) Config {
+	if task.Config == nil {
+		return service.config
 	}
-	return service.config.RadiusAttemptsMeters[attempt], true
+	return normalizeConfig(*task.Config)
 }
 
-func (service *Service) lastRadius() int {
-	if len(service.config.RadiusAttemptsMeters) == 0 {
-		return service.config.MaxRadiusMeters
+func radiusForAttempt(config Config, attempt int) (int, bool) {
+	if attempt < 0 || attempt >= len(config.RadiusAttemptsMeters) {
+		return lastRadius(config), false
 	}
-	return service.config.RadiusAttemptsMeters[len(service.config.RadiusAttemptsMeters)-1]
+	return config.RadiusAttemptsMeters[attempt], true
+}
+
+func lastRadius(config Config) int {
+	if len(config.RadiusAttemptsMeters) == 0 {
+		return config.MaxRadiusMeters
+	}
+	return config.RadiusAttemptsMeters[len(config.RadiusAttemptsMeters)-1]
 }
 
 func offerPayload(order domain.Order, offer OrderOffer) map[string]any {

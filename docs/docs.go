@@ -7484,6 +7484,122 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkDispatchSettingsPatchRequest": {
+            "type": "object",
+            "properties": {
+                "accept_lock_ttl_sec": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 90
+                },
+                "driver_location_max_age_sec": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 120
+                },
+                "initial_radius_meters": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 10000
+                },
+                "max_drivers_per_offer": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 5
+                },
+                "max_radius_meters": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 100000
+                },
+                "offer_ttl_sec": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 60
+                },
+                "radius_attempts_meters": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "integer"
+                    },
+                    "example": [
+                        10000,
+                        30000,
+                        50000,
+                        100000
+                    ]
+                },
+                "radius_step_meters": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 1000
+                },
+                "recovery_interval_sec": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 30
+                },
+                "worker_poll_timeout_sec": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 30
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkDispatchSettingsResponse": {
+            "type": "object",
+            "properties": {
+                "accept_lock_ttl_sec": {
+                    "type": "integer",
+                    "example": 90
+                },
+                "driver_location_max_age_sec": {
+                    "type": "integer",
+                    "example": 120
+                },
+                "initial_radius_meters": {
+                    "type": "integer",
+                    "example": 10000
+                },
+                "max_drivers_per_offer": {
+                    "type": "integer",
+                    "example": 5
+                },
+                "max_radius_meters": {
+                    "type": "integer",
+                    "example": 100000
+                },
+                "offer_ttl_sec": {
+                    "type": "integer",
+                    "example": 60
+                },
+                "radius_attempts_meters": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    },
+                    "example": [
+                        10000,
+                        30000,
+                        50000,
+                        100000
+                    ]
+                },
+                "radius_step_meters": {
+                    "type": "integer",
+                    "example": 1000
+                },
+                "recovery_interval_sec": {
+                    "type": "integer",
+                    "example": 30
+                },
+                "worker_poll_timeout_sec": {
+                    "type": "integer",
+                    "example": 30
+                }
+            }
+        },
         "github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkDocumentResponse": {
             "type": "object",
             "properties": {
@@ -7943,6 +8059,9 @@ const docTemplate = `{
                     "minimum": 0,
                     "example": 100
                 },
+                "dispatch": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkDispatchSettingsPatchRequest"
+                },
                 "display_name": {
                     "type": "string",
                     "example": "North Taxi"
@@ -8044,6 +8163,9 @@ const docTemplate = `{
                 "created_at": {
                     "type": "string",
                     "example": "2026-05-12T12:00:00Z"
+                },
+                "dispatch": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkDispatchSettingsResponse"
                 },
                 "display_name": {
                     "type": "string",

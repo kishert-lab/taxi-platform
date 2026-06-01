@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 
+	dispatchapp "github.com/kishert-lab/taxi-platform/internal/dispatch"
 	"github.com/kishert-lab/taxi-platform/internal/domain"
 	"github.com/kishert-lab/taxi-platform/internal/dto"
 )
@@ -59,6 +60,9 @@ func (service *Service) GetSettings(ctx context.Context, ownerUserID uuid.UUID) 
 }
 
 func (service *Service) UpdateSettings(ctx context.Context, ownerUserID uuid.UUID, request dto.TaxiParkSettingsPatchRequest) (domain.TaxiParkSettings, error) {
+	if err := validateDispatchSettingsPatch(request.Dispatch); err != nil {
+		return domain.TaxiParkSettings{}, err
+	}
 	return service.repository.UpdateSettingsByOwnerUserID(ctx, ownerUserID, request)
 }
 
@@ -79,12 +83,16 @@ func (service *Service) CreateOrder(ctx context.Context, ownerUserID uuid.UUID, 
 	if err != nil {
 		return domain.Order{}, err
 	}
+	settings, err := service.repository.GetSettingsByOwnerUserID(ctx, ownerUserID)
+	if err != nil {
+		return domain.Order{}, err
+	}
 	order, err := service.repository.CreateOrderByOwnerUserID(ctx, ownerUserID, record)
 	if err != nil {
 		return domain.Order{}, err
 	}
 	if service.dispatchController != nil {
-		if err := service.dispatchController.EnqueueOrder(ctx, order.ID); err != nil {
+		if err := service.dispatchController.EnqueueOrderWithConfig(ctx, order.ID, dispatchConfigFromTaxiParkSettings(settings)); err != nil {
 			return domain.Order{}, fmt.Errorf("enqueue taxi park order dispatch: %w", err)
 		}
 	}
@@ -543,6 +551,41 @@ func validateOrderCoordinates(coordinates dto.TaxiParkOrderCoordinatesRequest) e
 
 func isZeroOrderCoordinates(coordinates dto.TaxiParkOrderCoordinatesRequest) bool {
 	return coordinates.Latitude == 0 && coordinates.Longitude == 0
+}
+
+func validateDispatchSettingsPatch(dispatchSettings *dto.TaxiParkDispatchSettingsPatchRequest) error {
+	if dispatchSettings == nil {
+		return nil
+	}
+	if dispatchSettings.InitialRadiusMeters != nil && dispatchSettings.MaxRadiusMeters != nil && *dispatchSettings.MaxRadiusMeters < *dispatchSettings.InitialRadiusMeters {
+		return fmt.Errorf("%w: dispatch.max_radius_meters must be greater than or equal to initial_radius_meters", ErrInvalidDriverCreateFields)
+	}
+	previousRadius := 0
+	for _, radius := range dispatchSettings.RadiusAttemptsMeters {
+		if radius <= 0 {
+			return fmt.Errorf("%w: dispatch.radius_attempts_meters must contain positive values", ErrInvalidDriverCreateFields)
+		}
+		if previousRadius > 0 && radius < previousRadius {
+			return fmt.Errorf("%w: dispatch.radius_attempts_meters must be sorted ascending", ErrInvalidDriverCreateFields)
+		}
+		previousRadius = radius
+	}
+	return nil
+}
+
+func dispatchConfigFromTaxiParkSettings(settings domain.TaxiParkSettings) dispatchapp.Config {
+	return dispatchapp.Config{
+		InitialRadiusMeters:  settings.DispatchInitialRadiusMeters,
+		MaxRadiusMeters:      settings.DispatchMaxRadiusMeters,
+		RadiusStepMeters:     settings.DispatchRadiusStepMeters,
+		RadiusAttemptsMeters: settings.DispatchRadiusAttemptsMeters,
+		MaxDriversPerOffer:   settings.DispatchMaxDriversPerOffer,
+		DriverLocationMaxAge: time.Duration(settings.DispatchDriverLocationMaxAgeSec) * time.Second,
+		OfferTTL:             time.Duration(settings.DispatchOfferTTLSec) * time.Second,
+		AcceptLockTTL:        time.Duration(settings.DispatchAcceptLockTTLSec) * time.Second,
+		WorkerPollTimeout:    time.Duration(settings.DispatchWorkerPollTimeoutSec) * time.Second,
+		RecoveryInterval:     time.Duration(settings.DispatchRecoveryIntervalSec) * time.Second,
+	}
 }
 
 func carRecordFromRequest(request dto.TaxiParkCarRequest) (CarRecord, error) {
