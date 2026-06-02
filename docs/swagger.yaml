@@ -2537,6 +2537,38 @@ definitions:
       pickup_location:
         $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkOrderCoordinatesRequest'
     type: object
+  github_com_kishert-lab_taxi-platform_internal_geocoder_domain.PointSource:
+    enum:
+    - user_confirmed
+    - driver_confirmed
+    - dispatcher_confirmed
+    - admin
+    type: string
+    x-enum-varnames:
+    - PointSourceUserConfirmed
+    - PointSourceDriverConfirmed
+    - PointSourceDispatcherConfirmed
+    - PointSourceAdmin
+  github_com_kishert-lab_taxi-platform_internal_geocoder_domain.Provider:
+    enum:
+    - local
+    - pelias
+    - yandex
+    type: string
+    x-enum-varnames:
+    - ProviderLocal
+    - ProviderPelias
+    - ProviderYandex
+  github_com_kishert-lab_taxi-platform_internal_geocoder_domain.TrustLevel:
+    enum:
+    - confirmed
+    - trusted
+    - rejected
+    type: string
+    x-enum-varnames:
+    - TrustLevelConfirmed
+    - TrustLevelTrusted
+    - TrustLevelRejected
   github_com_kishert-lab_taxi-platform_pkg_response.Error:
     properties:
       error:
@@ -2596,6 +2628,205 @@ definitions:
   github_com_kishert-lab_taxi-platform_pkg_response.Success:
     properties:
       data: {}
+      meta:
+        $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta'
+    type: object
+  internal_geocoder_handler.AdminLocalPointRequest:
+    properties:
+      address:
+        example: Пермь, улица Мира, 8
+        type: string
+      city_id:
+        example: 22222222-2222-2222-2222-222222222222
+        type: string
+      coordinates:
+        $ref: '#/definitions/internal_geocoder_handler.CoordinatesRequest'
+      name:
+        example: Мира 8
+        type: string
+      trust_level:
+        allOf:
+        - $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_geocoder_domain.TrustLevel'
+        example: trusted
+    required:
+    - address
+    - city_id
+    - coordinates
+    - name
+    type: object
+  internal_geocoder_handler.ConfirmPointRequest:
+    properties:
+      address:
+        example: Пермь, улица Мира, 8
+        type: string
+      city_id:
+        example: 22222222-2222-2222-2222-222222222222
+        type: string
+      comment:
+        example: Confirmed by dispatcher
+        type: string
+      confidence:
+        example: 0.9
+        type: number
+      coordinates:
+        $ref: '#/definitions/internal_geocoder_handler.CoordinatesRequest'
+      external_place_id:
+        example: yandex:123
+        type: string
+      external_provider:
+        example: yandex
+        type: string
+      name:
+        example: Мира 8
+        type: string
+      source:
+        allOf:
+        - $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_geocoder_domain.PointSource'
+        example: dispatcher_confirmed
+    required:
+    - address
+    - city_id
+    - coordinates
+    type: object
+  internal_geocoder_handler.CoordinatesRequest:
+    properties:
+      latitude:
+        example: 58.010455
+        type: number
+      longitude:
+        example: 56.229443
+        type: number
+    required:
+    - latitude
+    - longitude
+    type: object
+  internal_geocoder_handler.CoordinatesResponse:
+    properties:
+      latitude:
+        example: 58.010455
+        type: number
+      longitude:
+        example: 56.229443
+        type: number
+    type: object
+  internal_geocoder_handler.LocalPointResponse:
+    properties:
+      address:
+        example: Пермь, улица Мира, 8
+        type: string
+      city_id:
+        example: 22222222-2222-2222-2222-222222222222
+        type: string
+      confidence:
+        example: 1
+        type: number
+      confirmation_count:
+        example: 3
+        type: integer
+      coordinates:
+        $ref: '#/definitions/internal_geocoder_handler.CoordinatesResponse'
+      created_at:
+        example: "2026-06-01T12:00:00Z"
+        type: string
+      external_place_id:
+        example: yandex:123
+        type: string
+      external_provider:
+        example: yandex
+        type: string
+      id:
+        example: 11111111-1111-1111-1111-111111111111
+        type: string
+      name:
+        example: Мира 8
+        type: string
+      normalized_name:
+        example: мира 8
+        type: string
+      reject_count:
+        example: 0
+        type: integer
+      source:
+        allOf:
+        - $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_geocoder_domain.PointSource'
+        example: dispatcher_confirmed
+      trust_level:
+        allOf:
+        - $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_geocoder_domain.TrustLevel'
+        example: trusted
+      updated_at:
+        example: "2026-06-01T12:00:00Z"
+        type: string
+    type: object
+  internal_geocoder_handler.LocalPointSuccessResponse:
+    properties:
+      data:
+        $ref: '#/definitions/internal_geocoder_handler.LocalPointResponse'
+      meta:
+        $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta'
+    type: object
+  internal_geocoder_handler.LocalPointsResponse:
+    properties:
+      points:
+        items:
+          $ref: '#/definitions/internal_geocoder_handler.LocalPointResponse'
+        type: array
+    type: object
+  internal_geocoder_handler.LocalPointsSuccessResponse:
+    properties:
+      data:
+        $ref: '#/definitions/internal_geocoder_handler.LocalPointsResponse'
+      meta:
+        $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta'
+    type: object
+  internal_geocoder_handler.SearchResponse:
+    properties:
+      results:
+        items:
+          $ref: '#/definitions/internal_geocoder_handler.SearchResultResponse'
+        type: array
+    type: object
+  internal_geocoder_handler.SearchResultResponse:
+    properties:
+      address:
+        example: Пермь, улица Мира, 8
+        type: string
+      city_id:
+        example: 22222222-2222-2222-2222-222222222222
+        type: string
+      confidence:
+        example: 0.91
+        type: number
+      coordinates:
+        $ref: '#/definitions/internal_geocoder_handler.CoordinatesResponse'
+      expires_at:
+        example: "2026-06-30T12:00:00Z"
+        type: string
+      external_place_id:
+        example: yandex:123
+        type: string
+      id:
+        example: pelias:address:123
+        type: string
+      local_point_id:
+        example: 11111111-1111-1111-1111-111111111111
+        type: string
+      name:
+        example: Мира 8
+        type: string
+      provider:
+        allOf:
+        - $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_geocoder_domain.Provider'
+        example: pelias
+      trust_level:
+        allOf:
+        - $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_geocoder_domain.TrustLevel'
+        example: trusted
+    type: object
+  internal_geocoder_handler.SearchSuccessResponse:
+    properties:
+      data:
+        $ref: '#/definitions/internal_geocoder_handler.SearchResponse'
       meta:
         $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta'
     type: object
@@ -2889,6 +3120,117 @@ paths:
       summary: Get admin finance overview
       tags:
       - finance-admin
+  /admin/geocoder/export/pelias-csv:
+    get:
+      description: Exports only platform-owned trusted local_geo_points; temporary
+        Yandex cache is never exported.
+      produces:
+      - text/csv
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+      summary: Export trusted local points as Pelias CSV
+      tags:
+      - admin-geocoder
+  /admin/geocoder/local-points:
+    get:
+      parameters:
+      - description: City UUID
+        in: query
+        name: city_id
+        type: string
+      - description: confirmed|trusted|rejected
+        in: query
+        name: trust_level
+        type: string
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_geocoder_handler.LocalPointsSuccessResponse'
+      summary: List local geocoder points
+      tags:
+      - admin-geocoder
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Local point
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_geocoder_handler.AdminLocalPointRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_geocoder_handler.LocalPointSuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+      summary: Create admin local geocoder point
+      tags:
+      - admin-geocoder
+  /admin/geocoder/local-points/{id}/approve:
+    post:
+      parameters:
+      - description: Local point UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_geocoder_handler.LocalPointSuccessResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+      summary: Approve local geocoder point
+      tags:
+      - admin-geocoder
+  /admin/geocoder/local-points/{id}/reject:
+    post:
+      parameters:
+      - description: Local point UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_geocoder_handler.LocalPointSuccessResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+      summary: Reject local geocoder point
+      tags:
+      - admin-geocoder
   /admin/legal/documents:
     get:
       parameters:
@@ -4130,6 +4472,81 @@ paths:
       summary: Get driver financial transactions
       tags:
       - finance-driver
+  /geocoder/points/confirm:
+    post:
+      consumes:
+      - application/json
+      description: Persists a user, driver, or dispatcher confirmed point as platform-owned
+        local data.
+      parameters:
+      - description: Confirmation request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_geocoder_handler.ConfirmPointRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_geocoder_handler.LocalPointSuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+      summary: Confirm local geocoder point
+      tags:
+      - geocoder
+  /geocoder/search:
+    get:
+      description: Searches trusted local points first, then local Pelias, then temporary
+        Yandex fallback cache/Yandex.
+      parameters:
+      - description: Address query
+        in: query
+        name: q
+        required: true
+        type: string
+      - description: City UUID
+        in: query
+        name: city_id
+        type: string
+      - description: Focus latitude
+        in: query
+        name: lat
+        type: number
+      - description: Focus longitude
+        in: query
+        name: lon
+        type: number
+      - description: Result limit
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_geocoder_handler.SearchSuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error'
+      summary: Search address with hybrid geocoder
+      tags:
+      - geocoder
   /health:
     get:
       description: Returns public API health status.

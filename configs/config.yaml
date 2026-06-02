@@ -1,4 +1,4 @@
-app:
+﻿app:
   name: taxi-platform
   env: local
   version: 0.1.0
@@ -93,3 +93,11 @@ dispatch:
   accept_lock_ttl: 90s
   worker_poll_timeout: 30s
   recovery_interval: 30s
+
+geocoder:
+  pelias_url: http://127.0.0.1:4000
+  yandex_api_key: ""
+  yandex_enabled: false
+  external_cache_ttl_days: 30
+  pelias_confidence_threshold: 0.75
+

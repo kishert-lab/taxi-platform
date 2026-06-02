@@ -1,0 +1,32 @@
+{
+  "esclient": {
+    "hosts": [
+      {
+        "host": "pelias-elasticsearch",
+        "port": 9200
+      }
+    ]
+  },
+  "api": {
+    "indexName": "pelias",
+    "services": {
+      "libpostal": {
+        "url": "http://pelias-libpostal:4400",
+        "timeout": 5000,
+        "retries": 2
+      }
+    },
+    "accessLog": "common",
+    "targets": {
+      "auto_discover": true,
+      "auto_discover_required": false
+    },
+    "defaultParameters": {
+      "focus.point.lat": 58.010455,
+      "focus.point.lon": 56.229443
+    }
+  },
+  "logger": {
+    "level": "info"
+  }
+}

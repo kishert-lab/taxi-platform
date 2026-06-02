@@ -34,6 +34,19 @@ func (gateway *RealtimeGateway) SendToPassenger(ctx context.Context, passengerID
 	return gateway.publishToUser(ctx, passengerID, passengerRealtimeEvent(eventName), payload)
 }
 
+func (gateway *RealtimeGateway) SendDriverPresenceToTaxiPark(ctx context.Context, driverID uuid.UUID, payload any) error {
+	recipientUserIDs, err := gateway.taxiParkRealtimeRecipientUserIDs(ctx, driverID)
+	if err != nil {
+		return err
+	}
+	for _, userID := range recipientUserIDs {
+		if err := gateway.publishToUser(ctx, userID, "driver.status_changed", payload); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (gateway *RealtimeGateway) SendDriverLocationToTaxiPark(ctx context.Context, driverID uuid.UUID, payload any) error {
 	recipientUserIDs, err := gateway.taxiParkRealtimeRecipientUserIDs(ctx, driverID)
 	if err != nil {

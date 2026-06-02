@@ -54,6 +54,7 @@ type DispatchController interface {
 }
 
 type RealtimeGateway interface {
+	SendDriverPresenceToTaxiPark(ctx context.Context, driverID uuid.UUID, payload any) error
 	SendDriverLocationToTaxiPark(ctx context.Context, driverID uuid.UUID, payload any) error
 	SendToDriver(ctx context.Context, driverID uuid.UUID, eventName string, payload any) error
 	SendToPassenger(ctx context.Context, passengerID uuid.UUID, eventName string, payload any) error
@@ -218,8 +219,12 @@ func (service *MobileService) MarkDriverOnline(ctx context.Context, userID uuid.
 	if err != nil {
 		return dto.DriverProfileResponse{}, err
 	}
+	profile.Status = domain.DriverStatusOnline
 	if err := service.presenceStore.MarkOnline(ctx, profile.CityID, profile.DriverID, service.presenceTTL); err != nil {
 		return dto.DriverProfileResponse{}, fmt.Errorf("mark driver online presence: %w", err)
+	}
+	if err := service.publishPresenceChanged(ctx, profile); err != nil {
+		return dto.DriverProfileResponse{}, err
 	}
 	service.logger.Info("driver marked online", zap.String("driver_id", profile.DriverID.String()), zap.String("user_id", userID.String()))
 	return profileResponse(profile), nil
@@ -230,8 +235,12 @@ func (service *MobileService) MarkDriverOffline(ctx context.Context, userID uuid
 	if err != nil {
 		return dto.DriverProfileResponse{}, err
 	}
+	profile.Status = domain.DriverStatusOffline
 	if err := service.presenceStore.MarkOffline(ctx, profile.CityID, profile.DriverID); err != nil {
 		return dto.DriverProfileResponse{}, fmt.Errorf("mark driver offline presence: %w", err)
+	}
+	if err := service.publishPresenceChanged(ctx, profile); err != nil {
+		return dto.DriverProfileResponse{}, err
 	}
 	service.logger.Info("driver marked offline", zap.String("driver_id", profile.DriverID.String()), zap.String("user_id", userID.String()))
 	return profileResponse(profile), nil
@@ -463,6 +472,35 @@ func locationUpdate(profile Profile, request dto.DriverLocationRequest) geoservi
 		AccuracyMeters: request.AccuracyMeters,
 		RecordedAt:     time.Now().UTC(),
 	}
+}
+
+func (service *MobileService) publishPresenceChanged(ctx context.Context, profile Profile) error {
+	if service.realtimeGateway == nil {
+		return nil
+	}
+	payload := map[string]any{
+		"driver_id":    profile.DriverID,
+		"user_id":      profile.UserID,
+		"city_id":      profile.CityID,
+		"taxi_park_id": profile.TaxiParkID,
+		"name":         strings.TrimSpace(strings.TrimSpace(profile.FirstName) + " " + strings.TrimSpace(profile.LastName)),
+		"phone":        profile.Phone,
+		"status":       profile.Status,
+		"changed_at":   time.Now().UTC(),
+	}
+	if profile.Car != nil {
+		payload["car"] = map[string]any{
+			"id":           profile.Car.ID,
+			"brand":        profile.Car.Brand,
+			"model":        profile.Car.Model,
+			"plate_number": profile.Car.PlateNumber,
+			"car_class":    profile.Car.CarClass,
+		}
+	}
+	if err := service.realtimeGateway.SendDriverPresenceToTaxiPark(ctx, profile.DriverID, payload); err != nil {
+		return fmt.Errorf("publish taxi park driver presence websocket event: %w", err)
+	}
+	return nil
 }
 
 func (service *MobileService) publishLocationUpdated(ctx context.Context, profile Profile, update geoservice.DriverLocationUpdate) error {

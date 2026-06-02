@@ -61,6 +61,23 @@ func TestSendDispatcherDriverMessagePublishesToDriverAndTaxiPark(t *testing.T) {
 	}
 }
 
+func TestSendPassengerSupportMessagePublishesToPassenger(t *testing.T) {
+	passengerID := uuid.New()
+	gateway := &fakeChatRealtimeGateway{}
+	service := NewService(&fakeChatRepository{}, gateway, nil)
+
+	message, err := service.SendPassengerSupportMessage(context.Background(), passengerID, testChatRequest("support hello"))
+	if err != nil {
+		t.Fatalf("send support message: %v", err)
+	}
+	if message.Body != "support hello" {
+		t.Fatalf("unexpected support message body: %q", message.Body)
+	}
+	if gateway.passengerEvents != 1 {
+		t.Fatalf("expected passenger websocket event, got %d", gateway.passengerEvents)
+	}
+}
+
 func TestSendDriverPassengerMessageRejectsUnrelatedPassenger(t *testing.T) {
 	orderID := uuid.New()
 	driverID := uuid.New()

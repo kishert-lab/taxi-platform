@@ -22,6 +22,7 @@ type Config struct {
 	Logger   LoggerConfig   `mapstructure:"logger"`
 	Security SecurityConfig `mapstructure:"security"`
 	Dispatch DispatchConfig `mapstructure:"dispatch"`
+	Geocoder GeocoderConfig `mapstructure:"geocoder"`
 }
 
 type AppConfig struct {
@@ -143,6 +144,18 @@ type DispatchConfig struct {
 	RecoveryInterval     time.Duration `mapstructure:"recovery_interval"`
 }
 
+type GeocoderConfig struct {
+	PeliasURL                 string  `mapstructure:"pelias_url"`
+	YandexAPIKey              string  `mapstructure:"yandex_api_key"`
+	YandexEnabled             bool    `mapstructure:"yandex_enabled"`
+	DaDataAPIKey              string  `mapstructure:"dadata_api_key"`
+	DaDataSecretKey           string  `mapstructure:"dadata_secret_key"`
+	DaDataEnabled             bool    `mapstructure:"dadata_enabled"`
+	DaDataURL                 string  `mapstructure:"dadata_url"`
+	ExternalCacheTTLDays      int     `mapstructure:"external_cache_ttl_days"`
+	PeliasConfidenceThreshold float64 `mapstructure:"pelias_confidence_threshold"`
+}
+
 func Load() (*Config, error) {
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
@@ -189,6 +202,19 @@ func bindEnvironmentAliases() error {
 		"jwt.refresh_secret":             {"JWT_REFRESH_SECRET"},
 		"dispatch.initial_radius_meters": {"DISPATCH_INITIAL_RADIUS"},
 		"dispatch.max_radius_meters":     {"DISPATCH_MAX_RADIUS"},
+		"geocoder.pelias_url":            {"GEOCODER_PELIAS_URL"},
+		"geocoder.yandex_api_key":        {"GEOCODER_YANDEX_API_KEY"},
+		"geocoder.yandex_enabled":        {"GEOCODER_YANDEX_ENABLED"},
+		"geocoder.dadata_api_key":        {"GEOCODER_DADATA_API_KEY", "DADATA_API_KEY"},
+		"geocoder.dadata_secret_key":     {"GEOCODER_DADATA_SECRET_KEY", "DADATA_SECRET_KEY"},
+		"geocoder.dadata_enabled":        {"GEOCODER_DADATA_ENABLED"},
+		"geocoder.dadata_url":            {"GEOCODER_DADATA_URL"},
+		"geocoder.external_cache_ttl_days": {
+			"GEOCODER_EXTERNAL_CACHE_TTL_DAYS",
+		},
+		"geocoder.pelias_confidence_threshold": {
+			"GEOCODER_PELIAS_CONFIDENCE_THRESHOLD",
+		},
 	}
 
 	for key, envNames := range aliases {
@@ -252,12 +278,7 @@ func setDefaults() {
 	viper.SetDefault("server.write_timeout", "15s")
 	viper.SetDefault("server.idle_timeout", "60s")
 	viper.SetDefault("server.shutdown_timeout", "15s")
-	viper.SetDefault("http.cors.allowed_origins", []string{
-		"http://localhost:3000",
-		"http://localhost:5173",
-		"http://localhost:5174",
-		"http://127.0.0.1:5174",
-	})
+	viper.SetDefault("http.cors.allowed_origins", []string{"http://localhost:3000", "http://localhost:5173", "http://192.168.0.50:5173"})
 	viper.SetDefault("database.host", "localhost")
 	viper.SetDefault("database.port", 5432)
 	viper.SetDefault("database.user", "taxi")
@@ -305,4 +326,13 @@ func setDefaults() {
 	viper.SetDefault("dispatch.accept_lock_ttl", "30s")
 	viper.SetDefault("dispatch.worker_poll_timeout", "5s")
 	viper.SetDefault("dispatch.recovery_interval", "30s")
+	viper.SetDefault("geocoder.pelias_url", "http://pelias:4000")
+	viper.SetDefault("geocoder.yandex_api_key", "")
+	viper.SetDefault("geocoder.yandex_enabled", false)
+	viper.SetDefault("geocoder.dadata_api_key", "")
+	viper.SetDefault("geocoder.dadata_secret_key", "")
+	viper.SetDefault("geocoder.dadata_enabled", false)
+	viper.SetDefault("geocoder.dadata_url", "https://cleaner.dadata.ru/api/v1/clean/address")
+	viper.SetDefault("geocoder.external_cache_ttl_days", 30)
+	viper.SetDefault("geocoder.pelias_confidence_threshold", 0.75)
 }

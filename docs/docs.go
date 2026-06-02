@@ -80,6 +80,176 @@ const docTemplate = `{
                 }
             }
         },
+        "/admin/geocoder/export/pelias-csv": {
+            "get": {
+                "description": "Exports only platform-owned trusted local_geo_points; temporary Yandex cache is never exported.",
+                "produces": [
+                    "text/csv"
+                ],
+                "tags": [
+                    "admin-geocoder"
+                ],
+                "summary": "Export trusted local points as Pelias CSV",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/geocoder/local-points": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-geocoder"
+                ],
+                "summary": "List local geocoder points",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "City UUID",
+                        "name": "city_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "confirmed|trusted|rejected",
+                        "name": "trust_level",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Limit",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_geocoder_handler.LocalPointsSuccessResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-geocoder"
+                ],
+                "summary": "Create admin local geocoder point",
+                "parameters": [
+                    {
+                        "description": "Local point",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_geocoder_handler.AdminLocalPointRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_geocoder_handler.LocalPointSuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/geocoder/local-points/{id}/approve": {
+            "post": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-geocoder"
+                ],
+                "summary": "Approve local geocoder point",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Local point UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_geocoder_handler.LocalPointSuccessResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/geocoder/local-points/{id}/reject": {
+            "post": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-geocoder"
+                ],
+                "summary": "Reject local geocoder point",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Local point UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_geocoder_handler.LocalPointSuccessResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/admin/legal/documents": {
             "get": {
                 "security": [
@@ -2013,6 +2183,117 @@ const docTemplate = `{
                     },
                     "403": {
                         "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/geocoder/points/confirm": {
+            "post": {
+                "description": "Persists a user, driver, or dispatcher confirmed point as platform-owned local data.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "geocoder"
+                ],
+                "summary": "Confirm local geocoder point",
+                "parameters": [
+                    {
+                        "description": "Confirmation request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_geocoder_handler.ConfirmPointRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_geocoder_handler.LocalPointSuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/geocoder/search": {
+            "get": {
+                "description": "Searches trusted local points first, then local Pelias, then temporary Yandex fallback cache/Yandex.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "geocoder"
+                ],
+                "summary": "Search address with hybrid geocoder",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Address query",
+                        "name": "q",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "City UUID",
+                        "name": "city_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "Focus latitude",
+                        "name": "lat",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "Focus longitude",
+                        "name": "lon",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Result limit",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_geocoder_handler.SearchSuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
                         }
@@ -8523,6 +8804,47 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_kishert-lab_taxi-platform_internal_geocoder_domain.PointSource": {
+            "type": "string",
+            "enum": [
+                "user_confirmed",
+                "driver_confirmed",
+                "dispatcher_confirmed",
+                "admin"
+            ],
+            "x-enum-varnames": [
+                "PointSourceUserConfirmed",
+                "PointSourceDriverConfirmed",
+                "PointSourceDispatcherConfirmed",
+                "PointSourceAdmin"
+            ]
+        },
+        "github_com_kishert-lab_taxi-platform_internal_geocoder_domain.Provider": {
+            "type": "string",
+            "enum": [
+                "local",
+                "pelias",
+                "yandex"
+            ],
+            "x-enum-varnames": [
+                "ProviderLocal",
+                "ProviderPelias",
+                "ProviderYandex"
+            ]
+        },
+        "github_com_kishert-lab_taxi-platform_internal_geocoder_domain.TrustLevel": {
+            "type": "string",
+            "enum": [
+                "confirmed",
+                "trusted",
+                "rejected"
+            ],
+            "x-enum-varnames": [
+                "TrustLevelConfirmed",
+                "TrustLevelTrusted",
+                "TrustLevelRejected"
+            ]
+        },
         "github_com_kishert-lab_taxi-platform_pkg_response.Error": {
             "type": "object",
             "properties": {
@@ -8601,6 +8923,302 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "data": {},
+                "meta": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta"
+                }
+            }
+        },
+        "internal_geocoder_handler.AdminLocalPointRequest": {
+            "type": "object",
+            "required": [
+                "address",
+                "city_id",
+                "coordinates",
+                "name"
+            ],
+            "properties": {
+                "address": {
+                    "type": "string",
+                    "example": "Пермь, улица Мира, 8"
+                },
+                "city_id": {
+                    "type": "string",
+                    "example": "22222222-2222-2222-2222-222222222222"
+                },
+                "coordinates": {
+                    "$ref": "#/definitions/internal_geocoder_handler.CoordinatesRequest"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Мира 8"
+                },
+                "trust_level": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_geocoder_domain.TrustLevel"
+                        }
+                    ],
+                    "example": "trusted"
+                }
+            }
+        },
+        "internal_geocoder_handler.ConfirmPointRequest": {
+            "type": "object",
+            "required": [
+                "address",
+                "city_id",
+                "coordinates"
+            ],
+            "properties": {
+                "address": {
+                    "type": "string",
+                    "example": "Пермь, улица Мира, 8"
+                },
+                "city_id": {
+                    "type": "string",
+                    "example": "22222222-2222-2222-2222-222222222222"
+                },
+                "comment": {
+                    "type": "string",
+                    "example": "Confirmed by dispatcher"
+                },
+                "confidence": {
+                    "type": "number",
+                    "example": 0.9
+                },
+                "coordinates": {
+                    "$ref": "#/definitions/internal_geocoder_handler.CoordinatesRequest"
+                },
+                "external_place_id": {
+                    "type": "string",
+                    "example": "yandex:123"
+                },
+                "external_provider": {
+                    "type": "string",
+                    "example": "yandex"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Мира 8"
+                },
+                "source": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_geocoder_domain.PointSource"
+                        }
+                    ],
+                    "example": "dispatcher_confirmed"
+                }
+            }
+        },
+        "internal_geocoder_handler.CoordinatesRequest": {
+            "type": "object",
+            "required": [
+                "latitude",
+                "longitude"
+            ],
+            "properties": {
+                "latitude": {
+                    "type": "number",
+                    "example": 58.010455
+                },
+                "longitude": {
+                    "type": "number",
+                    "example": 56.229443
+                }
+            }
+        },
+        "internal_geocoder_handler.CoordinatesResponse": {
+            "type": "object",
+            "properties": {
+                "latitude": {
+                    "type": "number",
+                    "example": 58.010455
+                },
+                "longitude": {
+                    "type": "number",
+                    "example": 56.229443
+                }
+            }
+        },
+        "internal_geocoder_handler.LocalPointResponse": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string",
+                    "example": "Пермь, улица Мира, 8"
+                },
+                "city_id": {
+                    "type": "string",
+                    "example": "22222222-2222-2222-2222-222222222222"
+                },
+                "confidence": {
+                    "type": "number",
+                    "example": 1
+                },
+                "confirmation_count": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "coordinates": {
+                    "$ref": "#/definitions/internal_geocoder_handler.CoordinatesResponse"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-06-01T12:00:00Z"
+                },
+                "external_place_id": {
+                    "type": "string",
+                    "example": "yandex:123"
+                },
+                "external_provider": {
+                    "type": "string",
+                    "example": "yandex"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "11111111-1111-1111-1111-111111111111"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Мира 8"
+                },
+                "normalized_name": {
+                    "type": "string",
+                    "example": "мира 8"
+                },
+                "reject_count": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "source": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_geocoder_domain.PointSource"
+                        }
+                    ],
+                    "example": "dispatcher_confirmed"
+                },
+                "trust_level": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_geocoder_domain.TrustLevel"
+                        }
+                    ],
+                    "example": "trusted"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-06-01T12:00:00Z"
+                }
+            }
+        },
+        "internal_geocoder_handler.LocalPointSuccessResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/internal_geocoder_handler.LocalPointResponse"
+                },
+                "meta": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta"
+                }
+            }
+        },
+        "internal_geocoder_handler.LocalPointsResponse": {
+            "type": "object",
+            "properties": {
+                "points": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_geocoder_handler.LocalPointResponse"
+                    }
+                }
+            }
+        },
+        "internal_geocoder_handler.LocalPointsSuccessResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/internal_geocoder_handler.LocalPointsResponse"
+                },
+                "meta": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta"
+                }
+            }
+        },
+        "internal_geocoder_handler.SearchResponse": {
+            "type": "object",
+            "properties": {
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_geocoder_handler.SearchResultResponse"
+                    }
+                }
+            }
+        },
+        "internal_geocoder_handler.SearchResultResponse": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string",
+                    "example": "Пермь, улица Мира, 8"
+                },
+                "city_id": {
+                    "type": "string",
+                    "example": "22222222-2222-2222-2222-222222222222"
+                },
+                "confidence": {
+                    "type": "number",
+                    "example": 0.91
+                },
+                "coordinates": {
+                    "$ref": "#/definitions/internal_geocoder_handler.CoordinatesResponse"
+                },
+                "expires_at": {
+                    "type": "string",
+                    "example": "2026-06-30T12:00:00Z"
+                },
+                "external_place_id": {
+                    "type": "string",
+                    "example": "yandex:123"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "pelias:address:123"
+                },
+                "local_point_id": {
+                    "type": "string",
+                    "example": "11111111-1111-1111-1111-111111111111"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Мира 8"
+                },
+                "provider": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_geocoder_domain.Provider"
+                        }
+                    ],
+                    "example": "pelias"
+                },
+                "trust_level": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_geocoder_domain.TrustLevel"
+                        }
+                    ],
+                    "example": "trusted"
+                }
+            }
+        },
+        "internal_geocoder_handler.SearchSuccessResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/internal_geocoder_handler.SearchResponse"
+                },
                 "meta": {
                     "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta"
                 }

@@ -96,7 +96,13 @@ func (service *Service) SendPassengerSupportMessage(ctx context.Context, passeng
 	if err != nil {
 		return dto.ChatMessageResponse{}, err
 	}
-	return chatMessageResponse(thread, message), nil
+	response := chatMessageResponse(thread, message)
+	if service.realtimeGateway != nil {
+		if err := service.realtimeGateway.SendToPassenger(ctx, passengerID, EventChatMessage, map[string]any{"message": response}); err != nil {
+			return dto.ChatMessageResponse{}, fmt.Errorf("publish passenger support chat message: %w", err)
+		}
+	}
+	return response, nil
 }
 
 func (service *Service) authorizedOrderThread(ctx context.Context, actorUserID uuid.UUID, actorRole domain.UserRole, orderID uuid.UUID, chatType domain.ChatType) (domain.ChatThread, error) {

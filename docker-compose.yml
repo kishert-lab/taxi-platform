@@ -1,4 +1,4 @@
-services:
+﻿services:
   postgres:
     image: postgis/postgis:16-3.4
     container_name: taxi_postgres
@@ -36,6 +36,65 @@ services:
       retries: 5
     networks:
       - network-taxi-api 
+  pelias-elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.23
+    container_name: taxi_pelias_elasticsearch
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+      bootstrap.memory_lock: "true"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    ports:
+      - "9200:9200"
+    volumes:
+      - taxi_pelias_es_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200/_cluster/health >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+    networks:
+      - network-taxi-api
+
+  pelias-libpostal:
+    image: pelias/libpostal-service:latest
+    container_name: taxi_pelias_libpostal
+    restart: unless-stopped
+    ports:
+      - "4400:4400"
+    networks:
+      - network-taxi-api
+
+  pelias:
+    image: pelias/api:v7.8.0
+    container_name: taxi_pelias
+    restart: unless-stopped
+    depends_on:
+      pelias-elasticsearch:
+        condition: service_healthy
+      pelias-libpostal:
+        condition: service_started
+    environment:
+      PELIAS_CONFIG: /code/pelias.json
+      PORT: 4000
+      HOST: 0.0.0.0
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./configs/pelias.json:/code/pelias.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4000/v1 >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+    networks:
+      - network-taxi-api
+
   migrate:
     image: migrate/migrate:v4.18.1
     container_name: taxi_migrate
@@ -82,17 +141,22 @@ services:
       TAXI_SERVER_HOST: 0.0.0.0
       TAXI_SERVER_PORT: 8080
       TAXI_SERVER_MODE: release
-      TAXI_DATABASE_HOST: postgres
+      TAXI_DATABASE_HOST: 172.22.0.5
       TAXI_DATABASE_PORT: 5432
       TAXI_DATABASE_USER: taxi
       TAXI_DATABASE_PASSWORD: taxi_password
       TAXI_DATABASE_NAME: taxi
       TAXI_DATABASE_SSL_MODE: disable
-      TAXI_REDIS_HOST: redis
+      TAXI_REDIS_HOST: 172.22.0.3
       TAXI_REDIS_PORT: 6379
       TAXI_JWT_ACCESS_SECRET: docker_access_secret_change_in_production_32_bytes
       TAXI_JWT_REFRESH_SECRET: docker_refresh_secret_change_in_production_32_bytes
-      TAXI_LOGGER_LEVEL: info
+      TAXI_LOGGER_LEVEL: debug
+      TAXI_GEOCODER_PELIAS_URL: ${GEOCODER_PELIAS_URL:-http://172.22.0.7:4000}
+      TAXI_GEOCODER_YANDEX_API_KEY: ${GEOCODER_YANDEX_API_KEY:-}
+      TAXI_GEOCODER_YANDEX_ENABLED: true
+      TAXI_GEOCODER_EXTERNAL_CACHE_TTL_DAYS: 30
+      TAXI_GEOCODER_PELIAS_CONFIDENCE_THRESHOLD: 0.75
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/health/ready"]
       interval: 10s
@@ -103,8 +167,13 @@ services:
 volumes:
   taxi_pg_data:
   taxi_redis_data:
+  taxi_pelias_es_data:
 
 networks:
   network-taxi-api:
     driver: bridge
     
+
+
+
+
