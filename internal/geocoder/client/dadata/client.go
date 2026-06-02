@@ -1,4 +1,4 @@
-// Package dadata contains the DaData clean address geocoder client.
+// Package dadata contains DaData address geocoder clients.
 package dadata
 
 import (
@@ -14,43 +14,70 @@ import (
 	geodomain "github.com/kishert-lab/taxi-platform/internal/geocoder/domain"
 )
 
-const defaultEndpoint = "https://cleaner.dadata.ru/api/v1/clean/address"
+const (
+	defaultCleanEndpoint   = "https://cleaner.dadata.ru/api/v1/clean/address"
+	defaultSuggestEndpoint = "https://suggestions.dadata.ru/suggestions/api/4_1/rs/suggest/address"
+)
 
 type Client struct {
 	apiKey     string
 	secretKey  string
-	endpoint   string
+	cleanURL   string
+	suggestURL string
 	httpClient *http.Client
 }
 
-func New(apiKey string, secretKey string, endpoint string, httpClient *http.Client) *Client {
+func New(apiKey string, secretKey string, cleanURL string, suggestURL string, httpClient *http.Client) *Client {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 4 * time.Second}
 	}
-	if strings.TrimSpace(endpoint) == "" {
-		endpoint = defaultEndpoint
+	if strings.TrimSpace(cleanURL) == "" {
+		cleanURL = defaultCleanEndpoint
+	}
+	if strings.TrimSpace(suggestURL) == "" {
+		suggestURL = defaultSuggestEndpoint
 	}
 	return &Client{
 		apiKey:     strings.TrimSpace(apiKey),
 		secretKey:  strings.TrimSpace(secretKey),
-		endpoint:   strings.TrimSpace(endpoint),
+		cleanURL:   strings.TrimSpace(cleanURL),
+		suggestURL: strings.TrimSpace(suggestURL),
 		httpClient: httpClient,
 	}
 }
 
 func (client *Client) Search(ctx context.Context, request geodomain.SearchRequest) ([]geodomain.SearchResult, error) {
-	if client.apiKey == "" || client.secretKey == "" {
+	if client.apiKey == "" {
 		return nil, nil
 	}
 	query := strings.TrimSpace(request.Query)
 	if query == "" {
 		return nil, geodomain.ErrInvalidQuery
 	}
+
+	cleanResults, cleanErr := client.clean(ctx, query)
+	if cleanErr == nil && len(cleanResults) > 0 {
+		return cleanResults, nil
+	}
+	suggestResults, suggestErr := client.suggest(ctx, request, query)
+	if suggestErr == nil {
+		return suggestResults, nil
+	}
+	if cleanErr != nil {
+		return nil, fmt.Errorf("dadata clean failed: %w; suggest failed: %w", cleanErr, suggestErr)
+	}
+	return nil, suggestErr
+}
+
+func (client *Client) clean(ctx context.Context, query string) ([]geodomain.SearchResult, error) {
+	if client.secretKey == "" {
+		return nil, nil
+	}
 	body, err := json.Marshal([]string{query})
 	if err != nil {
 		return nil, fmt.Errorf("encode dadata request: %w", err)
 	}
-	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, client.endpoint, bytes.NewReader(body))
+	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, client.cleanURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("create dadata request: %w", err)
 	}
@@ -74,36 +101,82 @@ func (client *Client) Search(ctx context.Context, request geodomain.SearchReques
 	}
 	results := make([]geodomain.SearchResult, 0, len(payload))
 	for _, address := range payload {
-		if !address.hasCoordinates() {
+		if !hasCoordinates(address.GeoLat, address.GeoLon) {
 			continue
 		}
-		latitude, err := strconv.ParseFloat(address.GeoLat, 64)
-		if err != nil {
-			continue
-		}
-		longitude, err := strconv.ParseFloat(address.GeoLon, 64)
-		if err != nil {
-			continue
-		}
-		coordinates, err := geodomain.NewCoordinates(latitude, longitude)
-		if err != nil {
+		coordinates, ok := parseCoordinates(address.GeoLat, address.GeoLon)
+		if !ok {
 			continue
 		}
 		results = append(results, geodomain.SearchResult{
 			ID:              "dadata:" + query,
 			Provider:        geodomain.ProviderDaData,
-			Name:            firstNonBlank(address.StreetWithHouse(), address.Result, query),
+			Name:            firstNonBlank(streetWithHouse(address.Street, address.House), address.Result, query),
 			Address:         firstNonBlank(address.Result, query),
 			Coordinates:     coordinates,
-			Confidence:      dadataConfidence(address.QCGeo),
+			Confidence:      dadataCleanConfidence(address.QCGeo),
 			ExternalPlaceID: firstNonBlank(address.FIASID, address.HouseFIASID),
 		})
 	}
 	return results, nil
 }
 
+func (client *Client) suggest(ctx context.Context, request geodomain.SearchRequest, query string) ([]geodomain.SearchResult, error) {
+	count := request.Limit
+	if count <= 0 {
+		count = 10
+	}
+	body, err := json.Marshal(map[string]any{
+		"query": query,
+		"count": count,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("encode dadata suggest request: %w", err)
+	}
+	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, client.suggestURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("create dadata suggest request: %w", err)
+	}
+	httpRequest.Header.Set("Content-Type", "application/json")
+	httpRequest.Header.Set("Accept", "application/json")
+	httpRequest.Header.Set("Authorization", "Token "+client.apiKey)
+
+	response, err := client.httpClient.Do(httpRequest)
+	if err != nil {
+		return nil, fmt.Errorf("execute dadata suggest request: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return nil, fmt.Errorf("dadata suggest returned status %d", response.StatusCode)
+	}
+
+	var payload suggestResponse
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		return nil, fmt.Errorf("decode dadata suggest response: %w", err)
+	}
+	results := make([]geodomain.SearchResult, 0, len(payload.Suggestions))
+	for _, suggestion := range payload.Suggestions {
+		if !hasCoordinates(suggestion.Data.GeoLat, suggestion.Data.GeoLon) {
+			continue
+		}
+		coordinates, ok := parseCoordinates(suggestion.Data.GeoLat, suggestion.Data.GeoLon)
+		if !ok {
+			continue
+		}
+		results = append(results, geodomain.SearchResult{
+			ID:              "dadata:" + firstNonBlank(suggestion.Data.FIASID, suggestion.Value, query),
+			Provider:        geodomain.ProviderDaData,
+			Name:            firstNonBlank(streetWithHouse(suggestion.Data.Street, suggestion.Data.House), suggestion.Value, query),
+			Address:         firstNonBlank(suggestion.UnrestrictedValue, suggestion.Value, query),
+			Coordinates:     coordinates,
+			Confidence:      dadataSuggestConfidence(suggestion.Data),
+			ExternalPlaceID: firstNonBlank(suggestion.Data.FIASID, suggestion.Data.HouseFIASID),
+		})
+	}
+	return results, nil
+}
+
 type cleanAddressResponse struct {
-	Source      string `json:"source"`
 	Result      string `json:"result"`
 	Street      string `json:"street"`
 	House       string `json:"house"`
@@ -114,13 +187,45 @@ type cleanAddressResponse struct {
 	HouseFIASID string `json:"house_fias_id"`
 }
 
-func (response cleanAddressResponse) hasCoordinates() bool {
-	return strings.TrimSpace(response.GeoLat) != "" && strings.TrimSpace(response.GeoLon) != ""
+type suggestResponse struct {
+	Suggestions []suggestion `json:"suggestions"`
 }
 
-func (response cleanAddressResponse) StreetWithHouse() string {
-	street := strings.TrimSpace(response.Street)
-	house := strings.TrimSpace(response.House)
+type suggestion struct {
+	Value             string            `json:"value"`
+	UnrestrictedValue string            `json:"unrestricted_value"`
+	Data              suggestionAddress `json:"data"`
+}
+
+type suggestionAddress struct {
+	Street      string `json:"street"`
+	House       string `json:"house"`
+	GeoLat      string `json:"geo_lat"`
+	GeoLon      string `json:"geo_lon"`
+	FIASID      string `json:"fias_id"`
+	HouseFIASID string `json:"house_fias_id"`
+}
+
+func hasCoordinates(latitude string, longitude string) bool {
+	return strings.TrimSpace(latitude) != "" && strings.TrimSpace(longitude) != ""
+}
+
+func parseCoordinates(latitudeValue string, longitudeValue string) (geodomain.Coordinates, bool) {
+	latitude, err := strconv.ParseFloat(latitudeValue, 64)
+	if err != nil {
+		return geodomain.Coordinates{}, false
+	}
+	longitude, err := strconv.ParseFloat(longitudeValue, 64)
+	if err != nil {
+		return geodomain.Coordinates{}, false
+	}
+	coordinates, err := geodomain.NewCoordinates(latitude, longitude)
+	return coordinates, err == nil
+}
+
+func streetWithHouse(streetValue string, houseValue string) string {
+	street := strings.TrimSpace(streetValue)
+	house := strings.TrimSpace(houseValue)
 	if street == "" {
 		return house
 	}
@@ -130,7 +235,7 @@ func (response cleanAddressResponse) StreetWithHouse() string {
 	return street + ", " + house
 }
 
-func dadataConfidence(qcGeo int) float64 {
+func dadataCleanConfidence(qcGeo int) float64 {
 	switch qcGeo {
 	case 0:
 		return 0.95
@@ -143,6 +248,16 @@ func dadataConfidence(qcGeo int) float64 {
 	default:
 		return 0.50
 	}
+}
+
+func dadataSuggestConfidence(address suggestionAddress) float64 {
+	if strings.TrimSpace(address.House) != "" {
+		return 0.88
+	}
+	if strings.TrimSpace(address.Street) != "" {
+		return 0.75
+	}
+	return 0.60
 }
 
 func firstNonBlank(values ...string) string {

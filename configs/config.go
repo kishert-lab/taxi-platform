@@ -152,6 +152,7 @@ type GeocoderConfig struct {
 	DaDataSecretKey           string  `mapstructure:"dadata_secret_key"`
 	DaDataEnabled             bool    `mapstructure:"dadata_enabled"`
 	DaDataURL                 string  `mapstructure:"dadata_url"`
+	DaDataSuggestURL          string  `mapstructure:"dadata_suggest_url"`
 	ExternalCacheTTLDays      int     `mapstructure:"external_cache_ttl_days"`
 	PeliasConfidenceThreshold float64 `mapstructure:"pelias_confidence_threshold"`
 }
@@ -209,6 +210,7 @@ func bindEnvironmentAliases() error {
 		"geocoder.dadata_secret_key":     {"GEOCODER_DADATA_SECRET_KEY", "DADATA_SECRET_KEY"},
 		"geocoder.dadata_enabled":        {"GEOCODER_DADATA_ENABLED"},
 		"geocoder.dadata_url":            {"GEOCODER_DADATA_URL"},
+		"geocoder.dadata_suggest_url":    {"GEOCODER_DADATA_SUGGEST_URL"},
 		"geocoder.external_cache_ttl_days": {
 			"GEOCODER_EXTERNAL_CACHE_TTL_DAYS",
 		},
@@ -333,6 +335,7 @@ func setDefaults() {
 	viper.SetDefault("geocoder.dadata_secret_key", "")
 	viper.SetDefault("geocoder.dadata_enabled", false)
 	viper.SetDefault("geocoder.dadata_url", "https://cleaner.dadata.ru/api/v1/clean/address")
+	viper.SetDefault("geocoder.dadata_suggest_url", "https://suggestions.dadata.ru/suggestions/api/4_1/rs/suggest/address")
 	viper.SetDefault("geocoder.external_cache_ttl_days", 30)
 	viper.SetDefault("geocoder.pelias_confidence_threshold", 0.75)
 }

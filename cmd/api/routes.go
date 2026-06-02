@@ -1,6 +1,9 @@
 package main
 
 import (
+	"net/http"
+	"time"
+
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 	goredis "github.com/redis/go-redis/v9"
@@ -13,6 +16,12 @@ import (
 	driverapp "github.com/kishert-lab/taxi-platform/internal/driver"
 	financeapp "github.com/kishert-lab/taxi-platform/internal/finance"
 	geoapp "github.com/kishert-lab/taxi-platform/internal/geo"
+	dadataclient "github.com/kishert-lab/taxi-platform/internal/geocoder/client/dadata"
+	peliasclient "github.com/kishert-lab/taxi-platform/internal/geocoder/client/pelias"
+	yandexclient "github.com/kishert-lab/taxi-platform/internal/geocoder/client/yandex"
+	geocoderhandler "github.com/kishert-lab/taxi-platform/internal/geocoder/handler"
+	geocoderrepository "github.com/kishert-lab/taxi-platform/internal/geocoder/repository"
+	geocoderservice "github.com/kishert-lab/taxi-platform/internal/geocoder/service"
 	legalapp "github.com/kishert-lab/taxi-platform/internal/legal"
 	redisinfra "github.com/kishert-lab/taxi-platform/internal/redis"
 	"github.com/kishert-lab/taxi-platform/internal/repository"
@@ -32,6 +41,7 @@ type applicationRoutes struct {
 	taxiPark   *handler.TaxiParkSettingsHandler
 	legal      *handler.LegalHandler
 	chat       *handler.ChatHandler
+	geocoder   *geocoderhandler.Handler
 	websocket  *handler.WebSocketHandler
 	dispatch   *dispatchapp.Worker
 }
@@ -129,6 +139,21 @@ func newApplicationRoutes(postgresPool *pgxpool.Pool, redisClient *goredis.Clien
 	legalService := legalapp.NewService(legalRepository)
 	chatRepository := repository.NewPostgresChatRepository(postgresPool)
 	chatService := chatapp.NewService(chatRepository, realtimeGateway, logger)
+	geocoderRepository := geocoderrepository.NewPostgresRepository(postgresPool)
+	geocoderService := geocoderservice.New(
+		geocoderRepository,
+		peliasclient.New(config.Geocoder.PeliasURL, &http.Client{Timeout: 3 * time.Second}),
+		yandexclient.New(config.Geocoder.YandexAPIKey, &http.Client{Timeout: 4 * time.Second}),
+		dadataclient.New(config.Geocoder.DaDataAPIKey, config.Geocoder.DaDataSecretKey, config.Geocoder.DaDataURL, config.Geocoder.DaDataSuggestURL, &http.Client{Timeout: 4 * time.Second}),
+		logger,
+		geocoderservice.Config{
+			YandexEnabled:             config.Geocoder.YandexEnabled,
+			DaDataEnabled:             config.Geocoder.DaDataEnabled,
+			ExternalCacheTTL:          time.Duration(config.Geocoder.ExternalCacheTTLDays) * 24 * time.Hour,
+			PeliasConfidenceThreshold: config.Geocoder.PeliasConfidenceThreshold,
+			DefaultLimit:              10,
+		},
+	)
 
 	return applicationRoutes{
 		auth:       handler.NewAuthHandler(registrationService),
@@ -140,6 +165,7 @@ func newApplicationRoutes(postgresPool *pgxpool.Pool, redisClient *goredis.Clien
 		taxiPark:   handler.NewTaxiParkSettingsHandler(taxiParkSettingsService),
 		legal:      handler.NewLegalHandler(legalService),
 		chat:       handler.NewChatHandler(chatService),
+		geocoder:   geocoderhandler.New(geocoderService),
 		websocket:  handler.NewWebSocketHandler(mobileAuthService, config.HTTP.CORS.AllowedOrigins, redisClient),
 		dispatch:   dispatchWorker,
 	}
@@ -170,5 +196,6 @@ func (routes applicationRoutes) Register(api gin.IRouter) {
 	routes.taxiPark.RegisterRoutes(api)
 	routes.legal.RegisterRoutes(api)
 	routes.chat.RegisterRoutes(api)
+	routes.geocoder.RegisterRoutes(api)
 	routes.websocket.RegisterRoutes(api)
 }
