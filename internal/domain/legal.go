@@ -11,11 +11,19 @@ import (
 type LegalDocumentType string
 
 const (
-	LegalDocumentPrivacyPolicy       LegalDocumentType = "privacy_policy"
-	LegalDocumentTermsOfService      LegalDocumentType = "terms_of_service"
-	LegalDocumentDriverAgreement     LegalDocumentType = "driver_agreement"
-	LegalDocumentTaxiParkAgreement   LegalDocumentType = "taxi_park_agreement"
-	LegalDocumentConsentPersonalData LegalDocumentType = "consent_personal_data"
+	LegalDocumentPrivacyPolicy             LegalDocumentType = "privacy_policy"
+	LegalDocumentTermsOfService            LegalDocumentType = "terms_of_service"
+	LegalDocumentLicenseAgreement          LegalDocumentType = "license_agreement"
+	LegalDocumentDriverAgreement           LegalDocumentType = "driver_agreement"
+	LegalDocumentTaxiParkAgreement         LegalDocumentType = "taxi_park_agreement"
+	LegalDocumentConsentPersonalData       LegalDocumentType = "consent_personal_data"
+	LegalDocumentPersonalDataTransfer      LegalDocumentType = "personal_data_transfer"
+	LegalDocumentCookiesRequired           LegalDocumentType = "cookies_required"
+	LegalDocumentCookiesAnalytics          LegalDocumentType = "cookies_analytics"
+	LegalDocumentCookiesMarketing          LegalDocumentType = "cookies_marketing"
+	LegalDocumentTaxiParkResponsibility    LegalDocumentType = "taxi_park_responsibility"
+	LegalDocumentDriverDocumentsProcessing LegalDocumentType = "driver_documents_processing"
+	LegalDocumentGeoDataProcessing         LegalDocumentType = "geo_data_processing"
 )
 
 type LegalDocument struct {
@@ -48,9 +56,17 @@ func (documentType LegalDocumentType) Validate() error {
 	switch documentType {
 	case LegalDocumentPrivacyPolicy,
 		LegalDocumentTermsOfService,
+		LegalDocumentLicenseAgreement,
 		LegalDocumentDriverAgreement,
 		LegalDocumentTaxiParkAgreement,
-		LegalDocumentConsentPersonalData:
+		LegalDocumentConsentPersonalData,
+		LegalDocumentPersonalDataTransfer,
+		LegalDocumentCookiesRequired,
+		LegalDocumentCookiesAnalytics,
+		LegalDocumentCookiesMarketing,
+		LegalDocumentTaxiParkResponsibility,
+		LegalDocumentDriverDocumentsProcessing,
+		LegalDocumentGeoDataProcessing:
 		return nil
 	default:
 		return ErrInvalidLegalDocumentType

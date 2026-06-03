@@ -61,8 +61,12 @@ func (repository *PostgresDriverLocationRepository) MarkStaleDriversOffline(ctx 
 			SELECT d.id
 			FROM drivers d
 			INNER JOIN driver_locations dl ON dl.driver_id = d.id
+			LEFT JOIN taxi_park_settings s ON s.taxi_park_id = d.taxi_park_id
 			WHERE d.status = 'online'
-			  AND dl.updated_at < $1
+			  AND dl.updated_at < CASE
+			  	WHEN NULLIF(s.dispatch_driver_location_max_age_sec, 0) IS NULL THEN $1
+			  	ELSE now() - (s.dispatch_driver_location_max_age_sec * interval '1 second')
+			  END
 			  AND d.deleted_at IS NULL
 			LIMIT $2
 		)

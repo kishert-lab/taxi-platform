@@ -50,7 +50,7 @@ func (handler *Handler) RegisterRoutes(router gin.IRouter) {
 
 // Search godoc
 // @Summary Search address with hybrid geocoder
-// @Description Searches trusted local points first, then local Pelias, then temporary Yandex fallback cache/Yandex.
+// @Description Searches trusted local points first, then local Pelias, then temporary DaData fallback, then Yandex fallback.
 // @Tags geocoder
 // @Produce json
 // @Param q query string true "Address query"
@@ -205,7 +205,7 @@ func (handler *Handler) RejectLocalPoint(context *gin.Context) {
 
 // ExportPeliasCSV godoc
 // @Summary Export trusted local points as Pelias CSV
-// @Description Exports only platform-owned trusted local_geo_points; temporary Yandex cache is never exported.
+// @Description Exports only platform-owned trusted local_geo_points; temporary external geocoder cache is never exported.
 // @Tags admin-geocoder
 // @Produce text/csv
 // @Success 200 {file} file
@@ -292,7 +292,7 @@ func localPointFilterFromQuery(context *gin.Context) (geoservice.LocalPointFilte
 
 func failByError(context *gin.Context, err error) {
 	switch {
-	case errors.Is(err, geodomain.ErrInvalidQuery), errors.Is(err, geodomain.ErrInvalidCoordinates), errors.Is(err, geodomain.ErrInvalidConfidence):
+	case errors.Is(err, geodomain.ErrInvalidQuery), errors.Is(err, geodomain.ErrInvalidCoordinates), errors.Is(err, geodomain.ErrInvalidConfidence), errors.Is(err, geodomain.ErrPromotionForbidden):
 		fail(context, http.StatusBadRequest, response.CodeValidationError, "Invalid geocoder request", err)
 	case errors.Is(err, geodomain.ErrPointNotFound):
 		fail(context, http.StatusNotFound, response.CodeNotFound, "Local geocoder point not found", err)

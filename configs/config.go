@@ -154,6 +154,9 @@ type GeocoderConfig struct {
 	DaDataURL                 string  `mapstructure:"dadata_url"`
 	DaDataSuggestURL          string  `mapstructure:"dadata_suggest_url"`
 	ExternalCacheTTLDays      int     `mapstructure:"external_cache_ttl_days"`
+	YandexCacheTTLDays        int     `mapstructure:"yandex_cache_ttl_days"`
+	DaDataCacheTTLDays        int     `mapstructure:"dadata_cache_ttl_days"`
+	PeliasCacheTTLDays        int     `mapstructure:"pelias_cache_ttl_days"`
 	PeliasConfidenceThreshold float64 `mapstructure:"pelias_confidence_threshold"`
 }
 
@@ -211,6 +214,9 @@ func bindEnvironmentAliases() error {
 		"geocoder.dadata_enabled":        {"GEOCODER_DADATA_ENABLED"},
 		"geocoder.dadata_url":            {"GEOCODER_DADATA_URL"},
 		"geocoder.dadata_suggest_url":    {"GEOCODER_DADATA_SUGGEST_URL"},
+		"geocoder.yandex_cache_ttl_days": {"GEOCODER_YANDEX_CACHE_TTL_DAYS"},
+		"geocoder.dadata_cache_ttl_days": {"GEOCODER_DADATA_CACHE_TTL_DAYS"},
+		"geocoder.pelias_cache_ttl_days": {"GEOCODER_PELIAS_CACHE_TTL_DAYS"},
 		"geocoder.external_cache_ttl_days": {
 			"GEOCODER_EXTERNAL_CACHE_TTL_DAYS",
 		},
@@ -337,5 +343,8 @@ func setDefaults() {
 	viper.SetDefault("geocoder.dadata_url", "https://cleaner.dadata.ru/api/v1/clean/address")
 	viper.SetDefault("geocoder.dadata_suggest_url", "https://suggestions.dadata.ru/suggestions/api/4_1/rs/suggest/address")
 	viper.SetDefault("geocoder.external_cache_ttl_days", 30)
+	viper.SetDefault("geocoder.yandex_cache_ttl_days", 30)
+	viper.SetDefault("geocoder.dadata_cache_ttl_days", 3650)
+	viper.SetDefault("geocoder.pelias_cache_ttl_days", 3650)
 	viper.SetDefault("geocoder.pelias_confidence_threshold", 0.75)
 }

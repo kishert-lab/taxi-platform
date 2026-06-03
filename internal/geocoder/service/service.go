@@ -18,6 +18,9 @@ type Config struct {
 	YandexEnabled             bool
 	DaDataEnabled             bool
 	ExternalCacheTTL          time.Duration
+	YandexCacheTTL            time.Duration
+	DaDataCacheTTL            time.Duration
+	PeliasCacheTTL            time.Duration
 	PeliasConfidenceThreshold float64
 	DefaultLimit              int
 }
@@ -38,8 +41,17 @@ func New(repository Repository, peliasClient PeliasClient, yandexClient YandexCl
 	if config.ExternalCacheTTL <= 0 {
 		config.ExternalCacheTTL = 30 * 24 * time.Hour
 	}
-	if config.ExternalCacheTTL > 30*24*time.Hour {
-		config.ExternalCacheTTL = 30 * 24 * time.Hour
+	if config.YandexCacheTTL <= 0 {
+		config.YandexCacheTTL = 30 * 24 * time.Hour
+	}
+	if config.YandexCacheTTL > 30*24*time.Hour {
+		config.YandexCacheTTL = 30 * 24 * time.Hour
+	}
+	if config.DaDataCacheTTL <= 0 {
+		config.DaDataCacheTTL = 3650 * 24 * time.Hour
+	}
+	if config.PeliasCacheTTL <= 0 {
+		config.PeliasCacheTTL = 3650 * 24 * time.Hour
 	}
 	if config.PeliasConfidenceThreshold <= 0 {
 		config.PeliasConfidenceThreshold = 0.75
@@ -123,20 +135,20 @@ func (service *Service) Search(ctx context.Context, request geodomain.SearchRequ
 		return limitResults(peliasResults, request.Limit), nil
 	}
 
-	yandexResults, yandexErr := service.searchExternalProvider(ctx, geodomain.ProviderYandex, normalizedQuery, request, externalRequest, request.RequestedAt)
-	if yandexErr != nil {
-		service.logger.Warn("yandex geocoder failed", zap.Error(yandexErr), zap.String("query", normalizedQuery))
-	}
-	if len(yandexResults) > 0 {
-		return limitResults(yandexResults, request.Limit), nil
-	}
-
 	dadataResults, dadataErr := service.searchExternalProvider(ctx, geodomain.ProviderDaData, normalizedQuery, request, externalRequest, request.RequestedAt)
 	if dadataErr != nil {
 		service.logger.Warn("dadata geocoder failed", zap.Error(dadataErr), zap.String("query", normalizedQuery))
 	}
 	if len(dadataResults) > 0 {
 		return limitResults(dadataResults, request.Limit), nil
+	}
+
+	yandexResults, yandexErr := service.searchExternalProvider(ctx, geodomain.ProviderYandex, normalizedQuery, request, externalRequest, request.RequestedAt)
+	if yandexErr != nil {
+		service.logger.Warn("yandex geocoder failed", zap.Error(yandexErr), zap.String("query", normalizedQuery))
+	}
+	if len(yandexResults) > 0 {
+		return limitResults(yandexResults, request.Limit), nil
 	}
 
 	if len(peliasResults) > 0 {
@@ -180,7 +192,7 @@ func (service *Service) searchExternalProvider(ctx context.Context, provider geo
 		return nil, nil
 	}
 
-	expiresAt := requestedAt.Add(service.config.ExternalCacheTTL)
+	expiresAt := requestedAt.Add(service.cacheTTL(provider))
 	for index := range results {
 		results[index].ExpiresAt = &expiresAt
 	}
@@ -209,14 +221,22 @@ func (service *Service) searchExternalProvider(ctx context.Context, provider geo
 func (service *Service) ConfirmPoint(ctx context.Context, request ConfirmPointRequest) (geodomain.LocalGeoPoint, error) {
 	request.Name = strings.TrimSpace(request.Name)
 	request.Address = strings.TrimSpace(request.Address)
+	request.ExternalProvider = strings.TrimSpace(request.ExternalProvider)
 	if request.Name == "" {
 		request.Name = request.Address
 	}
 	if request.Address == "" {
 		return geodomain.LocalGeoPoint{}, geodomain.ErrInvalidQuery
 	}
+	if !geodomain.CanPromoteToLocal(request.ExternalProvider) {
+		return geodomain.LocalGeoPoint{}, geodomain.ErrPromotionForbidden
+	}
 	if request.Source == "" {
-		request.Source = geodomain.PointSourceUserConfirmed
+		if request.ExternalProvider != "" {
+			request.Source = geodomain.PointSourceExternalConfirmed
+		} else {
+			request.Source = geodomain.PointSourceUserConfirmed
+		}
 	}
 	if request.Confidence == 0 {
 		request.Confidence = 1
@@ -229,6 +249,19 @@ func (service *Service) ConfirmPoint(ctx context.Context, request ConfirmPointRe
 		return geodomain.LocalGeoPoint{}, fmt.Errorf("confirm local geo point: %w", err)
 	}
 	return point, nil
+}
+
+func (service *Service) cacheTTL(provider geodomain.Provider) time.Duration {
+	switch provider {
+	case geodomain.ProviderYandex:
+		return service.config.YandexCacheTTL
+	case geodomain.ProviderDaData:
+		return service.config.DaDataCacheTTL
+	case geodomain.ProviderPelias:
+		return service.config.PeliasCacheTTL
+	default:
+		return service.config.ExternalCacheTTL
+	}
 }
 
 func (service *Service) CreateLocalPoint(ctx context.Context, request AdminLocalPointRequest) (geodomain.LocalGeoPoint, error) {

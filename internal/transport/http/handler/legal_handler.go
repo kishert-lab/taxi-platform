@@ -34,6 +34,7 @@ func (handler *LegalHandler) RegisterRoutes(router gin.IRouter) {
 	public.GET("/privacy-policy", handler.PublicPrivacyPolicy)
 	public.GET("/terms", handler.PublicTerms)
 	public.GET("/consent", handler.PublicConsent)
+	public.GET("/documents/:document_type", handler.PublicDocumentByType)
 
 	admin := router.Group("/admin/legal", middleware.RequireRole(domain.UserRoleAdmin))
 	admin.GET("/documents", handler.AdminListDocuments)
@@ -76,6 +77,21 @@ func (handler *LegalHandler) PublicTerms(context *gin.Context) {
 // @Router /public/legal/consent [get]
 func (handler *LegalHandler) PublicConsent(context *gin.Context) {
 	handler.publicDocument(context, domain.LegalDocumentConsentPersonalData)
+}
+
+// PublicDocumentByType godoc
+// @Summary Get active legal document by type
+// @Tags public-legal
+// @Produce json
+// @Param document_type path string true "Document type"
+// @Param language query string false "Language" default(ru)
+// @Success 200 {object} LegalDocumentSuccessResponse
+// @Failure 400 {object} response.Error
+// @Failure 404 {object} response.Error
+// @Router /public/legal/documents/{document_type} [get]
+func (handler *LegalHandler) PublicDocumentByType(context *gin.Context) {
+	documentType := domain.LegalDocumentType(context.Param("document_type"))
+	handler.publicDocument(context, documentType)
 }
 
 func (handler *LegalHandler) publicDocument(context *gin.Context, documentType domain.LegalDocumentType) {

@@ -17,6 +17,7 @@ const (
 	ProviderPelias Provider = "pelias"
 	ProviderYandex Provider = "yandex"
 	ProviderDaData Provider = "dadata"
+	ProviderManual Provider = "manual"
 )
 
 type TrustLevel string
@@ -34,6 +35,7 @@ const (
 	PointSourceDriverConfirmed     PointSource = "driver_confirmed"
 	PointSourceDispatcherConfirmed PointSource = "dispatcher_confirmed"
 	PointSourceAdmin               PointSource = "admin"
+	PointSourceExternalConfirmed   PointSource = "external_confirmed"
 )
 
 type ConfirmationAction string
@@ -49,6 +51,7 @@ var (
 	ErrInvalidConfidence   = errors.New("invalid geocoder confidence")
 	ErrPointNotFound       = errors.New("local geo point not found")
 	ErrExternalUnavailable = errors.New("external geocoder unavailable")
+	ErrPromotionForbidden  = errors.New("external geocoder result cannot be promoted to local base")
 )
 
 type Coordinates struct {
@@ -136,4 +139,15 @@ func ValidateConfidence(confidence float64) error {
 		return ErrInvalidConfidence
 	}
 	return nil
+}
+
+func CanPromoteToLocal(provider string) bool {
+	switch Provider(NormalizeQuery(provider)) {
+	case "", ProviderLocal, ProviderPelias, ProviderDaData, ProviderManual:
+		return true
+	case ProviderYandex:
+		return false
+	default:
+		return false
+	}
 }

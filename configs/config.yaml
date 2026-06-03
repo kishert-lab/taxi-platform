@@ -1,4 +1,4 @@
-﻿app:
+app:
   name: taxi-platform
   env: local
   version: 0.1.0
@@ -19,12 +19,9 @@ server:
 http:
   cors:
     allowed_origins:
+      - http://localhost:3000
       - http://localhost:5173
-      - http://localhost:5174
-      - http://127.0.0.1:3000
-      - http://localhost:5175
-      - http://127.0.0.1:5175
-      
+      - http://192.168.0.50:5173
 
 database:
   host: 192.168.0.50
@@ -67,7 +64,7 @@ auth:
   require_phone_verify: true
 
 logger:
-  level: debug
+  level: info
   encoding: json
   development: false
 
@@ -76,28 +73,35 @@ security:
   rate_limit_per_minute: 120
   login_attempt_ttl: 15m
   max_login_attempts: 5
-  refresh_token_reuse_lock: 90s
+  refresh_token_reuse_lock: 30s
 
 dispatch:
-  initial_radius_meters: 100000
-  max_radius_meters: 100000
+  initial_radius_meters: 1000
+  max_radius_meters: 10000
   radius_step_meters: 1000
   radius_attempts_meters:
+    - 1000
+    - 3000
+    - 5000
     - 10000
-    - 30000
-    - 50000
-    - 100000
   max_drivers_per_offer: 5
-  driver_location_max_age: 120s
-  offer_ttl: 60s
-  accept_lock_ttl: 90s
-  worker_poll_timeout: 30s
+  driver_location_max_age: 30s
+  offer_ttl: 15s
+  accept_lock_ttl: 30s
+  worker_poll_timeout: 5s
   recovery_interval: 30s
 
 geocoder:
-  pelias_url: http://127.0.0.1:4000
+  pelias_url: http://pelias:4000
   yandex_api_key: ""
   yandex_enabled: false
+  dadata_api_key: ""
+  dadata_secret_key: ""
+  dadata_enabled: false
+  dadata_url: https://cleaner.dadata.ru/api/v1/clean/address
+  dadata_suggest_url: https://suggestions.dadata.ru/suggestions/api/4_1/rs/suggest/address
   external_cache_ttl_days: 30
+  yandex_cache_ttl_days: 30
+  dadata_cache_ttl_days: 3650
+  pelias_cache_ttl_days: 3650
   pelias_confidence_threshold: 0.75
-

@@ -258,7 +258,12 @@ func (repository *PostgresFinanceRepository) ListTaxiParkDrivers(ctx context.Con
 		       COALESCE(u.first_name, ''),
 		       COALESCE(u.last_name, ''),
 		       trim(coalesce(u.first_name, '') || ' ' || coalesce(u.last_name, '')) AS full_name,
-		       d.status,
+		       CASE
+		           WHEN d.status = 'online'
+		            AND (dl.updated_at IS NULL OR dl.updated_at < now() - make_interval(secs => COALESCE(NULLIF(s.dispatch_driver_location_max_age_sec, 0), 120)))
+		           THEN 'offline'::driver_status
+		           ELSE d.status
+		       END,
 		       d.verification_status,
 		       d.rating::float8,
 		       d.ratings_count,
@@ -286,6 +291,8 @@ func (repository *PostgresFinanceRepository) ListTaxiParkDrivers(ctx context.Con
 		FROM taxi_parks tp
 		JOIN drivers d ON d.taxi_park_id = tp.id
 		JOIN users u ON u.id = d.user_id
+		LEFT JOIN taxi_park_settings s ON s.taxi_park_id = tp.id
+		LEFT JOIN driver_locations dl ON dl.driver_id = d.id
 		WHERE tp.owner_user_id = $1 AND tp.deleted_at IS NULL AND d.deleted_at IS NULL
 		ORDER BY d.created_at DESC
 		LIMIT $2`

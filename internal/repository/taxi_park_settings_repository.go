@@ -827,7 +827,12 @@ func (repository *PostgresTaxiParkSettingsRepository) ListDriverLocationsByOwner
 			d.user_id,
 			trim(concat_ws(' ', COALESCE(u.first_name, ''), COALESCE(u.last_name, ''))) AS driver_name,
 			u.phone,
-			d.status,
+			CASE
+				WHEN d.status = 'online'
+				 AND (dl.updated_at IS NULL OR dl.updated_at < now() - make_interval(secs => ))
+				THEN 'offline'::driver_status
+				ELSE d.status
+			END,
 			d.verification_status,
 			d.rating::float8,
 			CASE WHEN dl.location IS NULL THEN NULL ELSE ST_Y(dl.location::geometry) END AS latitude,

@@ -22,8 +22,10 @@ import (
 	_ "github.com/kishert-lab/taxi-platform/docs"
 	authapp "github.com/kishert-lab/taxi-platform/internal/auth"
 	"github.com/kishert-lab/taxi-platform/internal/database"
+	geoservice "github.com/kishert-lab/taxi-platform/internal/geo"
 	"github.com/kishert-lab/taxi-platform/internal/middleware"
 	redisclient "github.com/kishert-lab/taxi-platform/internal/redis"
+	"github.com/kishert-lab/taxi-platform/internal/repository"
 	"github.com/kishert-lab/taxi-platform/pkg/logger"
 	"github.com/kishert-lab/taxi-platform/pkg/response"
 )
@@ -85,6 +87,12 @@ func main() {
 			}
 		}()
 	}
+	staleDriverService := geoservice.NewLocationService(
+		repository.NewPostgresDriverLocationRepository(postgresPool),
+		redisclient.NewLocationThrottle(redisClient),
+	)
+	startStaleDriverOfflineWorker(ctx, staleDriverService, log)
+
 	router := buildRouter(config, log, routes)
 	server := &http.Server{
 		Addr:              config.Server.Address(),
@@ -110,6 +118,38 @@ func main() {
 	if err := server.Shutdown(shutdownContext); err != nil {
 		log.Error("shutdown http server", zap.Error(err))
 	}
+}
+
+type staleDriverOfflineMarker interface {
+	MarkStaleDriversOffline(ctx context.Context, limit int) (int, error)
+}
+
+func startStaleDriverOfflineWorker(ctx context.Context, marker staleDriverOfflineMarker, log *zap.Logger) {
+	const (
+		interval = 10 * time.Second
+		limit    = 500
+	)
+
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			count, err := marker.MarkStaleDriversOffline(ctx, limit)
+			if err != nil && !errors.Is(err, context.Canceled) {
+				log.Error("mark stale drivers offline", zap.Error(err))
+			}
+			if count > 0 {
+				log.Info("stale drivers marked offline", zap.Int("count", count))
+			}
+
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
 }
 
 func debugHTTPLoggingEnabled(config *configs.Config) bool {

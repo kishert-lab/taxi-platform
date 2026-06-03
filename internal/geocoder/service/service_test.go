@@ -124,6 +124,88 @@ func TestSearchFallsBackToDaDataWhenYandexIsEmpty(t *testing.T) {
 	}
 }
 
+func TestSearchPrefersDaDataBeforeYandex(t *testing.T) {
+	repository := &fakeRepository{}
+	pelias := fakeClient{results: []geodomain.SearchResult{}}
+	yandex := fakeClient{results: []geodomain.SearchResult{testResult(geodomain.ProviderYandex, 0.90)}}
+	dadata := fakeClient{results: []geodomain.SearchResult{testResult(geodomain.ProviderDaData, 0.95)}}
+	service := New(repository, &pelias, &yandex, &dadata, zap.NewNop(), Config{
+		YandexEnabled:             true,
+		DaDataEnabled:             true,
+		ExternalCacheTTL:          30 * 24 * time.Hour,
+		PeliasConfidenceThreshold: 0.75,
+		DefaultLimit:              10,
+	})
+
+	results, err := service.Search(context.Background(), geodomain.SearchRequest{Query: "РњРёСЂР° 10"})
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if len(results) != 1 || results[0].Provider != geodomain.ProviderDaData {
+		t.Fatalf("expected dadata result, got %#v", results)
+	}
+	if yandex.calls != 0 {
+		t.Fatalf("yandex must be called only after dadata miss, calls=%d", yandex.calls)
+	}
+}
+
+func TestSearchUsesProviderSpecificCacheTTL(t *testing.T) {
+	requestedAt := time.Date(2026, 6, 2, 9, 0, 0, 0, time.UTC)
+	repository := &fakeRepository{}
+	pelias := fakeClient{results: []geodomain.SearchResult{}}
+	dadata := fakeClient{results: []geodomain.SearchResult{testResult(geodomain.ProviderDaData, 0.95)}}
+	service := New(repository, &pelias, nil, &dadata, zap.NewNop(), Config{
+		DaDataEnabled:             true,
+		YandexCacheTTL:            30 * 24 * time.Hour,
+		DaDataCacheTTL:            3650 * 24 * time.Hour,
+		PeliasConfidenceThreshold: 0.75,
+		DefaultLimit:              10,
+	})
+
+	results, err := service.Search(context.Background(), geodomain.SearchRequest{Query: "РњРёСЂР° 10", RequestedAt: requestedAt})
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if len(results) != 1 || results[0].ExpiresAt == nil {
+		t.Fatalf("expected cached result with expires_at, got %#v", results)
+	}
+	expected := requestedAt.Add(3650 * 24 * time.Hour)
+	if !results[0].ExpiresAt.Equal(expected) {
+		t.Fatalf("expected dadata ttl %s, got %s", expected, *results[0].ExpiresAt)
+	}
+	if repository.lastCache.Provider != geodomain.ProviderDaData {
+		t.Fatalf("expected dadata cache provider, got %s", repository.lastCache.Provider)
+	}
+}
+
+func TestSearchCapsYandexCacheTTLAtThirtyDays(t *testing.T) {
+	requestedAt := time.Date(2026, 6, 2, 9, 0, 0, 0, time.UTC)
+	repository := &fakeRepository{}
+	pelias := fakeClient{results: []geodomain.SearchResult{}}
+	yandex := fakeClient{results: []geodomain.SearchResult{testResult(geodomain.ProviderYandex, 0.95)}}
+	service := New(repository, &pelias, &yandex, nil, zap.NewNop(), Config{
+		YandexEnabled:             true,
+		YandexCacheTTL:            3650 * 24 * time.Hour,
+		PeliasConfidenceThreshold: 0.75,
+		DefaultLimit:              10,
+	})
+
+	results, err := service.Search(context.Background(), geodomain.SearchRequest{Query: "Р СљР С‘РЎР‚Р В° 10", RequestedAt: requestedAt})
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if len(results) != 1 || results[0].ExpiresAt == nil {
+		t.Fatalf("expected cached result with expires_at, got %#v", results)
+	}
+	expected := requestedAt.Add(30 * 24 * time.Hour)
+	if !results[0].ExpiresAt.Equal(expected) {
+		t.Fatalf("expected yandex ttl capped to %s, got %s", expected, *results[0].ExpiresAt)
+	}
+	if repository.lastCache.Provider != geodomain.ProviderYandex {
+		t.Fatalf("expected yandex cache provider, got %s", repository.lastCache.Provider)
+	}
+}
+
 func TestSearchUsesTaxiParkCityWhenCityIDIsMissing(t *testing.T) {
 	cityID := uuid.New()
 	center, _ := geodomain.NewCoordinates(58.01, 56.22)
@@ -212,6 +294,44 @@ func TestConfirmPointBecomesTrustedAfterThreeConfirmations(t *testing.T) {
 	}
 }
 
+func TestConfirmPointRejectsYandexPromotion(t *testing.T) {
+	repository := &fakeRepository{}
+	service := newTestService(repository, fakeClient{}, fakeClient{})
+	coordinates, _ := geodomain.NewCoordinates(58.01, 56.22)
+
+	_, err := service.ConfirmPoint(context.Background(), ConfirmPointRequest{
+		CityID:           uuid.New(),
+		Address:          "РџРµСЂРјСЊ, РњРёСЂР° 8",
+		Coordinates:      coordinates,
+		ExternalProvider: string(geodomain.ProviderYandex),
+	})
+	if !errors.Is(err, geodomain.ErrPromotionForbidden) {
+		t.Fatalf("expected promotion forbidden, got %v", err)
+	}
+	if repository.confirmCalled {
+		t.Fatal("yandex point must not be persisted")
+	}
+}
+
+func TestConfirmPointAllowsDaDataPromotion(t *testing.T) {
+	repository := &fakeRepository{}
+	service := newTestService(repository, fakeClient{}, fakeClient{})
+	coordinates, _ := geodomain.NewCoordinates(58.01, 56.22)
+
+	point, err := service.ConfirmPoint(context.Background(), ConfirmPointRequest{
+		CityID:           uuid.New(),
+		Address:          "РџРµСЂРјСЊ, РњРёСЂР° 8",
+		Coordinates:      coordinates,
+		ExternalProvider: string(geodomain.ProviderDaData),
+	})
+	if err != nil {
+		t.Fatalf("confirm point: %v", err)
+	}
+	if point.Source != geodomain.PointSourceExternalConfirmed {
+		t.Fatalf("expected external_confirmed source, got %s", point.Source)
+	}
+}
+
 func TestWritePeliasCSVExportsTrustedPoints(t *testing.T) {
 	coordinates, _ := geodomain.NewCoordinates(58.01, 56.22)
 	point := geodomain.LocalGeoPoint{
@@ -273,6 +393,7 @@ type fakeRepository struct {
 	cached            []geodomain.SearchResult
 	cacheFound        bool
 	cacheSaved        bool
+	lastCache         ExternalCacheRecord
 	confirmCalled     bool
 	confirmationCount int
 	actorCityFound    bool
@@ -299,8 +420,9 @@ func (repository *fakeRepository) GetExternalCache(context.Context, geodomain.Pr
 	return repository.cached, repository.cacheFound, nil
 }
 
-func (repository *fakeRepository) SaveExternalCache(context.Context, ExternalCacheRecord) error {
+func (repository *fakeRepository) SaveExternalCache(_ context.Context, cache ExternalCacheRecord) error {
 	repository.cacheSaved = true
+	repository.lastCache = cache
 	return nil
 }
 
@@ -317,6 +439,9 @@ func (repository *fakeRepository) ConfirmPoint(_ context.Context, request Confir
 		Name:              request.Address,
 		Address:           request.Address,
 		Coordinates:       request.Coordinates,
+		Source:            request.Source,
+		ExternalProvider:  request.ExternalProvider,
+		ExternalPlaceID:   request.ExternalPlaceID,
 		TrustLevel:        trustLevel,
 		ConfirmationCount: count,
 	}, nil
