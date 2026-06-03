@@ -829,7 +829,7 @@ func (repository *PostgresTaxiParkSettingsRepository) ListDriverLocationsByOwner
 			u.phone,
 			CASE
 				WHEN d.status = 'online'
-				 AND (dl.updated_at IS NULL OR dl.updated_at < now() - make_interval(secs => ))
+				 AND (dl.updated_at IS NULL OR dl.updated_at < now() - ($2 * interval '1 second'))
 				THEN 'offline'::driver_status
 				ELSE d.status
 			END,
@@ -842,7 +842,7 @@ func (repository *PostgresTaxiParkSettingsRepository) ListDriverLocationsByOwner
 			dl.accuracy_meters,
 			dl.recorded_at,
 			dl.updated_at,
-			CASE WHEN dl.updated_at IS NULL THEN true ELSE dl.updated_at < now() - make_interval(secs => $2) END AS is_stale,
+			CASE WHEN dl.updated_at IS NULL THEN true ELSE dl.updated_at < now() - ($2 * interval '1 second') END AS is_stale,
 			c.id,
 			COALESCE(c.brand, ''),
 			COALESCE(c.model, ''),
@@ -876,7 +876,7 @@ func (repository *PostgresTaxiParkSettingsRepository) ListDriverLocationsByOwner
 		  AND tp.deleted_at IS NULL
 		  AND d.deleted_at IS NULL
 		  AND u.deleted_at IS NULL
-		ORDER BY d.status = 'online' DESC, dl.updated_at DESC NULLS LAST, driver_name ASC`, ownerUserID, int(maxAge.Seconds()))
+		ORDER BY (d.status = 'online' AND dl.updated_at >= now() - ($2 * interval '1 second')) DESC, dl.updated_at DESC NULLS LAST, driver_name ASC`, ownerUserID, int(maxAge.Seconds()))
 	if err != nil {
 		return nil, fmt.Errorf("select taxi park driver locations: %w", err)
 	}
