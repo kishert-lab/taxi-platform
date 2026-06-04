@@ -24,7 +24,7 @@ http:
       - http://192.168.0.50:5173
 
 database:
-  host: 192.168.0.50
+  host: 127.0.0.1
   port: 5432
   user: taxi
   password: taxi_password
@@ -36,7 +36,7 @@ database:
   max_conn_idle_time: 30m
 
 redis:
-  host: 192.168.0.50
+  host: 127.0.0.1
   port: 6379
   password: ""
   db: 0
@@ -92,7 +92,7 @@ dispatch:
   recovery_interval: 30s
 
 geocoder:
-  pelias_url: http://pelias:4000
+  pelias_url: http://127.0.0.1:4000
   yandex_api_key: ""
   yandex_enabled: false
   dadata_api_key: ""

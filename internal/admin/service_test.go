@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -102,6 +103,54 @@ func TestListTaxiParkAccountsNormalizesLimitAndSearch(t *testing.T) {
 	}
 }
 
+func TestListCitiesReturnsRepositoryCities(t *testing.T) {
+	cityID := uuid.New()
+	repository := &fakeRepository{
+		cities: []CityRecord{
+			{
+				ID:          cityID,
+				Name:        "Perm",
+				Region:      "Perm Krai",
+				CountryCode: "RU",
+				Timezone:    "Asia/Yekaterinburg",
+				Latitude:    58.010455,
+				Longitude:   56.229443,
+				IsActive:    true,
+			},
+		},
+	}
+	service := NewService(repository, fakePasswordHasher{})
+
+	cities, err := service.ListCities(context.Background())
+	if err != nil {
+		t.Fatalf("list cities: %v", err)
+	}
+	if len(cities) != 1 || cities[0].ID != cityID {
+		t.Fatalf("unexpected cities result: %#v", cities)
+	}
+}
+
+func TestGetMonitorDatabaseSnapshotReturnsRepositorySnapshot(t *testing.T) {
+	collectedAt := time.Now().UTC()
+	repository := &fakeRepository{
+		monitorSnapshot: MonitorDatabaseSnapshot{
+			CollectedAt:   collectedAt,
+			TotalUsers:    10,
+			OnlineDrivers: 3,
+			ActiveOrders:  2,
+		},
+	}
+	service := NewService(repository, fakePasswordHasher{})
+
+	snapshot, err := service.GetMonitorDatabaseSnapshot(context.Background())
+	if err != nil {
+		t.Fatalf("get monitor snapshot: %v", err)
+	}
+	if snapshot.CollectedAt != collectedAt || snapshot.OnlineDrivers != 3 {
+		t.Fatalf("unexpected monitor snapshot: %#v", snapshot)
+	}
+}
+
 type fakePasswordHasher struct{}
 
 func (fakePasswordHasher) HashPassword(password string) (string, error) {
@@ -109,9 +158,11 @@ func (fakePasswordHasher) HashPassword(password string) (string, error) {
 }
 
 type fakeRepository struct {
-	createdRecord CreateTaxiParkOwnerRecord
-	resetRecord   ResetPasswordRecord
-	listFilter    ListTaxiParkAccountsFilter
+	createdRecord   CreateTaxiParkOwnerRecord
+	resetRecord     ResetPasswordRecord
+	listFilter      ListTaxiParkAccountsFilter
+	cities          []CityRecord
+	monitorSnapshot MonitorDatabaseSnapshot
 }
 
 func (repository *fakeRepository) CreateTaxiParkOwner(_ context.Context, record CreateTaxiParkOwnerRecord) (CreateTaxiParkOwnerResult, error) {
@@ -150,4 +201,12 @@ func (repository *fakeRepository) ListTaxiParkAccounts(_ context.Context, filter
 			IsOwnerActive:      true,
 		},
 	}, nil
+}
+
+func (repository *fakeRepository) ListCities(_ context.Context) ([]CityRecord, error) {
+	return repository.cities, nil
+}
+
+func (repository *fakeRepository) GetMonitorDatabaseSnapshot(_ context.Context) (MonitorDatabaseSnapshot, error) {
+	return repository.monitorSnapshot, nil
 }

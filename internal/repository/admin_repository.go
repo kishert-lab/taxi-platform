@@ -277,6 +277,137 @@ func (repository *PostgresAdminRepository) ListTaxiParkAccounts(ctx context.Cont
 	return accounts, nil
 }
 
+func (repository *PostgresAdminRepository) ListCities(ctx context.Context) ([]admin.CityRecord, error) {
+	const query = `
+		SELECT
+			id,
+			name,
+			region,
+			country_code,
+			timezone,
+			ST_Y(center::geometry) AS latitude,
+			ST_X(center::geometry) AS longitude,
+			is_active
+		FROM cities
+		WHERE deleted_at IS NULL
+		ORDER BY country_code, region, name`
+
+	rows, err := repository.pool.Query(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("query cities: %w", err)
+	}
+	defer rows.Close()
+
+	cities := make([]admin.CityRecord, 0)
+	for rows.Next() {
+		var city admin.CityRecord
+		if err := rows.Scan(
+			&city.ID,
+			&city.Name,
+			&city.Region,
+			&city.CountryCode,
+			&city.Timezone,
+			&city.Latitude,
+			&city.Longitude,
+			&city.IsActive,
+		); err != nil {
+			return nil, fmt.Errorf("scan city: %w", err)
+		}
+		cities = append(cities, city)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate cities: %w", err)
+	}
+
+	return cities, nil
+}
+
+func (repository *PostgresAdminRepository) GetMonitorDatabaseSnapshot(ctx context.Context) (admin.MonitorDatabaseSnapshot, error) {
+	const query = `
+		SELECT
+			now() AS collected_at,
+			(SELECT count(*) FROM users WHERE deleted_at IS NULL) AS total_users,
+			(SELECT count(*) FROM users WHERE is_active = true AND deleted_at IS NULL) AS active_users,
+			(
+				SELECT count(DISTINCT refresh_tokens.user_id)
+				FROM refresh_tokens
+				JOIN users ON users.id = refresh_tokens.user_id
+				WHERE refresh_tokens.revoked_at IS NULL
+				  AND refresh_tokens.expires_at > now()
+				  AND refresh_tokens.created_at >= now() - interval '15 minutes'
+				  AND users.deleted_at IS NULL
+				  AND users.is_active = true
+			) AS recently_active_users,
+			(SELECT count(*) FROM taxi_parks WHERE deleted_at IS NULL) AS total_taxi_parks,
+			(SELECT count(*) FROM taxi_parks WHERE is_verified = true AND deleted_at IS NULL) AS active_taxi_parks,
+			(SELECT count(*) FROM drivers WHERE deleted_at IS NULL) AS total_drivers,
+			(SELECT count(*) FROM drivers WHERE status = 'online' AND deleted_at IS NULL) AS online_drivers,
+			(SELECT count(*) FROM drivers WHERE status = 'busy' AND deleted_at IS NULL) AS busy_drivers,
+			(SELECT count(*) FROM drivers WHERE status = 'blocked' AND deleted_at IS NULL) AS blocked_drivers,
+			(SELECT count(*) FROM orders WHERE deleted_at IS NULL) AS total_orders,
+			(
+				SELECT count(*)
+				FROM orders
+				WHERE status IN ('searching', 'driver_assigned', 'driver_arriving', 'driver_waiting', 'in_progress')
+				  AND deleted_at IS NULL
+			) AS active_orders,
+			(SELECT count(*) FROM orders WHERE status = 'searching' AND deleted_at IS NULL) AS searching_orders,
+			(
+				SELECT count(*)
+				FROM orders
+				WHERE status IN ('driver_assigned', 'driver_arriving', 'driver_waiting')
+				  AND deleted_at IS NULL
+			) AS assigned_orders,
+			(SELECT count(*) FROM orders WHERE status = 'in_progress' AND deleted_at IS NULL) AS in_progress_orders,
+			(
+				SELECT count(*)
+				FROM orders
+				WHERE status = 'completed'
+				  AND completed_at >= date_trunc('day', now())
+				  AND deleted_at IS NULL
+			) AS completed_orders_today,
+			(
+				SELECT count(*)
+				FROM orders
+				WHERE status = 'cancelled'
+				  AND cancelled_at >= date_trunc('day', now())
+				  AND deleted_at IS NULL
+			) AS cancelled_orders_today,
+			(
+				SELECT count(*)
+				FROM orders
+				WHERE status = 'failed'
+				  AND updated_at >= date_trunc('day', now())
+				  AND deleted_at IS NULL
+			) AS failed_orders_today`
+
+	var snapshot admin.MonitorDatabaseSnapshot
+	if err := repository.pool.QueryRow(ctx, query).Scan(
+		&snapshot.CollectedAt,
+		&snapshot.TotalUsers,
+		&snapshot.ActiveUsers,
+		&snapshot.RecentlyActiveUsers,
+		&snapshot.TotalTaxiParks,
+		&snapshot.ActiveTaxiParks,
+		&snapshot.TotalDrivers,
+		&snapshot.OnlineDrivers,
+		&snapshot.BusyDrivers,
+		&snapshot.BlockedDrivers,
+		&snapshot.TotalOrders,
+		&snapshot.ActiveOrders,
+		&snapshot.SearchingOrders,
+		&snapshot.AssignedOrders,
+		&snapshot.InProgressOrders,
+		&snapshot.CompletedOrdersToday,
+		&snapshot.CancelledOrdersToday,
+		&snapshot.FailedOrdersToday,
+	); err != nil {
+		return admin.MonitorDatabaseSnapshot{}, fmt.Errorf("query monitor database snapshot: %w", err)
+	}
+
+	return snapshot, nil
+}
+
 func ensureTaxiParkRolePermissions(ctx context.Context, transaction pgx.Tx) error {
 	if _, err := transaction.Exec(ctx, `
 		INSERT INTO permissions (code, description)

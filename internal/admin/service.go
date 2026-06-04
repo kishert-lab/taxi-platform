@@ -171,6 +171,24 @@ func (service *Service) ListTaxiParkAccounts(ctx context.Context, command ListTa
 	return accounts, nil
 }
 
+func (service *Service) ListCities(ctx context.Context) ([]CityRecord, error) {
+	cities, err := service.repository.ListCities(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list cities: %w", err)
+	}
+
+	return cities, nil
+}
+
+func (service *Service) GetMonitorDatabaseSnapshot(ctx context.Context) (MonitorDatabaseSnapshot, error) {
+	snapshot, err := service.repository.GetMonitorDatabaseSnapshot(ctx)
+	if err != nil {
+		return MonitorDatabaseSnapshot{}, fmt.Errorf("get monitor database snapshot: %w", err)
+	}
+
+	return snapshot, nil
+}
+
 func GeneratePassword(length int) (string, error) {
 	if length < 12 {
 		length = 12

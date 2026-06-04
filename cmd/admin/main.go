@@ -38,6 +38,10 @@ func main() {
 		err = runListTaxiParks(ctx, os.Args[2:])
 	case "reset-password":
 		err = runResetPassword(ctx, os.Args[2:])
+	case "cities", "list-cities":
+		err = runListCities(ctx, os.Args[2:])
+	case "monitor":
+		err = runMonitor(ctx, os.Args[2:])
 	case "help", "-h", "--help":
 		printUsage()
 		return
@@ -156,6 +160,30 @@ func runResetPassword(ctx context.Context, args []string) error {
 	return printResetPasswordResult(result, output)
 }
 
+func runListCities(ctx context.Context, args []string) error {
+	flags := flag.NewFlagSet("cities", flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
+
+	var output string
+	flags.StringVar(&output, "output", "text", "output format: text or json")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	service, closeService, err := newAdminService(ctx)
+	if err != nil {
+		return err
+	}
+	defer closeService()
+
+	cities, err := service.ListCities(ctx)
+	if err != nil {
+		return err
+	}
+
+	return printCities(cities, output)
+}
+
 func newAdminService(ctx context.Context) (*adminapp.Service, func(), error) {
 	config, err := configs.Load()
 	if err != nil {
@@ -262,6 +290,45 @@ func printResetPasswordResult(result adminapp.ResetPasswordCommandResult, output
 	return nil
 }
 
+func printCities(cities []adminapp.CityRecord, output string) error {
+	if output == "json" {
+		return printJSON(struct {
+			Cities []adminapp.CityRecord `json:"cities"`
+			Count  int                   `json:"count"`
+		}{Cities: cities, Count: len(cities)})
+	}
+	if output != "text" {
+		return fmt.Errorf("unsupported output format %q", output)
+	}
+
+	if len(cities) == 0 {
+		fmt.Println("cities not found")
+		return nil
+	}
+
+	writer := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(writer, "ID\tNAME\tREGION\tCOUNTRY\tTIMEZONE\tLATITUDE\tLONGITUDE\tACTIVE")
+	for _, city := range cities {
+		fmt.Fprintf(
+			writer,
+			"%s\t%s\t%s\t%s\t%s\t%.6f\t%.6f\t%t\n",
+			city.ID,
+			city.Name,
+			city.Region,
+			city.CountryCode,
+			city.Timezone,
+			city.Latitude,
+			city.Longitude,
+			city.IsActive,
+		)
+	}
+	if err := writer.Flush(); err != nil {
+		return fmt.Errorf("flush cities output: %w", err)
+	}
+
+	return nil
+}
+
 func formatCents(value int64) string {
 	sign := ""
 	if value < 0 {
@@ -286,9 +353,14 @@ func printUsage() {
   go run ./cmd/admin create-taxi-park --phone +79990000000 --email park@example.com --city-id <uuid> --name "City Taxi" --accept-documents
   go run ./cmd/admin list-taxi-parks --limit 100
   go run ./cmd/admin reset-password --phone +79990000000 --role taxi_park
+  go run ./cmd/admin cities
+  go run ./cmd/admin monitor
+  go run ./cmd/admin monitor --inline
 
 commands:
   create-taxi-park  create taxi park owner user, taxi park profile, settings and consent audit
   list-taxi-parks   list taxi park accounts with owner contacts and finance status
-  reset-password    reset user password by phone and role, revoking active refresh tokens`)
+  reset-password    reset user password by phone and role, revoking active refresh tokens
+  cities            list cities with UUIDs for taxi park creation
+  monitor           open live console monitoring dashboard`)
 }

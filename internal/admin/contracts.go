@@ -18,6 +18,8 @@ type Repository interface {
 	CreateTaxiParkOwner(ctx context.Context, record CreateTaxiParkOwnerRecord) (CreateTaxiParkOwnerResult, error)
 	ResetPasswordByPhone(ctx context.Context, record ResetPasswordRecord) (ResetPasswordResult, error)
 	ListTaxiParkAccounts(ctx context.Context, filter ListTaxiParkAccountsFilter) ([]TaxiParkAccount, error)
+	ListCities(ctx context.Context) ([]CityRecord, error)
+	GetMonitorDatabaseSnapshot(ctx context.Context) (MonitorDatabaseSnapshot, error)
 }
 
 type CreateTaxiParkCommand struct {
@@ -126,4 +128,36 @@ type TaxiParkAccount struct {
 	IsOwnerActive      bool       `json:"is_owner_active"`
 	CreatedAt          time.Time  `json:"created_at"`
 	DeletedAt          *time.Time `json:"deleted_at,omitempty"`
+}
+
+type CityRecord struct {
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Region      string    `json:"region"`
+	CountryCode string    `json:"country_code"`
+	Timezone    string    `json:"timezone"`
+	Latitude    float64   `json:"latitude"`
+	Longitude   float64   `json:"longitude"`
+	IsActive    bool      `json:"is_active"`
+}
+
+type MonitorDatabaseSnapshot struct {
+	CollectedAt          time.Time `json:"collected_at"`
+	TotalUsers           int64     `json:"total_users"`
+	ActiveUsers          int64     `json:"active_users"`
+	RecentlyActiveUsers  int64     `json:"recently_active_users"`
+	TotalTaxiParks       int64     `json:"total_taxi_parks"`
+	ActiveTaxiParks      int64     `json:"active_taxi_parks"`
+	TotalDrivers         int64     `json:"total_drivers"`
+	OnlineDrivers        int64     `json:"online_drivers"`
+	BusyDrivers          int64     `json:"busy_drivers"`
+	BlockedDrivers       int64     `json:"blocked_drivers"`
+	TotalOrders          int64     `json:"total_orders"`
+	ActiveOrders         int64     `json:"active_orders"`
+	SearchingOrders      int64     `json:"searching_orders"`
+	AssignedOrders       int64     `json:"assigned_orders"`
+	InProgressOrders     int64     `json:"in_progress_orders"`
+	CompletedOrdersToday int64     `json:"completed_orders_today"`
+	CancelledOrdersToday int64     `json:"cancelled_orders_today"`
+	FailedOrdersToday    int64     `json:"failed_orders_today"`
 }
