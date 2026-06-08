@@ -194,8 +194,76 @@ func (useCase *UnavailableUseCase) ListDriverTransactions(context.Context, uuid.
 	return nil, common.ErrNotImplemented
 }
 
+func (useCase *UnavailableUseCase) ListDriverOrderFinances(context.Context, uuid.UUID, int) ([]finance.OrderFinance, error) {
+	return nil, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) ListDriverPayouts(context.Context, uuid.UUID, int) ([]finance.DriverPayout, error) {
+	return nil, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) ListDriverFinanceDocuments(context.Context, uuid.UUID, int) ([]finance.FinanceDocument, error) {
+	return nil, common.ErrNotImplemented
+}
+
 func (useCase *UnavailableUseCase) GetTaxiParkBalance(context.Context, uuid.UUID) (domain.TaxiParkBalance, error) {
 	return domain.TaxiParkBalance{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) GetTaxiParkFinanceSettings(context.Context, uuid.UUID) (domain.TaxiParkFinanceSettings, error) {
+	return domain.TaxiParkFinanceSettings{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) UpdateTaxiParkDriverCommission(context.Context, uuid.UUID, int32) (domain.TaxiParkFinanceSettings, error) {
+	return domain.TaxiParkFinanceSettings{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) GetTaxiParkOverview(context.Context, uuid.UUID, time.Time, time.Time) (finance.TaxiParkFinanceOverview, error) {
+	return finance.TaxiParkFinanceOverview{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) ListTaxiParkOrderFinances(context.Context, uuid.UUID, int) ([]finance.OrderFinance, error) {
+	return nil, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) GetTaxiParkDriverBalance(context.Context, uuid.UUID, uuid.UUID) (domain.DriverBalance, error) {
+	return domain.DriverBalance{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) ListTaxiParkDriverPayouts(context.Context, uuid.UUID, uuid.UUID, int) ([]finance.DriverPayout, error) {
+	return nil, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) CreateDriverPayout(context.Context, uuid.UUID, uuid.UUID, finance.CreateDriverPayoutInput) (finance.DriverPayout, error) {
+	return finance.DriverPayout{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) ApproveDriverPayout(context.Context, uuid.UUID, uuid.UUID) (finance.DriverPayout, error) {
+	return finance.DriverPayout{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) MarkDriverPayoutPaid(context.Context, uuid.UUID, uuid.UUID) (finance.DriverPayout, error) {
+	return finance.DriverPayout{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) GetTaxiParkPlatformFeeDebt(context.Context, uuid.UUID) (domain.Money, error) {
+	return domain.Money{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) ListTaxiParkPlatformFeeAccruals(context.Context, uuid.UUID, time.Time, time.Time, int) ([]finance.OrderFinance, error) {
+	return nil, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) ListTaxiParkPlatformInvoices(context.Context, uuid.UUID, int) ([]finance.PlatformInvoice, error) {
+	return nil, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) CreateTaxiParkPlatformInvoice(context.Context, uuid.UUID, finance.CreatePlatformInvoiceInput) (finance.PlatformInvoice, error) {
+	return finance.PlatformInvoice{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) ListTaxiParkDocuments(context.Context, uuid.UUID, int) ([]finance.FinanceDocument, error) {
+	return nil, common.ErrNotImplemented
 }
 
 func (useCase *UnavailableUseCase) ListTaxiParkDrivers(context.Context, uuid.UUID, int) ([]finance.TaxiParkDriver, error) {
@@ -212,6 +280,26 @@ func (useCase *UnavailableUseCase) ListTaxiParkTransactions(context.Context, uui
 
 func (useCase *UnavailableUseCase) GetAdminOverview(context.Context, time.Time, time.Time) (finance.AdminOverview, error) {
 	return finance.AdminOverview{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) GetAdminTaxiParkOverview(context.Context, uuid.UUID, time.Time, time.Time) (finance.TaxiParkFinanceOverview, error) {
+	return finance.TaxiParkFinanceOverview{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) GetAdminTaxiParkPlatformFeeDebt(context.Context, uuid.UUID) (domain.Money, error) {
+	return domain.Money{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) ListAdminPlatformInvoices(context.Context, int) ([]finance.PlatformInvoice, error) {
+	return nil, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) MarkAdminPlatformInvoicePaid(context.Context, uuid.UUID) (finance.PlatformInvoice, error) {
+	return finance.PlatformInvoice{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) ListAdminDocuments(context.Context, int) ([]finance.FinanceDocument, error) {
+	return nil, common.ErrNotImplemented
 }
 
 func (useCase *UnavailableUseCase) GetSettings(context.Context, uuid.UUID) (domain.TaxiParkSettings, error) {

@@ -35,15 +35,12 @@ func (repository *PostgresFinanceRepository) GetOrderSnapshot(ctx context.Contex
 			o.tariff_id,
 			o.status,
 			CASE WHEN o.final_price IS NULL THEN NULL ELSE (o.final_price * 100)::bigint END,
-			(d.commission_percent * 100)::integer,
-			(tp.commission_percent * 100)::integer,
-			(t.commission_percent * 100)::integer,
-			(c.commission_percent * 100)::integer
+			COALESCE((tpf.driver_commission_percent * 100)::integer, (tp.commission_percent * 100)::integer, 0),
+			COALESCE((tpf.platform_service_fee_percent * 100)::integer, 100)
 		FROM orders o
 		LEFT JOIN drivers d ON d.id = o.driver_id
 		LEFT JOIN taxi_parks tp ON tp.id = d.taxi_park_id
-		LEFT JOIN tariffs t ON t.id = o.tariff_id
-		LEFT JOIN cities c ON c.id = o.city_id
+		LEFT JOIN taxi_park_finance_settings tpf ON tpf.taxi_park_id = tp.id AND tpf.is_active = TRUE
 		WHERE o.id = $1 AND o.deleted_at IS NULL`
 
 	var snapshot finance.OrderSnapshot
@@ -52,9 +49,7 @@ func (repository *PostgresFinanceRepository) GetOrderSnapshot(ctx context.Contex
 	var tariffID pgtype.UUID
 	var finalPriceCents pgtype.Int8
 	var driverBPS pgtype.Int4
-	var taxiParkBPS pgtype.Int4
-	var tariffBPS pgtype.Int4
-	var cityBPS pgtype.Int4
+	var platformFeeBPS int32
 
 	if err := repository.pool.QueryRow(ctx, query, orderID).Scan(
 		&snapshot.OrderID,
@@ -65,9 +60,7 @@ func (repository *PostgresFinanceRepository) GetOrderSnapshot(ctx context.Contex
 		&snapshot.Status,
 		&finalPriceCents,
 		&driverBPS,
-		&taxiParkBPS,
-		&tariffBPS,
-		&cityBPS,
+		&platformFeeBPS,
 	); err != nil {
 		return finance.OrderSnapshot{}, fmt.Errorf("select finance order snapshot: %w", err)
 	}
@@ -89,10 +82,7 @@ func (repository *PostgresFinanceRepository) GetOrderSnapshot(ctx context.Contex
 		snapshot.FinalPrice = &money
 	}
 	snapshot.DriverCommissionBPS = optionalInt32(driverBPS)
-	snapshot.TaxiParkCommissionBPS = optionalInt32(taxiParkBPS)
-	snapshot.TariffCommissionBPS = optionalInt32(tariffBPS)
-	snapshot.CityCommissionBPS = optionalInt32(cityBPS)
-	snapshot.PlatformDefaultBPS = domain.DefaultPlatformCommissionBasisPoints
+	snapshot.PlatformFeeBPS = platformFeeBPS
 
 	return snapshot, nil
 }
@@ -104,55 +94,101 @@ func (repository *PostgresFinanceRepository) CreateOrderSettlement(ctx context.C
 	}
 	defer rollbackTx(ctx, tx)
 
-	var existingID uuid.UUID
-	existingErr := tx.QueryRow(ctx, `
-		SELECT id
-		FROM financial_transactions
-		WHERE order_id = $1 AND transaction_type = 'driver_income'
-		LIMIT 1
-		FOR SHARE`, settlement.OrderID).Scan(&existingID)
-	if existingErr == nil {
-		return domain.OrderSettlement{}, finance.ErrFinancialSettlementDuplicate
+	existingSettlement, found, err := repository.getOrderSettlementForUpdate(ctx, tx, settlement.OrderID)
+	if err != nil {
+		return domain.OrderSettlement{}, err
 	}
-	if existingErr != nil && !errors.Is(existingErr, pgx.ErrNoRows) {
-		return domain.OrderSettlement{}, fmt.Errorf("check duplicate settlement: %w", existingErr)
+	if found {
+		if err := tx.Commit(ctx); err != nil {
+			return domain.OrderSettlement{}, fmt.Errorf("commit finance transaction: %w", err)
+		}
+		return existingSettlement, nil
 	}
 
 	commissionTransactionID, err := insertFinancialTransaction(ctx, tx, settlement, domain.TransactionTypeCommission)
 	if err != nil {
 		if isUniqueViolation(err) {
-			return domain.OrderSettlement{}, finance.ErrFinancialSettlementDuplicate
+			return repository.getCommittedOrderSettlement(ctx, settlement.OrderID)
 		}
 		return domain.OrderSettlement{}, err
 	}
 	incomeTransactionID, err := insertFinancialTransaction(ctx, tx, settlement, domain.TransactionTypeDriverIncome)
 	if err != nil {
 		if isUniqueViolation(err) {
-			return domain.OrderSettlement{}, finance.ErrFinancialSettlementDuplicate
+			return repository.getCommittedOrderSettlement(ctx, settlement.OrderID)
 		}
 		return domain.OrderSettlement{}, err
+	}
+	settlement.CommissionTransactionID = commissionTransactionID
+	settlement.IncomeTransactionID = incomeTransactionID
+
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO order_financial_transactions (
+			order_id,
+			taxi_park_id,
+			driver_id,
+			order_total_amount,
+			driver_commission_percent,
+			taxi_park_commission_amount,
+			driver_income_amount,
+			platform_service_fee_percent,
+			platform_service_fee_amount,
+			taxi_park_income_amount,
+			currency,
+			status
+		)
+		VALUES ($1, $2, $3, $4::numeric, $5::numeric, $6::numeric, $7::numeric, $8::numeric, $9::numeric, $10::numeric, $11, 'calculated')`,
+		settlement.OrderID,
+		settlement.TaxiParkID,
+		settlement.DriverID,
+		moneyCentsToNumeric(settlement.GrossAmount.Amount),
+		basisPointsToNumeric(settlement.CommissionRate.BasisPoints),
+		moneyCentsToNumeric(settlement.CommissionAmount.Amount),
+		moneyCentsToNumeric(settlement.NetAmount.Amount),
+		basisPointsToNumeric(settlement.PlatformFeeRate.BasisPoints),
+		moneyCentsToNumeric(settlement.PlatformFeeAmount.Amount),
+		moneyCentsToNumeric(settlement.TaxiParkIncomeAmount.Amount),
+		settlement.GrossAmount.Currency,
+	); err != nil {
+		if isUniqueViolation(err) {
+			return repository.getCommittedOrderSettlement(ctx, settlement.OrderID)
+		}
+		return domain.OrderSettlement{}, fmt.Errorf("insert order financial transaction: %w", err)
+	}
+
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO driver_balances (driver_id, available_balance_cents, pending_balance_cents, currency)
+		VALUES ($1, $2, 0, $3)
+		ON CONFLICT (driver_id) DO UPDATE
+		SET available_balance_cents = driver_balances.available_balance_cents + EXCLUDED.available_balance_cents,
+		    version = driver_balances.version + 1`,
+		settlement.DriverID,
+		settlement.NetAmount.Amount,
+		settlement.NetAmount.Currency,
+	); err != nil {
+		return domain.OrderSettlement{}, fmt.Errorf("upsert driver balance: %w", err)
 	}
 
 	if settlement.TaxiParkID != nil {
 		if _, err := tx.Exec(ctx, `
 			UPDATE taxi_parks
 			SET balance_cents = balance_cents + $2
-			WHERE id = $1`, *settlement.TaxiParkID, settlement.NetAmount.Amount); err != nil {
+			WHERE id = $1`, *settlement.TaxiParkID, settlement.TaxiParkIncomeAmount.Amount); err != nil {
 			return domain.OrderSettlement{}, fmt.Errorf("update taxi park balance: %w", err)
 		}
-	} else {
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO driver_balances (driver_id, available_balance_cents, pending_balance_cents, currency)
-			VALUES ($1, $2, 0, $3)
-			ON CONFLICT (driver_id) DO UPDATE
-			SET available_balance_cents = driver_balances.available_balance_cents + EXCLUDED.available_balance_cents,
-			    version = driver_balances.version + 1`,
-			settlement.DriverID,
-			settlement.NetAmount.Amount,
-			settlement.NetAmount.Currency,
-		); err != nil {
-			return domain.OrderSettlement{}, fmt.Errorf("upsert driver balance: %w", err)
+		if err := insertTaxiParkBalanceLedger(ctx, tx, *settlement.TaxiParkID, settlement); err != nil {
+			return domain.OrderSettlement{}, err
 		}
+		if err := insertTaxiParkPlatformFeeLedger(ctx, tx, *settlement.TaxiParkID, settlement); err != nil {
+			return domain.OrderSettlement{}, err
+		}
+		if err := insertPlatformBalanceLedger(ctx, tx, *settlement.TaxiParkID, settlement); err != nil {
+			return domain.OrderSettlement{}, err
+		}
+	}
+
+	if err := insertDriverBalanceLedger(ctx, tx, settlement); err != nil {
+		return domain.OrderSettlement{}, err
 	}
 
 	if err := insertFinanceAudit(ctx, tx, commissionTransactionID, settlement, "commission_created"); err != nil {
@@ -247,6 +283,62 @@ func (repository *PostgresFinanceRepository) GetTaxiParkBalance(ctx context.Cont
 	}
 	balance.AvailableBalance.Currency = currency
 	return balance, nil
+}
+
+func (repository *PostgresFinanceRepository) GetTaxiParkFinanceSettings(ctx context.Context, ownerUserID uuid.UUID) (domain.TaxiParkFinanceSettings, error) {
+	const query = `
+		SELECT
+			tp.id,
+			COALESCE((tfs.driver_commission_percent * 100)::integer, 0),
+			COALESCE((tfs.platform_service_fee_percent * 100)::integer, 100),
+			COALESCE(tfs.is_active, TRUE),
+			COALESCE(tfs.created_at, now()),
+			COALESCE(tfs.updated_at, now())
+		FROM taxi_parks tp
+		LEFT JOIN taxi_park_finance_settings tfs ON tfs.taxi_park_id = tp.id AND tfs.is_active = TRUE
+		WHERE tp.owner_user_id = $1 AND tp.deleted_at IS NULL`
+
+	settings, err := scanTaxiParkFinanceSettings(ctx, repository.pool, query, ownerUserID)
+	if err != nil {
+		return domain.TaxiParkFinanceSettings{}, fmt.Errorf("select taxi park finance settings: %w", err)
+	}
+	return settings, nil
+}
+
+func (repository *PostgresFinanceRepository) UpdateTaxiParkDriverCommission(ctx context.Context, ownerUserID uuid.UUID, driverCommissionBasisPoints int32) (domain.TaxiParkFinanceSettings, error) {
+	const query = `
+		INSERT INTO taxi_park_finance_settings (
+			taxi_park_id,
+			driver_commission_percent,
+			platform_service_fee_percent,
+			is_active
+		)
+		SELECT
+			tp.id,
+			$2::numeric,
+			COALESCE(existing.platform_service_fee_percent, 1.00),
+			TRUE
+		FROM taxi_parks tp
+		LEFT JOIN taxi_park_finance_settings existing ON existing.taxi_park_id = tp.id AND existing.is_active = TRUE
+		WHERE tp.owner_user_id = $1 AND tp.deleted_at IS NULL
+		ON CONFLICT (taxi_park_id)
+		DO UPDATE SET
+			driver_commission_percent = EXCLUDED.driver_commission_percent,
+			is_active = TRUE,
+			updated_at = now()
+		RETURNING
+			taxi_park_id,
+			(driver_commission_percent * 100)::integer,
+			(platform_service_fee_percent * 100)::integer,
+			is_active,
+			created_at,
+			updated_at`
+
+	settings, err := scanTaxiParkFinanceSettings(ctx, repository.pool, query, ownerUserID, basisPointsToNumeric(driverCommissionBasisPoints))
+	if err != nil {
+		return domain.TaxiParkFinanceSettings{}, fmt.Errorf("update taxi park finance settings: %w", err)
+	}
+	return settings, nil
 }
 
 func (repository *PostgresFinanceRepository) ListTaxiParkDrivers(ctx context.Context, ownerUserID uuid.UUID, limit int) ([]finance.TaxiParkDriver, error) {
@@ -552,6 +644,250 @@ func insertFinanceAudit(ctx context.Context, tx pgx.Tx, transactionID uuid.UUID,
 		return fmt.Errorf("insert finance audit event: %w", err)
 	}
 	return nil
+}
+
+func insertDriverBalanceLedger(ctx context.Context, tx pgx.Tx, settlement domain.OrderSettlement) error {
+	balanceAfter, err := nextLedgerBalance(ctx, tx, "driver_balance_ledger", "driver_id", settlement.DriverID, settlement.NetAmount.Amount, true)
+	if err != nil {
+		return fmt.Errorf("resolve driver balance ledger: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO driver_balance_ledger (
+			driver_id,
+			taxi_park_id,
+			order_id,
+			transaction_id,
+			type,
+			amount,
+			currency,
+			direction,
+			balance_after
+		)
+		VALUES ($1, $2, $3, $4, 'order_income', $5::numeric, $6, 'credit', $7::numeric)`,
+		settlement.DriverID,
+		settlement.TaxiParkID,
+		settlement.OrderID,
+		settlement.IncomeTransactionID,
+		moneyCentsToNumeric(settlement.NetAmount.Amount),
+		settlement.NetAmount.Currency,
+		moneyCentsToNumeric(balanceAfter),
+	); err != nil {
+		return fmt.Errorf("insert driver balance ledger: %w", err)
+	}
+	return nil
+}
+
+func insertTaxiParkBalanceLedger(ctx context.Context, tx pgx.Tx, taxiParkID uuid.UUID, settlement domain.OrderSettlement) error {
+	balanceAfter, err := nextLedgerBalance(ctx, tx, "taxi_park_balance_ledger", "taxi_park_id", taxiParkID, settlement.TaxiParkIncomeAmount.Amount, true)
+	if err != nil {
+		return fmt.Errorf("resolve taxi park balance ledger: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO taxi_park_balance_ledger (
+			taxi_park_id,
+			order_id,
+			transaction_id,
+			type,
+			amount,
+			currency,
+			direction,
+			balance_after
+		)
+		VALUES ($1, $2, $3, 'order_commission_income', $4::numeric, $5, 'credit', $6::numeric)`,
+		taxiParkID,
+		settlement.OrderID,
+		settlement.CommissionTransactionID,
+		moneyCentsToNumeric(settlement.TaxiParkIncomeAmount.Amount),
+		settlement.TaxiParkIncomeAmount.Currency,
+		moneyCentsToNumeric(balanceAfter),
+	); err != nil {
+		return fmt.Errorf("insert taxi park balance ledger: %w", err)
+	}
+	return nil
+}
+
+func insertTaxiParkPlatformFeeLedger(ctx context.Context, tx pgx.Tx, taxiParkID uuid.UUID, settlement domain.OrderSettlement) error {
+	balanceAfter, err := nextLedgerBalance(ctx, tx, "taxi_park_platform_fee_ledger", "taxi_park_id", taxiParkID, settlement.PlatformFeeAmount.Amount, true)
+	if err != nil {
+		return fmt.Errorf("resolve taxi park platform fee ledger: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO taxi_park_platform_fee_ledger (
+			taxi_park_id,
+			order_id,
+			transaction_id,
+			type,
+			amount,
+			currency,
+			direction,
+			balance_after
+		)
+		VALUES ($1, $2, $3, 'platform_service_fee_accrual', $4::numeric, $5, 'debit', $6::numeric)`,
+		taxiParkID,
+		settlement.OrderID,
+		settlement.CommissionTransactionID,
+		moneyCentsToNumeric(settlement.PlatformFeeAmount.Amount),
+		settlement.PlatformFeeAmount.Currency,
+		moneyCentsToNumeric(balanceAfter),
+	); err != nil {
+		return fmt.Errorf("insert taxi park platform fee ledger: %w", err)
+	}
+	return nil
+}
+
+func insertPlatformBalanceLedger(ctx context.Context, tx pgx.Tx, taxiParkID uuid.UUID, settlement domain.OrderSettlement) error {
+	balanceAfter, err := nextLedgerBalance(ctx, tx, "platform_balance_ledger", "taxi_park_id", taxiParkID, settlement.PlatformFeeAmount.Amount, true)
+	if err != nil {
+		return fmt.Errorf("resolve platform balance ledger: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO platform_balance_ledger (
+			taxi_park_id,
+			order_id,
+			transaction_id,
+			type,
+			amount,
+			currency,
+			direction,
+			balance_after
+		)
+		VALUES ($1, $2, $3, 'service_fee_receivable', $4::numeric, $5, 'credit', $6::numeric)`,
+		taxiParkID,
+		settlement.OrderID,
+		settlement.CommissionTransactionID,
+		moneyCentsToNumeric(settlement.PlatformFeeAmount.Amount),
+		settlement.PlatformFeeAmount.Currency,
+		moneyCentsToNumeric(balanceAfter),
+	); err != nil {
+		return fmt.Errorf("insert platform balance ledger: %w", err)
+	}
+	return nil
+}
+
+func nextLedgerBalance(ctx context.Context, tx pgx.Tx, table string, ownerColumn string, ownerID uuid.UUID, deltaCents int64, increase bool) (int64, error) {
+	query := fmt.Sprintf(`
+		SELECT COALESCE((balance_after * 100)::bigint, 0)
+		FROM %s
+		WHERE %s = $1
+		ORDER BY created_at DESC
+		LIMIT 1`, table, ownerColumn)
+
+	var currentBalance int64
+	if err := tx.QueryRow(ctx, query, ownerID).Scan(&currentBalance); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return 0, err
+	}
+	if increase {
+		return currentBalance + deltaCents, nil
+	}
+	return currentBalance - deltaCents, nil
+}
+
+func (repository *PostgresFinanceRepository) getCommittedOrderSettlement(ctx context.Context, orderID uuid.UUID) (domain.OrderSettlement, error) {
+	tx, err := repository.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return domain.OrderSettlement{}, fmt.Errorf("begin finance settlement lookup: %w", err)
+	}
+	defer rollbackTx(ctx, tx)
+
+	settlement, found, err := repository.getOrderSettlementForUpdate(ctx, tx, orderID)
+	if err != nil {
+		return domain.OrderSettlement{}, err
+	}
+	if !found {
+		return domain.OrderSettlement{}, finance.ErrFinancialSettlementDuplicate
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return domain.OrderSettlement{}, fmt.Errorf("commit finance settlement lookup: %w", err)
+	}
+	return settlement, nil
+}
+
+func (repository *PostgresFinanceRepository) getOrderSettlementForUpdate(ctx context.Context, tx pgx.Tx, orderID uuid.UUID) (domain.OrderSettlement, bool, error) {
+	const query = `
+		SELECT
+			order_id,
+			driver_id,
+			taxi_park_id,
+			(order_total_amount * 100)::bigint,
+			(driver_commission_percent * 100)::integer,
+			(taxi_park_commission_amount * 100)::bigint,
+			(driver_income_amount * 100)::bigint,
+			(platform_service_fee_percent * 100)::integer,
+			(platform_service_fee_amount * 100)::bigint,
+			(taxi_park_income_amount * 100)::bigint,
+			currency,
+			created_at
+		FROM order_financial_transactions
+		WHERE order_id = $1
+		FOR SHARE`
+
+	var settlement domain.OrderSettlement
+	var taxiParkID pgtype.UUID
+	var currency string
+	if err := tx.QueryRow(ctx, query, orderID).Scan(
+		&settlement.OrderID,
+		&settlement.DriverID,
+		&taxiParkID,
+		&settlement.GrossAmount.Amount,
+		&settlement.CommissionRate.BasisPoints,
+		&settlement.CommissionAmount.Amount,
+		&settlement.NetAmount.Amount,
+		&settlement.PlatformFeeRate.BasisPoints,
+		&settlement.PlatformFeeAmount.Amount,
+		&settlement.TaxiParkIncomeAmount.Amount,
+		&currency,
+		&settlement.CreatedAt,
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.OrderSettlement{}, false, nil
+		}
+		return domain.OrderSettlement{}, false, fmt.Errorf("select existing order settlement: %w", err)
+	}
+	if taxiParkID.Valid {
+		value := uuid.UUID(taxiParkID.Bytes)
+		settlement.TaxiParkID = &value
+	}
+	settlement.GrossAmount.Currency = currency
+	settlement.CommissionAmount.Currency = currency
+	settlement.NetAmount.Currency = currency
+	settlement.PlatformFeeAmount.Currency = currency
+	settlement.TaxiParkIncomeAmount.Currency = currency
+	settlement.CommissionRate.Source = "taxi_park_finance_settings"
+	settlement.PlatformFeeRate.Source = "taxi_park_finance_settings"
+	return settlement, true, nil
+}
+
+func scanTaxiParkFinanceSettings(ctx context.Context, queryable interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}, query string, args ...any) (domain.TaxiParkFinanceSettings, error) {
+	var settings domain.TaxiParkFinanceSettings
+	if err := queryable.QueryRow(ctx, query, args...).Scan(
+		&settings.TaxiParkID,
+		&settings.DriverCommissionRate.BasisPoints,
+		&settings.PlatformFeeRate.BasisPoints,
+		&settings.IsActive,
+		&settings.CreatedAt,
+		&settings.UpdatedAt,
+	); err != nil {
+		return domain.TaxiParkFinanceSettings{}, err
+	}
+	settings.DriverCommissionRate.Source = "taxi_park"
+	settings.PlatformFeeRate.Source = "platform"
+	return settings, nil
+}
+
+func moneyCentsToNumeric(amountCents int64) string {
+	sign := ""
+	value := amountCents
+	if value < 0 {
+		sign = "-"
+		value = -value
+	}
+	return fmt.Sprintf("%s%d.%02d", sign, value/100, value%100)
+}
+
+func basisPointsToNumeric(basisPoints int32) string {
+	return fmt.Sprintf("%d.%02d", basisPoints/100, basisPoints%100)
 }
 
 func financialTransactionColumns(alias string) string {

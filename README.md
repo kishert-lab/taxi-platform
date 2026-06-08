@@ -127,6 +127,8 @@ Passenger and driver profile responses include `photo_url`, `rating`, and `ratin
 - `POST /taxi-park/tariffs`
 - `PATCH /taxi-park/tariffs/{id}`
 - `GET /taxi-park/balance`
+- `GET /taxi-park/finance/settings`
+- `PUT /taxi-park/finance/settings/driver-commission`
 - `GET /taxi-park/drivers`
 - `GET /taxi-park/orders`
 - `GET /taxi-park/transactions`
@@ -274,6 +276,35 @@ Taxi parks can maintain own settings in `taxi_park_settings`:
 - commercial settings: commission override, minimum order price
 - operations: cancellation and driver arrival timeout
 - payment toggles: cash, card, transfer
+
+## Finance Model
+
+Completed order settlement is recorded separately for the driver, taxi park, and platform.
+
+Core formulas:
+
+- `taxi_park_commission_amount = order_total_amount * driver_commission_percent / 100`
+- `driver_income_amount = order_total_amount - taxi_park_commission_amount`
+- `platform_service_fee_amount = taxi_park_commission_amount * platform_service_fee_percent / 100`
+- `taxi_park_income_amount = taxi_park_commission_amount`
+
+Important accounting rule:
+
+- platform fee does not reduce `taxi_park_income_amount` inside the order settlement
+- taxi park platform debt is tracked in a separate ledger
+- driver money, taxi park money, and platform receivables are never merged into one net amount
+
+The backend persists this model through:
+
+- `taxi_park_finance_settings`
+- `order_financial_transactions`
+- `driver_balance_ledger`
+- `taxi_park_balance_ledger`
+- `taxi_park_platform_fee_ledger`
+- `platform_balance_ledger`
+- `driver_payouts`
+- `platform_invoices`
+- `finance_documents`
 
 Park-owned tariff customization is stored in `taxi_park_tariffs`, including base price, per-km price, per-minute price, minimum price, and future-ready fixed routes JSON.
 

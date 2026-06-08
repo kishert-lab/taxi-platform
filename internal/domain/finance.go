@@ -40,9 +40,21 @@ type OrderSettlement struct {
 	CommissionRate          CommissionRate
 	CommissionAmount        Money
 	NetAmount               Money
+	PlatformFeeRate         CommissionRate
+	PlatformFeeAmount       Money
+	TaxiParkIncomeAmount    Money
 	CommissionTransactionID uuid.UUID
 	IncomeTransactionID     uuid.UUID
 	CreatedAt               time.Time
+}
+
+type TaxiParkFinanceSettings struct {
+	TaxiParkID           uuid.UUID
+	DriverCommissionRate CommissionRate
+	PlatformFeeRate      CommissionRate
+	IsActive             bool
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
 }
 
 type FinancialTransaction struct {
@@ -123,6 +135,18 @@ func CalculateCommission(grossAmount Money, rate CommissionRate) (Money, Money, 
 	}
 
 	return commission, net, nil
+}
+
+func CalculatePlatformFee(baseAmount Money, rate CommissionRate) (Money, error) {
+	if baseAmount.Amount < 0 || baseAmount.Currency == "" {
+		return Money{}, ErrInvalidMoney
+	}
+	if rate.BasisPoints < 0 || rate.BasisPoints > 10000 {
+		return Money{}, ErrInvalidCommissionRate
+	}
+
+	feeAmount := (baseAmount.Amount*int64(rate.BasisPoints) + 5000) / 10000
+	return NewMoney(feeAmount, baseAmount.Currency)
 }
 
 func (transactionType TransactionType) Validate() error {
