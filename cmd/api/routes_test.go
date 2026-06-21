@@ -26,7 +26,7 @@ func TestMobileAndFinanceRoutesAreRegistered(t *testing.T) {
 		taxiPark:   handler.NewTaxiParkSettingsHandler(unavailableUseCase),
 		legal:      handler.NewLegalHandler(unavailableUseCase),
 		chat:       handler.NewChatHandler(unavailableUseCase),
-		websocket:  handler.NewWebSocketHandler(unavailableUseCase, []string{"*"}),
+		websocket:  handler.NewWebSocketHandler(unavailableUseCase, nil, []string{"*"}),
 	}
 	router := buildRouter(testConfig(), zap.NewNop(), routes)
 

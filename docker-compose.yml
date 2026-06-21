@@ -121,7 +121,7 @@
       context: .
       dockerfile: Dockerfile
     container_name: taxi_backend
-    image: registry.dev.it59com.ru/taxi-platform/api:latest
+    image: registry.dev.it59com.ru/taxi-platform/api:${IMAGE_TAG:-latest}
     restart: unless-stopped
     depends_on:
       postgres:

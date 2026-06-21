@@ -184,6 +184,7 @@ func Load() (*Config, error) {
 	if err := viper.Unmarshal(&config); err != nil {
 		return nil, fmt.Errorf("unmarshal config: %w", err)
 	}
+	config.App.Version = normalizeApplicationVersion(config.App.Version, "./migrations")
 	if err := config.Validate(); err != nil {
 		return nil, fmt.Errorf("validate config: %w", err)
 	}

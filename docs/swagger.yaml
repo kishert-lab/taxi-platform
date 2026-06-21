@@ -3777,6 +3777,7 @@ paths:
       - admin-geocoder
   /admin/legal/documents:
     get:
+      description: Lists immutable legal document versions filtered by type and language.
       parameters:
       - description: Document type
         in: query
@@ -3810,6 +3811,8 @@ paths:
     post:
       consumes:
       - application/json
+      description: Creates a new legal document row. When activate=true, older versions
+        of the same type and language become inactive.
       parameters:
       - description: Legal document
         in: body
@@ -3843,6 +3846,8 @@ paths:
       - admin-legal
   /admin/legal/documents/{id}/activate:
     post:
+      description: Activates the selected legal document version and deactivates other
+        versions of the same type and language.
       parameters:
       - description: Document ID
         in: path
@@ -3875,6 +3880,7 @@ paths:
       - admin-legal
   /admin/legal/documents/{id}/deactivate:
     post:
+      description: Deactivates the selected legal document version.
       parameters:
       - description: Document ID
         in: path
@@ -5734,6 +5740,8 @@ paths:
       - chat
   /public/legal/consent:
     get:
+      description: Returns the currently active immutable personal data consent version
+        from legal_documents.
       parameters:
       - default: ru
         description: Language
@@ -5756,6 +5764,8 @@ paths:
       - public-legal
   /public/legal/documents/{document_type}:
     get:
+      description: Returns the active immutable legal document version for the requested
+        document type.
       parameters:
       - description: Document type
         in: path
@@ -5787,6 +5797,8 @@ paths:
       - public-legal
   /public/legal/privacy-policy:
     get:
+      description: Returns the currently active immutable privacy policy version from
+        legal_documents.
       parameters:
       - default: ru
         description: Language
@@ -5809,6 +5821,8 @@ paths:
       - public-legal
   /public/legal/terms:
     get:
+      description: Returns the currently active immutable terms of service version
+        from legal_documents.
       parameters:
       - default: ru
         description: Language

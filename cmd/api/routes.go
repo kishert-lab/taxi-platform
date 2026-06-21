@@ -10,6 +10,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/kishert-lab/taxi-platform/configs"
+	auditapp "github.com/kishert-lab/taxi-platform/internal/audit"
 	authapp "github.com/kishert-lab/taxi-platform/internal/auth"
 	chatapp "github.com/kishert-lab/taxi-platform/internal/chat"
 	dispatchapp "github.com/kishert-lab/taxi-platform/internal/dispatch"
@@ -32,24 +33,26 @@ import (
 )
 
 type applicationRoutes struct {
-	auth       *handler.AuthHandler
-	mobileAuth *handler.MobileAuthHandler
-	order      *handler.OrderHandler
-	passenger  *handler.PassengerMobileHandler
-	driver     *handler.DriverMobileHandler
-	finance    *handler.FinanceHandler
-	taxiPark   *handler.TaxiParkSettingsHandler
-	legal      *handler.LegalHandler
-	chat       *handler.ChatHandler
-	geocoder   *geocoderhandler.Handler
-	websocket  *handler.WebSocketHandler
-	dispatch   *dispatchapp.Worker
+	auth         *handler.AuthHandler
+	mobileAuth   *handler.MobileAuthHandler
+	order        *handler.OrderHandler
+	passenger    *handler.PassengerMobileHandler
+	driver       *handler.DriverMobileHandler
+	finance      *handler.FinanceHandler
+	taxiPark     *handler.TaxiParkSettingsHandler
+	legal        *handler.LegalHandler
+	chat         *handler.ChatHandler
+	geocoder     *geocoderhandler.Handler
+	websocket    *handler.WebSocketHandler
+	requestAudit *auditapp.Service
+	dispatch     *dispatchapp.Worker
 }
 
 func newApplicationRoutes(postgresPool *pgxpool.Pool, redisClient *goredis.Client, config *configs.Config, logger *zap.Logger) applicationRoutes {
 	unavailableUseCase := service.NewUnavailableUseCase()
 
 	userRepository := repository.NewPostgresUserRepository(postgresPool)
+	transportRequestLogRepository := repository.NewPostgresTransportRequestLogRepository(postgresPool)
 	taxiParkRepository := repository.NewPostgresTaxiParkRepository(postgresPool)
 	verificationCodeRepository := repository.NewPostgresVerificationCodeRepository(postgresPool)
 	refreshTokenRepository := repository.NewPostgresRefreshTokenRepository(postgresPool)
@@ -57,6 +60,7 @@ func newApplicationRoutes(postgresPool *pgxpool.Pool, redisClient *goredis.Clien
 	passwordHasher := security.NewBCryptPasswordHasher(config.Security.BCryptCost)
 	codeHasher := security.NewBCryptCodeHasher(config.Security.BCryptCost)
 	codeGenerator := security.NewNumericCodeGenerator()
+	requestAuditService := auditapp.NewService(transportRequestLogRepository, logger)
 	registrationService := authapp.NewRegistrationService(authapp.NewRegistrationServiceParams{
 		UserRepository:             userRepository,
 		TaxiParkRepository:         taxiParkRepository,
@@ -159,18 +163,19 @@ func newApplicationRoutes(postgresPool *pgxpool.Pool, redisClient *goredis.Clien
 	)
 
 	return applicationRoutes{
-		auth:       handler.NewAuthHandler(registrationService),
-		mobileAuth: handler.NewMobileAuthHandler(mobileAuthService),
-		order:      handler.NewOrderHandler(unavailableUseCase),
-		passenger:  handler.NewPassengerMobileHandler(unavailableUseCase, unavailableUseCase),
-		driver:     handler.NewDriverMobileHandler(driverMobileService),
-		finance:    handler.NewFinanceHandler(financeService),
-		taxiPark:   handler.NewTaxiParkSettingsHandler(taxiParkSettingsService),
-		legal:      handler.NewLegalHandler(legalService),
-		chat:       handler.NewChatHandler(chatService),
-		geocoder:   geocoderhandler.New(geocoderService),
-		websocket:  handler.NewWebSocketHandler(mobileAuthService, config.HTTP.CORS.AllowedOrigins, redisClient),
-		dispatch:   dispatchWorker,
+		auth:         handler.NewAuthHandler(registrationService),
+		mobileAuth:   handler.NewMobileAuthHandler(mobileAuthService),
+		order:        handler.NewOrderHandler(unavailableUseCase),
+		passenger:    handler.NewPassengerMobileHandler(unavailableUseCase, unavailableUseCase),
+		driver:       handler.NewDriverMobileHandler(driverMobileService),
+		finance:      handler.NewFinanceHandler(financeService),
+		taxiPark:     handler.NewTaxiParkSettingsHandler(taxiParkSettingsService),
+		legal:        handler.NewLegalHandler(legalService),
+		chat:         handler.NewChatHandler(chatService),
+		geocoder:     geocoderhandler.New(geocoderService),
+		websocket:    handler.NewWebSocketHandler(mobileAuthService, requestAuditService, config.HTTP.CORS.AllowedOrigins, redisClient),
+		requestAudit: requestAuditService,
+		dispatch:     dispatchWorker,
 	}
 }
 

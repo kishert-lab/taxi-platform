@@ -22,6 +22,7 @@ func TestWebSocketAcceptsQueryTokenFromAllowedOrigin(t *testing.T) {
 	api := router.Group("/api/v1")
 	NewWebSocketHandler(
 		fakeWebSocketAuth{userID: uuid.New(), role: domain.UserRoleTaxiPark},
+		nil,
 		[]string{"http://localhost:5174"},
 	).RegisterRoutes(api)
 
@@ -57,6 +58,7 @@ func TestWebSocketRejectsDisallowedOrigin(t *testing.T) {
 	api := router.Group("/api/v1")
 	NewWebSocketHandler(
 		fakeWebSocketAuth{userID: uuid.New(), role: domain.UserRoleTaxiPark},
+		nil,
 		[]string{"http://localhost:5174"},
 	).RegisterRoutes(api)
 

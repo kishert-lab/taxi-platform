@@ -45,6 +45,7 @@ func (handler *LegalHandler) RegisterRoutes(router gin.IRouter) {
 
 // PublicPrivacyPolicy godoc
 // @Summary Get active privacy policy
+// @Description Returns the currently active immutable privacy policy version from legal_documents.
 // @Tags public-legal
 // @Produce json
 // @Param language query string false "Language" default(ru)
@@ -57,6 +58,7 @@ func (handler *LegalHandler) PublicPrivacyPolicy(context *gin.Context) {
 
 // PublicTerms godoc
 // @Summary Get active terms of service
+// @Description Returns the currently active immutable terms of service version from legal_documents.
 // @Tags public-legal
 // @Produce json
 // @Param language query string false "Language" default(ru)
@@ -69,6 +71,7 @@ func (handler *LegalHandler) PublicTerms(context *gin.Context) {
 
 // PublicConsent godoc
 // @Summary Get active personal data consent
+// @Description Returns the currently active immutable personal data consent version from legal_documents.
 // @Tags public-legal
 // @Produce json
 // @Param language query string false "Language" default(ru)
@@ -81,6 +84,7 @@ func (handler *LegalHandler) PublicConsent(context *gin.Context) {
 
 // PublicDocumentByType godoc
 // @Summary Get active legal document by type
+// @Description Returns the active immutable legal document version for the requested document type.
 // @Tags public-legal
 // @Produce json
 // @Param document_type path string true "Document type"
@@ -105,6 +109,7 @@ func (handler *LegalHandler) publicDocument(context *gin.Context, documentType d
 
 // AdminListDocuments godoc
 // @Summary List legal document versions
+// @Description Lists immutable legal document versions filtered by type and language.
 // @Tags admin-legal
 // @Produce json
 // @Security BearerAuth
@@ -134,6 +139,7 @@ func (handler *LegalHandler) AdminListDocuments(context *gin.Context) {
 
 // AdminCreateDocument godoc
 // @Summary Create new immutable legal document version
+// @Description Creates a new legal document row. When activate=true, older versions of the same type and language become inactive.
 // @Tags admin-legal
 // @Accept json
 // @Produce json
@@ -167,6 +173,7 @@ func (handler *LegalHandler) AdminCreateDocument(context *gin.Context) {
 
 // AdminActivateDocument godoc
 // @Summary Activate legal document version
+// @Description Activates the selected legal document version and deactivates other versions of the same type and language.
 // @Tags admin-legal
 // @Produce json
 // @Security BearerAuth
@@ -182,6 +189,7 @@ func (handler *LegalHandler) AdminActivateDocument(context *gin.Context) {
 
 // AdminDeactivateDocument godoc
 // @Summary Deactivate legal document version
+// @Description Deactivates the selected legal document version.
 // @Tags admin-legal
 // @Produce json
 // @Security BearerAuth

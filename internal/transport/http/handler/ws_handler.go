@@ -12,6 +12,7 @@ import (
 	"github.com/gorilla/websocket"
 	goredis "github.com/redis/go-redis/v9"
 
+	auditapp "github.com/kishert-lab/taxi-platform/internal/audit"
 	"github.com/kishert-lab/taxi-platform/internal/domain"
 	wsmsg "github.com/kishert-lab/taxi-platform/internal/ws"
 	"github.com/kishert-lab/taxi-platform/pkg/response"
@@ -30,17 +31,23 @@ type WebSocketAuthUseCase interface {
 
 type WebSocketHandler struct {
 	authUseCase WebSocketAuthUseCase
+	auditLogger WebSocketAuditLogger
 	redisClient *goredis.Client
 	upgrader    websocket.Upgrader
 }
 
-func NewWebSocketHandler(authUseCase WebSocketAuthUseCase, allowedOrigins []string, redisClients ...*goredis.Client) *WebSocketHandler {
+type WebSocketAuditLogger interface {
+	LogWebSocket(ctx context.Context, command auditapp.WebSocketRequestLogCommand)
+}
+
+func NewWebSocketHandler(authUseCase WebSocketAuthUseCase, auditLogger WebSocketAuditLogger, allowedOrigins []string, redisClients ...*goredis.Client) *WebSocketHandler {
 	var redisClient *goredis.Client
 	if len(redisClients) > 0 {
 		redisClient = redisClients[0]
 	}
 	return &WebSocketHandler{
 		authUseCase: authUseCase,
+		auditLogger: auditLogger,
 		redisClient: redisClient,
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
@@ -65,8 +72,26 @@ func (handler *WebSocketHandler) RegisterRoutes(router gin.IRouter) {
 // @Failure 401 {object} response.Error
 // @Router /ws [get]
 func (handler *WebSocketHandler) Connect(context *gin.Context) {
+	startedAt := time.Now()
+	requestID := context.GetString(response.RequestIDContextKey)
+	path := context.Request.URL.Path
+	rawQuery := context.Request.URL.RawQuery
+	clientIP := context.ClientIP()
+	userAgent := context.Request.UserAgent()
+
 	token := websocketToken(context)
 	if token == "" {
+		handler.logWebSocketEvent(context.Request.Context(), auditapp.WebSocketRequestLogCommand{
+			RequestID:    requestID,
+			EventType:    "connection.rejected",
+			Path:         path,
+			RawQuery:     rawQuery,
+			StatusCode:   http.StatusUnauthorized,
+			Duration:     time.Since(startedAt),
+			ClientIP:     clientIP,
+			UserAgent:    userAgent,
+			ErrorMessage: "websocket token is missing",
+		})
 		failUnauthorized(context, "WebSocket token is missing")
 		return
 	}
@@ -76,6 +101,17 @@ func (handler *WebSocketHandler) Connect(context *gin.Context) {
 	if handler.authUseCase != nil {
 		authenticatedUserID, authenticatedRole, err := handler.authUseCase.AuthenticateWebSocket(context.Request.Context(), token)
 		if err != nil {
+			handler.logWebSocketEvent(context.Request.Context(), auditapp.WebSocketRequestLogCommand{
+				RequestID:    requestID,
+				EventType:    "connection.rejected",
+				Path:         path,
+				RawQuery:     rawQuery,
+				StatusCode:   http.StatusUnauthorized,
+				Duration:     time.Since(startedAt),
+				ClientIP:     clientIP,
+				UserAgent:    userAgent,
+				ErrorMessage: "websocket token is invalid",
+			})
 			failUnauthorized(context, "WebSocket token is invalid")
 			return
 		}
@@ -85,6 +121,19 @@ func (handler *WebSocketHandler) Connect(context *gin.Context) {
 
 	connection, err := handler.upgrader.Upgrade(context.Writer, context.Request, nil)
 	if err != nil {
+		handler.logWebSocketEvent(context.Request.Context(), auditapp.WebSocketRequestLogCommand{
+			RequestID:    requestID,
+			EventType:    "connection.upgrade_failed",
+			Path:         path,
+			RawQuery:     rawQuery,
+			StatusCode:   http.StatusBadRequest,
+			Duration:     time.Since(startedAt),
+			ClientIP:     clientIP,
+			UserAgent:    userAgent,
+			ActorUserID:  userID,
+			ActorRole:    role,
+			ErrorMessage: err.Error(),
+		})
 		return
 	}
 	defer connection.Close()
@@ -94,29 +143,68 @@ func (handler *WebSocketHandler) Connect(context *gin.Context) {
 		return connection.SetReadDeadline(time.Now().Add(websocketPongWait))
 	})
 
-	requestID, _ := uuid.Parse(context.GetString(response.RequestIDContextKey))
-	if requestID == uuid.Nil {
-		requestID = uuid.New()
+	messageRequestID, _ := uuid.Parse(requestID)
+	if messageRequestID == uuid.Nil {
+		messageRequestID = uuid.New()
 	}
 
-	message := wsmsg.NewMessage(wsmsg.EventSyncRequired, requestID, map[string]any{
+	message := wsmsg.NewMessage(wsmsg.EventSyncRequired, messageRequestID, map[string]any{
 		"user_id": userID,
 		"role":    role,
 		"reason":  "reconnect",
 	})
 	if err := writeWebSocketJSON(connection, message); err != nil {
+		handler.logWebSocketEvent(context.Request.Context(), auditapp.WebSocketRequestLogCommand{
+			RequestID:    requestID,
+			EventType:    "connection.bootstrap_failed",
+			Path:         path,
+			RawQuery:     rawQuery,
+			StatusCode:   http.StatusSwitchingProtocols,
+			Duration:     time.Since(startedAt),
+			ClientIP:     clientIP,
+			UserAgent:    userAgent,
+			ActorUserID:  userID,
+			ActorRole:    role,
+			ErrorMessage: err.Error(),
+		})
 		return
 	}
 
-	handler.keepConnectionAlive(context.Request.Context(), connection, userID)
+	handler.logWebSocketEvent(context.Request.Context(), auditapp.WebSocketRequestLogCommand{
+		RequestID:   requestID,
+		EventType:   "connection.opened",
+		Path:        path,
+		RawQuery:    rawQuery,
+		StatusCode:  http.StatusSwitchingProtocols,
+		Duration:    time.Since(startedAt),
+		ClientIP:    clientIP,
+		UserAgent:   userAgent,
+		ActorUserID: userID,
+		ActorRole:   role,
+	})
+
+	closeReason := handler.keepConnectionAlive(context.Request.Context(), connection, userID)
+	handler.logWebSocketEvent(context.Request.Context(), auditapp.WebSocketRequestLogCommand{
+		RequestID:   requestID,
+		EventType:   "connection.closed",
+		Path:        path,
+		RawQuery:    rawQuery,
+		StatusCode:  http.StatusSwitchingProtocols,
+		Duration:    time.Since(startedAt),
+		ClientIP:    clientIP,
+		UserAgent:   userAgent,
+		ActorUserID: userID,
+		ActorRole:   role,
+		CloseReason: closeReason,
+	})
 }
 
-func (handler *WebSocketHandler) keepConnectionAlive(ctx context.Context, connection *websocket.Conn, userID uuid.UUID) {
-	done := make(chan struct{})
+func (handler *WebSocketHandler) keepConnectionAlive(ctx context.Context, connection *websocket.Conn, userID uuid.UUID) string {
+	done := make(chan string, 1)
 	go func() {
-		defer close(done)
 		for {
 			if _, _, err := connection.NextReader(); err != nil {
+				done <- err.Error()
 				return
 			}
 		}
@@ -136,22 +224,29 @@ func (handler *WebSocketHandler) keepConnectionAlive(ctx context.Context, connec
 	for {
 		select {
 		case <-ctx.Done():
-			return
-		case <-done:
-			return
+			return ctx.Err().Error()
+		case reason := <-done:
+			return reason
 		case message, ok := <-messages:
 			if !ok || message == nil {
-				return
+				return "redis subscription closed"
 			}
 			if err := writeWebSocketText(connection, message.Payload); err != nil {
-				return
+				return err.Error()
 			}
 		case <-ticker.C:
 			if err := writeWebSocketPing(connection); err != nil {
-				return
+				return err.Error()
 			}
 		}
 	}
+}
+
+func (handler *WebSocketHandler) logWebSocketEvent(ctx context.Context, command auditapp.WebSocketRequestLogCommand) {
+	if handler.auditLogger == nil {
+		return
+	}
+	handler.auditLogger.LogWebSocket(ctx, command)
 }
 
 func writeWebSocketJSON(connection *websocket.Conn, message any) error {

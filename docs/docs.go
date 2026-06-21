@@ -566,6 +566,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "Lists immutable legal document versions filtered by type and language.",
                 "produces": [
                     "application/json"
                 ],
@@ -615,6 +616,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "Creates a new legal document row. When activate=true, older versions of the same type and language become inactive.",
                 "consumes": [
                     "application/json"
                 ],
@@ -671,6 +673,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "Activates the selected legal document version and deactivates other versions of the same type and language.",
                 "produces": [
                     "application/json"
                 ],
@@ -722,6 +725,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "Deactivates the selected legal document version.",
                 "produces": [
                     "application/json"
                 ],
@@ -3631,6 +3635,7 @@ const docTemplate = `{
         },
         "/public/legal/consent": {
             "get": {
+                "description": "Returns the currently active immutable personal data consent version from legal_documents.",
                 "produces": [
                     "application/json"
                 ],
@@ -3665,6 +3670,7 @@ const docTemplate = `{
         },
         "/public/legal/documents/{document_type}": {
             "get": {
+                "description": "Returns the active immutable legal document version for the requested document type.",
                 "produces": [
                     "application/json"
                 ],
@@ -3712,6 +3718,7 @@ const docTemplate = `{
         },
         "/public/legal/privacy-policy": {
             "get": {
+                "description": "Returns the currently active immutable privacy policy version from legal_documents.",
                 "produces": [
                     "application/json"
                 ],
@@ -3746,6 +3753,7 @@ const docTemplate = `{
         },
         "/public/legal/terms": {
             "get": {
+                "description": "Returns the currently active immutable terms of service version from legal_documents.",
                 "produces": [
                     "application/json"
                 ],

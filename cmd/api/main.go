@@ -19,7 +19,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/kishert-lab/taxi-platform/configs"
-	_ "github.com/kishert-lab/taxi-platform/docs"
+	"github.com/kishert-lab/taxi-platform/docs"
 	authapp "github.com/kishert-lab/taxi-platform/internal/auth"
 	"github.com/kishert-lab/taxi-platform/internal/database"
 	geoservice "github.com/kishert-lab/taxi-platform/internal/geo"
@@ -62,6 +62,8 @@ func main() {
 	defer func() {
 		_ = log.Sync()
 	}()
+
+	docs.SwaggerInfo.Version = config.App.Version
 
 	postgresPool, err := database.NewPostgres(ctx, config.Database)
 	if err != nil {
@@ -168,6 +170,7 @@ func buildRouter(config *configs.Config, log *zap.Logger, routes applicationRout
 	router.Use(middleware.RequestID())
 	router.Use(middleware.PrometheusHTTPMetrics())
 	router.Use(middleware.DebugRequestLogger(log, debugHTTPLoggingEnabled(config)))
+	router.Use(middleware.RequestAudit(routes.requestAudit))
 	router.Use(middleware.JSONCharset())
 	router.Use(gin.Recovery())
 
