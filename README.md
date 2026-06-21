@@ -66,6 +66,111 @@ Swagger is served at:
 http://localhost:8080/swagger/index.html
 ```
 
+## Build And Release
+
+### Build
+
+Local binary build:
+
+```bash
+make build
+make build-admin
+```
+
+Docker image build:
+
+```bash
+docker compose build backend
+```
+
+Full local verification before release:
+
+```bash
+make swagger
+go test ./...
+```
+
+### Versioning
+
+Application version follows the rule:
+
+- `major` = latest migration number
+- `minor` and `patch` = values from `app.version`
+
+Examples:
+
+- if the latest migration is `000027` and `app.version` is `0.1.0`, the runtime version is `27.1.0`
+- if the latest migration is `000027` and `app.version` is `0.0.5`, the runtime version is `27.0.5`
+
+This means:
+
+- any new migration bumps the build major automatically
+- minor and patch can be managed manually without renumbering migrations
+
+### Release Flow
+
+Recommended release sequence:
+
+1. Finish code changes and add required migrations in `migrations/`.
+2. Update `configs/config.yaml` field `app.version` when you need a new minor or patch release.
+3. Regenerate Swagger:
+
+```bash
+make swagger
+```
+
+4. Run full test suite:
+
+```bash
+go test ./...
+```
+
+5. Build artifacts:
+
+```bash
+make build
+make build-admin
+```
+
+6. Commit changes including generated Swagger and migrations.
+7. Build and publish the container image with the required tag:
+
+```bash
+docker build -t registry.dev.it59com.ru/taxi-platform/api:<tag> .
+docker push registry.dev.it59com.ru/taxi-platform/api:<tag>
+```
+
+8. On the target server, pull the new code or artifact set.
+9. Apply database migrations before switching traffic to the new backend:
+
+```bash
+make migrate-up
+```
+
+10. Start or rebuild the backend container:
+
+```bash
+IMAGE_TAG=<tag> docker compose up -d --build backend
+```
+
+11. Verify the release:
+
+```bash
+docker compose ps
+docker compose logs backend --tail=100
+curl -fsS http://localhost:8080/health/ready
+```
+
+### Release Notes Checklist
+
+For each release, document:
+
+- resulting application version
+- included migration numbers
+- backward-incompatible API or schema changes
+- required environment changes
+- verification evidence: tests, migration output, health check result
+
 ## API Surface
 
 All application endpoints are mounted under `/api/v1`.
