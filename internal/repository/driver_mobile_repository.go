@@ -511,6 +511,49 @@ func (repository *PostgresDriverMobileRepository) ListRoutePointsByUserID(ctx co
 	return points, nil
 }
 
+func (repository *PostgresDriverMobileRepository) GetOrderRouteUploadAccess(ctx context.Context, orderID uuid.UUID) (driverapp.OrderRouteUploadAccess, error) {
+	var access driverapp.OrderRouteUploadAccess
+	var driverID pgtype.UUID
+	var driverUserID pgtype.UUID
+
+	if err := repository.pool.QueryRow(ctx, `
+		SELECT o.id,
+		       o.status,
+		       d.id,
+		       d.user_id
+		FROM orders o
+		LEFT JOIN drivers d ON d.id = o.driver_id AND d.deleted_at IS NULL
+		WHERE o.id = $1
+		  AND o.deleted_at IS NULL`, orderID).Scan(
+		&access.OrderID,
+		&access.Status,
+		&driverID,
+		&driverUserID,
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return driverapp.OrderRouteUploadAccess{}, driverapp.ErrCurrentOrderNotFound
+		}
+		return driverapp.OrderRouteUploadAccess{}, fmt.Errorf("select order route upload access: %w", err)
+	}
+
+	if !driverID.Valid || !driverUserID.Valid {
+		return driverapp.OrderRouteUploadAccess{}, driverapp.ErrOrderAccessDenied
+	}
+
+	parsedDriverID, err := uuid.FromBytes(driverID.Bytes[:])
+	if err != nil {
+		return driverapp.OrderRouteUploadAccess{}, fmt.Errorf("parse route upload driver id: %w", err)
+	}
+	parsedDriverUserID, err := uuid.FromBytes(driverUserID.Bytes[:])
+	if err != nil {
+		return driverapp.OrderRouteUploadAccess{}, fmt.Errorf("parse route upload driver user id: %w", err)
+	}
+
+	access.DriverID = parsedDriverID
+	access.DriverUserID = parsedDriverUserID
+	return access, nil
+}
+
 func (repository *PostgresDriverMobileRepository) AppendRoutePointByUserID(ctx context.Context, userID uuid.UUID, update geoservice.DriverLocationUpdate) error {
 	commandTag, err := repository.pool.Exec(ctx, `
 		INSERT INTO order_route_points (
@@ -539,6 +582,76 @@ func (repository *PostgresDriverMobileRepository) AppendRoutePointByUserID(ctx c
 	}
 	_ = commandTag
 	return nil
+}
+
+func (repository *PostgresDriverMobileRepository) AppendOrderRoutePoints(ctx context.Context, orderID uuid.UUID, driverID uuid.UUID, points []driverapp.OrderRouteAppendPoint) (driverapp.AppendOrderRoutePointsResult, error) {
+	if len(points) == 0 {
+		return driverapp.AppendOrderRoutePointsResult{OrderID: orderID}, nil
+	}
+
+	payload := make([]map[string]any, 0, len(points))
+	for _, point := range points {
+		payload = append(payload, map[string]any{
+			"latitude":        point.Location.Latitude,
+			"longitude":       point.Location.Longitude,
+			"heading":         point.Heading,
+			"speed_mps":       point.SpeedMPS,
+			"accuracy_meters": point.AccuracyMeters,
+			"recorded_at":     point.RecordedAt.UTC(),
+		})
+	}
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return driverapp.AppendOrderRoutePointsResult{}, fmt.Errorf("marshal order route points payload: %w", err)
+	}
+
+	var acceptedPoints int
+	if err := repository.pool.QueryRow(ctx, `
+		WITH input AS (
+			SELECT latitude,
+			       longitude,
+			       heading,
+			       speed_mps,
+			       accuracy_meters,
+			       recorded_at
+			FROM jsonb_to_recordset($3::jsonb) AS point(
+				latitude double precision,
+				longitude double precision,
+				heading smallint,
+				speed_mps numeric,
+				accuracy_meters numeric,
+				recorded_at timestamptz
+			)
+		),
+		inserted AS (
+			INSERT INTO order_route_points (
+				order_id, driver_id, location, heading, speed_mps, accuracy_meters, recorded_at
+			)
+			SELECT $1,
+			       $2,
+			       ST_SetSRID(ST_MakePoint(input.longitude, input.latitude), 4326)::geography,
+			       input.heading,
+			       input.speed_mps,
+			       input.accuracy_meters,
+			       input.recorded_at
+			FROM input
+			ON CONFLICT DO NOTHING
+			RETURNING 1
+		)
+		SELECT COUNT(*)::int
+		FROM inserted`,
+		orderID,
+		driverID,
+		payloadBytes,
+	).Scan(&acceptedPoints); err != nil {
+		return driverapp.AppendOrderRoutePointsResult{}, fmt.Errorf("bulk insert order route points: %w", err)
+	}
+
+	return driverapp.AppendOrderRoutePointsResult{
+		OrderID:        orderID,
+		AcceptedPoints: acceptedPoints,
+		IgnoredPoints:  len(points) - acceptedPoints,
+	}, nil
 }
 
 func nullableFloat64(value pgtype.Float8) *float64 {

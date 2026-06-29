@@ -16,12 +16,15 @@ import (
 	"github.com/kishert-lab/taxi-platform/internal/domain"
 	"github.com/kishert-lab/taxi-platform/internal/dto"
 	geoservice "github.com/kishert-lab/taxi-platform/internal/geo"
+	"github.com/kishert-lab/taxi-platform/pkg/response"
 )
 
 var (
 	ErrDriverNotFound       = errors.New("driver not found")
 	ErrDriverNotAvailable   = errors.New("driver not available")
 	ErrCurrentOrderNotFound = errors.New("current order not found")
+	ErrOrderAccessDenied    = errors.New("order access denied")
+	ErrOrderRouteForbidden  = errors.New("order route upload forbidden")
 )
 
 type MobileRepository interface {
@@ -33,8 +36,10 @@ type MobileRepository interface {
 	GetOrderByUserID(ctx context.Context, userID uuid.UUID, orderID uuid.UUID) (CurrentOrder, error)
 	ListOrderHistoryByUserID(ctx context.Context, userID uuid.UUID, limit int) ([]CurrentOrder, error)
 	ListRoutePointsByUserID(ctx context.Context, userID uuid.UUID, orderID uuid.UUID) ([]RoutePoint, error)
+	GetOrderRouteUploadAccess(ctx context.Context, orderID uuid.UUID) (OrderRouteUploadAccess, error)
 	TransitionOrderByUserID(ctx context.Context, userID uuid.UUID, orderID uuid.UUID, toStatus domain.OrderStatus, reason string, finalPriceCents *int64) (CurrentOrder, error)
 	AppendRoutePointByUserID(ctx context.Context, userID uuid.UUID, update geoservice.DriverLocationUpdate) error
+	AppendOrderRoutePoints(ctx context.Context, orderID uuid.UUID, driverID uuid.UUID, points []OrderRouteAppendPoint) (AppendOrderRoutePointsResult, error)
 }
 
 type PresenceStore interface {
@@ -150,6 +155,27 @@ type RoutePoint struct {
 	SpeedMPS       *float64
 	AccuracyMeters *float64
 	RecordedAt     time.Time
+}
+
+type OrderRouteUploadAccess struct {
+	OrderID      uuid.UUID
+	DriverID     uuid.UUID
+	DriverUserID uuid.UUID
+	Status       domain.OrderStatus
+}
+
+type OrderRouteAppendPoint struct {
+	Location       domain.Coordinates
+	Heading        *int16
+	SpeedMPS       *float64
+	AccuracyMeters *float64
+	RecordedAt     time.Time
+}
+
+type AppendOrderRoutePointsResult struct {
+	OrderID        uuid.UUID
+	AcceptedPoints int
+	IgnoredPoints  int
 }
 
 func NewMobileService(repository MobileRepository, presenceStore PresenceStore, locationService LocationService, logger *zap.Logger) *MobileService {
@@ -361,6 +387,53 @@ func (service *MobileService) GetDriverOrderRoute(ctx context.Context, userID uu
 		})
 	}
 	return response, nil
+}
+
+func (service *MobileService) AppendOrderRoutePoints(ctx context.Context, userID uuid.UUID, orderID uuid.UUID, request dto.DriverOrderRouteBatchRequest) (dto.DriverOrderRouteBatchResponse, error) {
+	access, err := service.repository.GetOrderRouteUploadAccess(ctx, orderID)
+	if err != nil {
+		return dto.DriverOrderRouteBatchResponse{}, err
+	}
+	if access.DriverUserID != userID {
+		return dto.DriverOrderRouteBatchResponse{}, ErrOrderAccessDenied
+	}
+	if !canAppendOrderRoutePoints(access.Status) {
+		return dto.DriverOrderRouteBatchResponse{}, ErrOrderRouteForbidden
+	}
+
+	points := make([]OrderRouteAppendPoint, 0, len(request.Points))
+	for _, point := range request.Points {
+		points = append(points, OrderRouteAppendPoint{
+			Location: domain.Coordinates{
+				Latitude:  point.Location.Latitude,
+				Longitude: point.Location.Longitude,
+			},
+			Heading:        point.Heading,
+			SpeedMPS:       point.SpeedMPS,
+			AccuracyMeters: point.AccuracyMeters,
+			RecordedAt:     point.RecordedAt.UTC(),
+		})
+	}
+
+	result, err := service.repository.AppendOrderRoutePoints(ctx, orderID, access.DriverID, points)
+	if err != nil {
+		return dto.DriverOrderRouteBatchResponse{}, fmt.Errorf("append order route points: %w", err)
+	}
+
+	service.logger.Info(
+		"driver uploaded order route points",
+		zap.String("request_id", requestIDFromContext(ctx)),
+		zap.String("driver_id", access.DriverID.String()),
+		zap.String("order_id", orderID.String()),
+		zap.Int("accepted_points", result.AcceptedPoints),
+		zap.Int("ignored_points", result.IgnoredPoints),
+	)
+
+	return dto.DriverOrderRouteBatchResponse{
+		OrderID:        result.OrderID,
+		AcceptedPoints: result.AcceptedPoints,
+		IgnoredPoints:  result.IgnoredPoints,
+	}, nil
 }
 
 func (service *MobileService) AcceptDriverOrder(ctx context.Context, userID uuid.UUID, orderID uuid.UUID) (dto.DriverOrderResponse, error) {
@@ -793,4 +866,22 @@ func trimStringPointer(value *string) *string {
 	}
 	trimmed := strings.TrimSpace(*value)
 	return &trimmed
+}
+
+func canAppendOrderRoutePoints(status domain.OrderStatus) bool {
+	switch status {
+	case domain.OrderStatusDriverAssigned,
+		domain.OrderStatusDriverArriving,
+		domain.OrderStatusDriverWaiting,
+		domain.OrderStatusInProgress,
+		domain.OrderStatusCompleted:
+		return true
+	default:
+		return false
+	}
+}
+
+func requestIDFromContext(ctx context.Context) string {
+	requestID, _ := ctx.Value(response.RequestIDContextKey).(string)
+	return requestID
 }

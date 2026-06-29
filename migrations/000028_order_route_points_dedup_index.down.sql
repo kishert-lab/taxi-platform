@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS idx_order_route_points_order_recorded_location_unique;

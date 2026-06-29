@@ -154,6 +154,10 @@ func (useCase *UnavailableUseCase) GetDriverOrderRoute(context.Context, uuid.UUI
 	return dto.OrderRouteResponse{}, common.ErrNotImplemented
 }
 
+func (useCase *UnavailableUseCase) AppendOrderRoutePoints(context.Context, uuid.UUID, uuid.UUID, dto.DriverOrderRouteBatchRequest) (dto.DriverOrderRouteBatchResponse, error) {
+	return dto.DriverOrderRouteBatchResponse{}, common.ErrNotImplemented
+}
+
 func (useCase *UnavailableUseCase) AcceptDriverOrder(context.Context, uuid.UUID, uuid.UUID) (dto.DriverOrderResponse, error) {
 	return dto.DriverOrderResponse{}, common.ErrNotImplemented
 }
@@ -326,6 +330,30 @@ func (useCase *UnavailableUseCase) CreateOrder(context.Context, uuid.UUID, dto.T
 	return domain.Order{}, common.ErrNotImplemented
 }
 
+func (useCase *UnavailableUseCase) CreateScheduledOrder(context.Context, uuid.UUID, dto.TaxiParkCreateScheduledOrderRequest) (taxiparkapp.ScheduledOrder, error) {
+	return taxiparkapp.ScheduledOrder{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) ListScheduledOrders(context.Context, uuid.UUID) ([]taxiparkapp.ScheduledOrder, error) {
+	return nil, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) GetScheduledOrder(context.Context, uuid.UUID, uuid.UUID) (taxiparkapp.ScheduledOrder, error) {
+	return taxiparkapp.ScheduledOrder{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) UpdateScheduledOrder(context.Context, uuid.UUID, uuid.UUID, dto.TaxiParkUpdateScheduledOrderRequest) (taxiparkapp.ScheduledOrder, error) {
+	return taxiparkapp.ScheduledOrder{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) CancelScheduledOrder(context.Context, uuid.UUID, uuid.UUID, dto.CancelOrderRequest) (taxiparkapp.ScheduledOrder, error) {
+	return taxiparkapp.ScheduledOrder{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) AssignScheduledOrderDriver(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (taxiparkapp.ScheduledOrder, error) {
+	return taxiparkapp.ScheduledOrder{}, common.ErrNotImplemented
+}
+
 func (useCase *UnavailableUseCase) GetOrder(context.Context, uuid.UUID, uuid.UUID) (domain.Order, error) {
 	return domain.Order{}, common.ErrNotImplemented
 }
@@ -340,6 +368,26 @@ func (useCase *UnavailableUseCase) CancelOrder(context.Context, uuid.UUID, uuid.
 
 func (useCase *UnavailableUseCase) CompleteOrder(context.Context, uuid.UUID, uuid.UUID, dto.TaxiParkCompleteOrderRequest) (domain.Order, error) {
 	return domain.Order{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) ListDispatchers(context.Context, uuid.UUID) ([]taxiparkapp.Dispatcher, error) {
+	return nil, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) CreateDispatcher(context.Context, uuid.UUID, dto.TaxiParkCreateDispatcherRequest) (taxiparkapp.Dispatcher, error) {
+	return taxiparkapp.Dispatcher{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) UpdateDispatcher(context.Context, uuid.UUID, uuid.UUID, dto.TaxiParkUpdateDispatcherRequest) (taxiparkapp.Dispatcher, error) {
+	return taxiparkapp.Dispatcher{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) BlockDispatcher(context.Context, uuid.UUID, uuid.UUID) error {
+	return common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) UnblockDispatcher(context.Context, uuid.UUID, uuid.UUID) error {
+	return common.ErrNotImplemented
 }
 
 func (useCase *UnavailableUseCase) CreateDriver(context.Context, uuid.UUID, dto.TaxiParkCreateDriverRequest) (taxiparkapp.CreateDriverResult, error) {

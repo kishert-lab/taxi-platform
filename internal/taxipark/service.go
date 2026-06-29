@@ -22,12 +22,16 @@ var (
 	ErrTaxiParkNotFound          = errors.New("taxi park not found")
 	ErrTaxiParkResourceNotFound  = errors.New("taxi park resource not found")
 	ErrTaxiParkResourceForbidden = errors.New("taxi park resource forbidden")
+	ErrDispatcherAlreadyExists   = errors.New("dispatcher already exists")
 	ErrDriverPhoneAlreadyExists  = errors.New("driver phone already exists")
 	ErrCarAlreadyExists          = errors.New("car already exists")
+	ErrInvalidDispatcherPassword = errors.New("invalid dispatcher password")
 	ErrInvalidDriverCreateFields = errors.New("invalid driver create fields")
 	ErrInvalidDriverPassword     = errors.New("invalid driver password")
 	ErrInvalidOrderFields        = errors.New("invalid taxi park order fields")
 	ErrOrderTariffNotFound       = errors.New("taxi park order tariff not found")
+	ErrScheduledOrdersDisabled   = errors.New("scheduled orders disabled")
+	ErrInvalidScheduledOrder     = errors.New("invalid scheduled order")
 )
 
 type Service struct {
@@ -61,6 +65,9 @@ func (service *Service) GetSettings(ctx context.Context, ownerUserID uuid.UUID) 
 
 func (service *Service) UpdateSettings(ctx context.Context, ownerUserID uuid.UUID, request dto.TaxiParkSettingsPatchRequest) (domain.TaxiParkSettings, error) {
 	if err := validateDispatchSettingsPatch(request.Dispatch); err != nil {
+		return domain.TaxiParkSettings{}, err
+	}
+	if err := validateScheduledSettingsPatch(request.Scheduled); err != nil {
 		return domain.TaxiParkSettings{}, err
 	}
 	return service.repository.UpdateSettingsByOwnerUserID(ctx, ownerUserID, request)
@@ -97,6 +104,61 @@ func (service *Service) CreateOrder(ctx context.Context, ownerUserID uuid.UUID, 
 		}
 	}
 	return order, nil
+}
+
+func (service *Service) CreateScheduledOrder(ctx context.Context, actorUserID uuid.UUID, request dto.TaxiParkCreateScheduledOrderRequest) (ScheduledOrder, error) {
+	record, err := scheduledOrderRecordFromRequest(request)
+	if err != nil {
+		return ScheduledOrder{}, err
+	}
+	settings, err := service.repository.GetSettingsByOwnerUserID(ctx, actorUserID)
+	if err != nil {
+		return ScheduledOrder{}, err
+	}
+	if !settings.ScheduledOrdersEnabled {
+		return ScheduledOrder{}, ErrScheduledOrdersDisabled
+	}
+	if err := validateScheduledTiming(record.ScheduledAt, record.Timezone, settings.ScheduledMinBeforeMinutes); err != nil {
+		return ScheduledOrder{}, err
+	}
+	return service.repository.CreateScheduledOrderByActorUserID(ctx, actorUserID, record)
+}
+
+func (service *Service) ListScheduledOrders(ctx context.Context, actorUserID uuid.UUID) ([]ScheduledOrder, error) {
+	return service.repository.ListScheduledOrdersByActorUserID(ctx, actorUserID)
+}
+
+func (service *Service) GetScheduledOrder(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID) (ScheduledOrder, error) {
+	return service.repository.GetScheduledOrderByActorUserID(ctx, actorUserID, orderID)
+}
+
+func (service *Service) UpdateScheduledOrder(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID, request dto.TaxiParkUpdateScheduledOrderRequest) (ScheduledOrder, error) {
+	record, err := updateScheduledOrderRecordFromRequest(request)
+	if err != nil {
+		return ScheduledOrder{}, err
+	}
+	if record.ScheduledAt != nil {
+		settings, settingsErr := service.repository.GetSettingsByOwnerUserID(ctx, actorUserID)
+		if settingsErr != nil {
+			return ScheduledOrder{}, settingsErr
+		}
+		timezone := settings.CityTimezone
+		if record.Timezone != nil && strings.TrimSpace(*record.Timezone) != "" {
+			timezone = strings.TrimSpace(*record.Timezone)
+		}
+		if err := validateScheduledTiming(*record.ScheduledAt, timezone, settings.ScheduledMinBeforeMinutes); err != nil {
+			return ScheduledOrder{}, err
+		}
+	}
+	return service.repository.UpdateScheduledOrderByActorUserID(ctx, actorUserID, orderID, record)
+}
+
+func (service *Service) CancelScheduledOrder(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID, request dto.CancelOrderRequest) (ScheduledOrder, error) {
+	return service.repository.CancelScheduledOrderByActorUserID(ctx, actorUserID, orderID, strings.TrimSpace(request.Reason))
+}
+
+func (service *Service) AssignScheduledOrderDriver(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID, driverID uuid.UUID) (ScheduledOrder, error) {
+	return service.repository.AssignScheduledOrderDriverByActorUserID(ctx, actorUserID, orderID, driverID)
 }
 
 func (service *Service) GetOrder(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID) (domain.Order, error) {
@@ -148,6 +210,73 @@ func (service *Service) CompleteOrder(ctx context.Context, actorUserID uuid.UUID
 		return domain.Order{}, err
 	}
 	return order, nil
+}
+
+func (service *Service) ListDispatchers(ctx context.Context, ownerUserID uuid.UUID) ([]Dispatcher, error) {
+	return service.repository.ListDispatchersByOwnerUserID(ctx, ownerUserID)
+}
+
+func (service *Service) CreateDispatcher(ctx context.Context, ownerUserID uuid.UUID, request dto.TaxiParkCreateDispatcherRequest) (Dispatcher, error) {
+	phone, err := domain.NormalizePhone(request.Phone)
+	if err != nil {
+		return Dispatcher{}, fmt.Errorf("normalize taxi park dispatcher phone: %w", err)
+	}
+
+	email := ""
+	if strings.TrimSpace(request.Email) != "" {
+		email, err = domain.NormalizeEmail(request.Email)
+		if err != nil {
+			return Dispatcher{}, fmt.Errorf("normalize taxi park dispatcher email: %w", err)
+		}
+	}
+
+	password := strings.TrimSpace(request.Password)
+	if len(password) < 8 {
+		return Dispatcher{}, ErrInvalidDispatcherPassword
+	}
+
+	passwordHash, err := service.passwordHasher.HashPassword(password)
+	if err != nil {
+		return Dispatcher{}, fmt.Errorf("hash taxi park dispatcher password: %w", err)
+	}
+
+	return service.repository.CreateDispatcherByOwnerUserID(ctx, ownerUserID, CreateDispatcherRecord{
+		Phone:        phone,
+		Email:        email,
+		FirstName:    strings.TrimSpace(request.FirstName),
+		LastName:     strings.TrimSpace(request.LastName),
+		PasswordHash: passwordHash,
+	})
+}
+
+func (service *Service) UpdateDispatcher(ctx context.Context, ownerUserID uuid.UUID, dispatcherID uuid.UUID, request dto.TaxiParkUpdateDispatcherRequest) (Dispatcher, error) {
+	record := UpdateDispatcherRecord{
+		FirstName: trimStringPointer(request.FirstName),
+		LastName:  trimStringPointer(request.LastName),
+	}
+
+	if request.Email != nil {
+		trimmedEmail := strings.TrimSpace(*request.Email)
+		if trimmedEmail == "" {
+			record.Email = &trimmedEmail
+		} else {
+			normalizedEmail, err := domain.NormalizeEmail(trimmedEmail)
+			if err != nil {
+				return Dispatcher{}, fmt.Errorf("normalize taxi park dispatcher email: %w", err)
+			}
+			record.Email = &normalizedEmail
+		}
+	}
+
+	return service.repository.UpdateDispatcherByOwnerUserID(ctx, ownerUserID, dispatcherID, record)
+}
+
+func (service *Service) BlockDispatcher(ctx context.Context, ownerUserID uuid.UUID, dispatcherID uuid.UUID) error {
+	return service.repository.BlockDispatcherByOwnerUserID(ctx, ownerUserID, dispatcherID)
+}
+
+func (service *Service) UnblockDispatcher(ctx context.Context, ownerUserID uuid.UUID, dispatcherID uuid.UUID) error {
+	return service.repository.UnblockDispatcherByOwnerUserID(ctx, ownerUserID, dispatcherID)
 }
 
 func (service *Service) publishOrderEvent(ctx context.Context, order domain.Order, eventName string) error {
@@ -539,6 +668,112 @@ func updateOrderRecordFromRequest(request dto.TaxiParkUpdateOrderRequest) (Updat
 	return record, nil
 }
 
+func scheduledOrderRecordFromRequest(request dto.TaxiParkCreateScheduledOrderRequest) (CreateScheduledOrderRecord, error) {
+	if request.TariffID == uuid.Nil {
+		return CreateScheduledOrderRecord{}, fmt.Errorf("%w: tariff_id is required", ErrInvalidOrderFields)
+	}
+	if strings.TrimSpace(request.PickupAddress) == "" {
+		return CreateScheduledOrderRecord{}, fmt.Errorf("%w: pickup_address is required", ErrInvalidOrderFields)
+	}
+	if request.PickupLocation == nil {
+		return CreateScheduledOrderRecord{}, fmt.Errorf("%w: pickup_location is required", ErrInvalidOrderFields)
+	}
+	if strings.TrimSpace(request.DestinationAddress) == "" {
+		return CreateScheduledOrderRecord{}, fmt.Errorf("%w: destination_address is required", ErrInvalidOrderFields)
+	}
+	if err := validateOrderCoordinates(*request.PickupLocation); err != nil {
+		return CreateScheduledOrderRecord{}, fmt.Errorf("pickup_location: %w", err)
+	}
+	if isZeroOrderCoordinates(*request.PickupLocation) {
+		return CreateScheduledOrderRecord{}, fmt.Errorf("%w: pickup_location must be geocoded", ErrInvalidOrderFields)
+	}
+
+	var destinationLocation *domain.Coordinates
+	if request.DestinationLocation != nil && !isZeroOrderCoordinates(*request.DestinationLocation) {
+		if err := validateOrderCoordinates(*request.DestinationLocation); err != nil {
+			return CreateScheduledOrderRecord{}, fmt.Errorf("destination_location: %w", err)
+		}
+		destinationLocation = &domain.Coordinates{
+			Latitude:  request.DestinationLocation.Latitude,
+			Longitude: request.DestinationLocation.Longitude,
+		}
+	}
+
+	paymentMethod := request.PaymentMethod
+	if paymentMethod == "" {
+		paymentMethod = request.PaymentType
+	}
+	if paymentMethod == "" {
+		paymentMethod = domain.PaymentMethodCash
+	}
+	if err := paymentMethod.Validate(); err != nil {
+		return CreateScheduledOrderRecord{}, err
+	}
+
+	passengerPhone := strings.TrimSpace(request.PassengerPhone)
+	if passengerPhone != "" {
+		normalizedPhone, err := domain.NormalizePhone(passengerPhone)
+		if err != nil {
+			return CreateScheduledOrderRecord{}, err
+		}
+		passengerPhone = normalizedPhone
+	}
+
+	return CreateScheduledOrderRecord{
+		PassengerPhone: passengerPhone,
+		PassengerName:  strings.TrimSpace(request.PassengerName),
+		TariffID:       request.TariffID,
+		PickupAddress:  strings.TrimSpace(request.PickupAddress),
+		PickupLocation: domain.Coordinates{
+			Latitude:  request.PickupLocation.Latitude,
+			Longitude: request.PickupLocation.Longitude,
+		},
+		DestinationAddress:  strings.TrimSpace(request.DestinationAddress),
+		DestinationLocation: destinationLocation,
+		PaymentMethod:       paymentMethod,
+		Comment:             strings.TrimSpace(request.Comment),
+		ScheduledAt:         request.ScheduledAt,
+		Timezone:            strings.TrimSpace(request.Timezone),
+		PreassignedDriverID: request.PreassignedDriverID,
+	}, nil
+}
+
+func updateScheduledOrderRecordFromRequest(request dto.TaxiParkUpdateScheduledOrderRequest) (UpdateScheduledOrderRecord, error) {
+	record := UpdateScheduledOrderRecord{
+		PickupAddress:       trimStringPointer(request.PickupAddress),
+		DestinationAddress:  trimStringPointer(request.DestinationAddress),
+		Comment:             trimStringPointer(request.Comment),
+		ScheduledAt:         request.ScheduledAt,
+		Timezone:            trimStringPointer(request.Timezone),
+		PreassignedDriverID: request.PreassignedDriverID,
+	}
+	if request.PickupLocation != nil {
+		coordinates, err := domain.NewCoordinates(request.PickupLocation.Latitude, request.PickupLocation.Longitude)
+		if err != nil {
+			return UpdateScheduledOrderRecord{}, fmt.Errorf("%w: pickup_location is invalid", ErrInvalidOrderFields)
+		}
+		record.PickupLocation = &coordinates
+	}
+	if request.DestinationLocation != nil {
+		coordinates, err := domain.NewCoordinates(request.DestinationLocation.Latitude, request.DestinationLocation.Longitude)
+		if err != nil {
+			return UpdateScheduledOrderRecord{}, fmt.Errorf("%w: destination_location is invalid", ErrInvalidOrderFields)
+		}
+		record.DestinationLocation = &coordinates
+	}
+	paymentMethod := request.PaymentMethod
+	if paymentMethod == nil {
+		paymentMethod = request.PaymentType
+	}
+	if paymentMethod != nil {
+		if err := (*paymentMethod).Validate(); err != nil {
+			return UpdateScheduledOrderRecord{}, fmt.Errorf("%w: payment_method is invalid", ErrInvalidOrderFields)
+		}
+		record.PaymentMethod = paymentMethod
+	}
+	return record, nil
+}
+
 func validateOrderCoordinates(coordinates dto.TaxiParkOrderCoordinatesRequest) error {
 	if coordinates.Latitude < -90 || coordinates.Latitude > 90 {
 		return fmt.Errorf("%w: latitude must be between -90 and 90", ErrInvalidOrderFields)
@@ -569,6 +804,42 @@ func validateDispatchSettingsPatch(dispatchSettings *dto.TaxiParkDispatchSetting
 			return fmt.Errorf("%w: dispatch.radius_attempts_meters must be sorted ascending", ErrInvalidDriverCreateFields)
 		}
 		previousRadius = radius
+	}
+	return nil
+}
+
+func validateScheduledSettingsPatch(settings *dto.TaxiParkScheduledSettingsPatchRequest) error {
+	if settings == nil {
+		return nil
+	}
+	if settings.ScheduledMinBeforeMinutes != nil && *settings.ScheduledMinBeforeMinutes <= 0 {
+		return fmt.Errorf("%w: scheduled.min_before_minutes must be positive", ErrInvalidOrderFields)
+	}
+	if settings.ScheduledActivationBeforeMinutes != nil && *settings.ScheduledActivationBeforeMinutes <= 0 {
+		return fmt.Errorf("%w: scheduled.activation_before_minutes must be positive", ErrInvalidOrderFields)
+	}
+	if settings.ScheduledExpireAfterMinutes != nil && *settings.ScheduledExpireAfterMinutes <= 0 {
+		return fmt.Errorf("%w: scheduled.expire_after_minutes must be positive", ErrInvalidOrderFields)
+	}
+	return nil
+}
+
+func validateScheduledTiming(scheduledAt time.Time, timezone string, minBeforeMinutes int) error {
+	if scheduledAt.IsZero() {
+		return fmt.Errorf("%w: scheduled_at is required", ErrInvalidScheduledOrder)
+	}
+	if strings.TrimSpace(timezone) == "" {
+		return fmt.Errorf("%w: timezone is required", ErrInvalidScheduledOrder)
+	}
+	if _, err := time.LoadLocation(timezone); err != nil {
+		return fmt.Errorf("%w: timezone is invalid", ErrInvalidScheduledOrder)
+	}
+	now := time.Now().UTC()
+	if !scheduledAt.After(now) {
+		return fmt.Errorf("%w: scheduled_at must be in the future", ErrInvalidScheduledOrder)
+	}
+	if scheduledAt.Before(now.Add(time.Duration(minBeforeMinutes) * time.Minute)) {
+		return fmt.Errorf("%w: scheduled_at is too close", ErrInvalidScheduledOrder)
 	}
 	return nil
 }

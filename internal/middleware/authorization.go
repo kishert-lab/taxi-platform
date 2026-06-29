@@ -11,6 +11,23 @@ import (
 
 const UserRoleContextKey = "user_role"
 
+func RequireAuthenticated() gin.HandlerFunc {
+	return func(context *gin.Context) {
+		if _, ok := roleFromContext(context); !ok {
+			response.Fail(context, http.StatusUnauthorized, response.CodeUnauthorized, "User role is missing", nil)
+			context.Abort()
+			return
+		}
+		if _, exists := context.Get(UserIDContextKey); !exists {
+			response.Fail(context, http.StatusUnauthorized, response.CodeUnauthorized, "User id is missing", nil)
+			context.Abort()
+			return
+		}
+
+		context.Next()
+	}
+}
+
 func RequireRole(allowedRoles ...domain.UserRole) gin.HandlerFunc {
 	return func(context *gin.Context) {
 		role, ok := roleFromContext(context)

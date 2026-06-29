@@ -26,6 +26,7 @@ type DriverMobileUseCase interface {
 	ListDriverOrderHistory(ctx context.Context, driverID uuid.UUID) (dto.DriverOrderHistoryResponse, error)
 	ListDriverOrderOffers(ctx context.Context, driverID uuid.UUID) (dto.DriverOrderOffersResponse, error)
 	GetDriverOrderRoute(ctx context.Context, driverID uuid.UUID, orderID uuid.UUID) (dto.OrderRouteResponse, error)
+	AppendOrderRoutePoints(ctx context.Context, driverID uuid.UUID, orderID uuid.UUID, request dto.DriverOrderRouteBatchRequest) (dto.DriverOrderRouteBatchResponse, error)
 	AcceptDriverOrder(ctx context.Context, driverID uuid.UUID, orderID uuid.UUID) (dto.DriverOrderResponse, error)
 	RejectDriverOrder(ctx context.Context, driverID uuid.UUID, orderID uuid.UUID, request dto.RejectOrderRequest) error
 	MarkDriverArriving(ctx context.Context, driverID uuid.UUID, orderID uuid.UUID) (dto.DriverOrderResponse, error)
@@ -59,6 +60,7 @@ func (handler *DriverMobileHandler) RegisterRoutes(router gin.IRouter) {
 	driver.GET("/orders/offers", handler.OrderOffers)
 	driver.GET("/orders/:id", handler.OrderDetails)
 	driver.GET("/orders/:id/route", handler.OrderRoute)
+	driver.POST("/orders/:id/route/batch", handler.AppendOrderRouteBatch)
 	driver.POST("/orders/:id/accept", handler.AcceptOrder)
 	driver.POST("/orders/:id/reject", handler.RejectOrder)
 	driver.POST("/orders/:id/arriving", handler.Arriving)
@@ -412,6 +414,47 @@ func (handler *DriverMobileHandler) OrderRoute(context *gin.Context) {
 	response.OK(context, result)
 }
 
+// AppendOrderRouteBatch godoc
+// @Summary Upload buffered route points for driver order
+// @Description Accepts offline-buffered historical route points for a concrete driver order. Duplicate points are ignored by `(order_id, recorded_at, latitude, longitude)`.
+// @Tags driver-orders
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Order ID"
+// @Param request body dto.DriverOrderRouteBatchRequest true "Buffered route points batch"
+// @Success 200 {object} DriverOrderRouteBatchSuccessResponse
+// @Failure 400 {object} response.Error
+// @Failure 401 {object} response.Error
+// @Failure 403 {object} response.Error
+// @Failure 404 {object} response.Error
+// @Router /driver/orders/{id}/route/batch [post]
+func (handler *DriverMobileHandler) AppendOrderRouteBatch(context *gin.Context) {
+	driverID, orderID, ok := driverOrderIDs(context)
+	if !ok {
+		return
+	}
+
+	var request dto.DriverOrderRouteBatchRequest
+	if err := context.ShouldBindJSON(&request); err != nil {
+		failValidation(context, "Invalid driver order route batch")
+		return
+	}
+
+	result, err := handler.useCase.AppendOrderRoutePoints(
+		contextWithRequestID(context),
+		driverID,
+		orderID,
+		request,
+	)
+	if err != nil {
+		failByError(context, err)
+		return
+	}
+
+	response.OK(context, result)
+}
+
 // AcceptOrder godoc
 // @Summary Accept offered order
 // @Tags driver-orders
@@ -703,4 +746,8 @@ func driverOrderIDs(context *gin.Context) (uuid.UUID, uuid.UUID, bool) {
 	}
 
 	return driverID, orderID, true
+}
+
+func contextWithRequestID(ginContext *gin.Context) context.Context {
+	return context.WithValue(ginContext.Request.Context(), response.RequestIDContextKey, ginContext.GetString(response.RequestIDContextKey))
 }

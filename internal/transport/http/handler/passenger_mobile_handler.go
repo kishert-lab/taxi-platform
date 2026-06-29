@@ -6,7 +6,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	"github.com/kishert-lab/taxi-platform/internal/domain"
 	"github.com/kishert-lab/taxi-platform/internal/dto"
 	"github.com/kishert-lab/taxi-platform/internal/middleware"
 	"github.com/kishert-lab/taxi-platform/pkg/response"
@@ -39,7 +38,7 @@ func NewPassengerMobileHandler(profileUseCase PassengerProfileUseCase, orderUseC
 }
 
 func (handler *PassengerMobileHandler) RegisterRoutes(router gin.IRouter) {
-	passenger := router.Group("/passenger", middleware.RequireRole(domain.UserRolePassenger))
+	passenger := router.Group("/passenger", middleware.RequireAuthenticated())
 	passenger.POST("/profile", handler.CreateProfile)
 	passenger.GET("/profile", handler.GetProfile)
 	passenger.PATCH("/profile", handler.UpdateProfile)

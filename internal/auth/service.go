@@ -373,38 +373,6 @@ func (service *RegistrationService) sendPhoneConfirmation(ctx context.Context, u
 	return code, nil
 }
 
-func (service *RegistrationService) sendEmailConfirmation(ctx context.Context, userID uuid.UUID, email string) error {
-	code, err := service.codeGenerator.GenerateNumericCode(6)
-	if err != nil {
-		return fmt.Errorf("generate email confirmation code: %w", err)
-	}
-
-	codeHash, err := service.codeHasher.HashCode(code)
-	if err != nil {
-		return fmt.Errorf("hash email confirmation code: %w", err)
-	}
-
-	verificationCode := domain.VerificationCode{
-		UserID:      userID,
-		Target:      email,
-		Channel:     domain.VerificationChannelEmail,
-		Purpose:     domain.VerificationPurposeEmailConfirm,
-		CodeHash:    codeHash,
-		MaxAttempts: service.maxCodeAttempts,
-		ExpiresAt:   time.Now().UTC().Add(service.emailCodeTTL),
-		LastSentAt:  time.Now().UTC(),
-	}
-
-	if _, err := service.verificationCodeRepository.CreateVerificationCode(ctx, verificationCode); err != nil {
-		return fmt.Errorf("store email confirmation code: %w", err)
-	}
-	if err := service.emailProvider.SendEmailConfirmationCode(ctx, email, code); err != nil {
-		return fmt.Errorf("send email confirmation code: %w", err)
-	}
-
-	return nil
-}
-
 func maskPhone(phone string) string {
 	if len(phone) <= 5 {
 		return phone

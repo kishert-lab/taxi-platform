@@ -68,6 +68,63 @@ func TestCreateDriverRejectsInvalidPhone(t *testing.T) {
 	}
 }
 
+func TestCreateDispatcherNormalizesPhoneAndTrimsFields(t *testing.T) {
+	repository := &fakeRepository{}
+	service := NewService(repository, fakePasswordHasher{})
+
+	result, err := service.CreateDispatcher(context.Background(), uuid.New(), dto.TaxiParkCreateDispatcherRequest{
+		Phone:     "+7 (999) 000-00-02",
+		Email:     " Dispatcher@Example.com ",
+		Password:  "strong-password",
+		FirstName: " Ivan ",
+		LastName:  " Petrov ",
+	})
+	if err != nil {
+		t.Fatalf("create dispatcher: %v", err)
+	}
+
+	if repository.createdDispatcherRecord.Phone != "+79990000002" {
+		t.Fatalf("expected normalized dispatcher phone, got %q", repository.createdDispatcherRecord.Phone)
+	}
+	if repository.createdDispatcherRecord.Email != "dispatcher@example.com" {
+		t.Fatalf("expected normalized dispatcher email, got %q", repository.createdDispatcherRecord.Email)
+	}
+	if repository.createdDispatcherRecord.FirstName != "Ivan" || repository.createdDispatcherRecord.LastName != "Petrov" {
+		t.Fatalf("expected trimmed dispatcher names, got %q %q", repository.createdDispatcherRecord.FirstName, repository.createdDispatcherRecord.LastName)
+	}
+	if repository.createdDispatcherRecord.PasswordHash != "hash:strong-password" {
+		t.Fatalf("expected dispatcher password hash, got %q", repository.createdDispatcherRecord.PasswordHash)
+	}
+	if result.Role != domain.UserRoleDispatcher {
+		t.Fatalf("expected dispatcher role, got %s", result.Role)
+	}
+}
+
+func TestCreateDispatcherRejectsShortPassword(t *testing.T) {
+	service := NewService(&fakeRepository{}, fakePasswordHasher{})
+
+	_, err := service.CreateDispatcher(context.Background(), uuid.New(), dto.TaxiParkCreateDispatcherRequest{
+		Phone:    "+79990000002",
+		Password: "short",
+	})
+	if err == nil || !strings.Contains(err.Error(), ErrInvalidDispatcherPassword.Error()) {
+		t.Fatalf("expected invalid dispatcher password error, got %v", err)
+	}
+}
+
+func TestUnblockDispatcherDelegatesToRepository(t *testing.T) {
+	repository := &fakeRepository{}
+	service := NewService(repository, fakePasswordHasher{})
+	dispatcherID := uuid.New()
+
+	if err := service.UnblockDispatcher(context.Background(), uuid.New(), dispatcherID); err != nil {
+		t.Fatalf("unblock dispatcher: %v", err)
+	}
+	if repository.unblockDispatcherID != dispatcherID {
+		t.Fatalf("expected dispatcher id %s, got %s", dispatcherID, repository.unblockDispatcherID)
+	}
+}
+
 func TestCreateCarAcceptsRFC3339DatesAndOwnerFallback(t *testing.T) {
 	repository := &fakeRepository{}
 	service := NewService(repository, fakePasswordHasher{})
@@ -124,14 +181,46 @@ func TestCreateOrderAcceptsTaxiParkFrontendPayload(t *testing.T) {
 	}
 }
 
+func TestCreateScheduledOrderCalculatesTimingAndDoesNotRejectValidFutureTime(t *testing.T) {
+	repository := &fakeRepository{}
+	service := NewService(repository, fakePasswordHasher{})
+	scheduledAt := time.Now().UTC().Add(40 * time.Minute)
+
+	_, err := service.CreateScheduledOrder(context.Background(), uuid.New(), dto.TaxiParkCreateScheduledOrderRequest{
+		TariffID:      uuid.New(),
+		PickupAddress: "ADR 1",
+		PickupLocation: &dto.TaxiParkOrderCoordinatesRequest{
+			Latitude:  56.80586,
+			Longitude: 60.575867,
+		},
+		DestinationAddress: "ADR 2",
+		ScheduledAt:        scheduledAt,
+		Timezone:           "Asia/Yekaterinburg",
+	})
+	if err != nil {
+		t.Fatalf("create scheduled order: %v", err)
+	}
+	if repository.createdScheduledOrderRecord.ScheduledAt.IsZero() {
+		t.Fatal("expected scheduled_at to be forwarded")
+	}
+}
+
 type fakeRepository struct {
-	createdRecord      CreateDriverRecord
-	createdCarRecord   CarRecord
-	createdOrderRecord CreateOrderRecord
+	createdRecord               CreateDriverRecord
+	createdDispatcherRecord     CreateDispatcherRecord
+	createdCarRecord            CarRecord
+	createdOrderRecord          CreateOrderRecord
+	createdScheduledOrderRecord CreateScheduledOrderRecord
+	unblockDispatcherID         uuid.UUID
 }
 
 func (repository *fakeRepository) GetSettingsByOwnerUserID(context.Context, uuid.UUID) (domain.TaxiParkSettings, error) {
-	return domain.TaxiParkSettings{}, nil
+	return domain.TaxiParkSettings{
+		ScheduledOrdersEnabled:           true,
+		ScheduledMinBeforeMinutes:        15,
+		ScheduledActivationBeforeMinutes: 20,
+		CityTimezone:                     "Asia/Yekaterinburg",
+	}, nil
 }
 
 func (repository *fakeRepository) UpdateSettingsByOwnerUserID(context.Context, uuid.UUID, dto.TaxiParkSettingsPatchRequest) (domain.TaxiParkSettings, error) {
@@ -159,6 +248,41 @@ func (repository *fakeRepository) GetOrderByActorUserID(context.Context, uuid.UU
 	return domain.Order{}, nil
 }
 
+func (repository *fakeRepository) CreateScheduledOrderByActorUserID(_ context.Context, _ uuid.UUID, record CreateScheduledOrderRecord) (ScheduledOrder, error) {
+	repository.createdScheduledOrderRecord = record
+	status := domain.ScheduledOrderStatusConfirmed
+	return ScheduledOrder{
+		Order: domain.Order{
+			ID:              uuid.New(),
+			OrderType:       domain.OrderTypeScheduled,
+			Status:          domain.OrderStatusCreated,
+			ScheduledStatus: &status,
+			ScheduledAt:     &record.ScheduledAt,
+			ActivationAt:    ptrTime(record.ScheduledAt.Add(-20 * time.Minute)),
+		},
+	}, nil
+}
+
+func (repository *fakeRepository) ListScheduledOrdersByActorUserID(context.Context, uuid.UUID) ([]ScheduledOrder, error) {
+	return nil, nil
+}
+
+func (repository *fakeRepository) GetScheduledOrderByActorUserID(context.Context, uuid.UUID, uuid.UUID) (ScheduledOrder, error) {
+	return ScheduledOrder{}, nil
+}
+
+func (repository *fakeRepository) UpdateScheduledOrderByActorUserID(context.Context, uuid.UUID, uuid.UUID, UpdateScheduledOrderRecord) (ScheduledOrder, error) {
+	return ScheduledOrder{}, nil
+}
+
+func (repository *fakeRepository) CancelScheduledOrderByActorUserID(context.Context, uuid.UUID, uuid.UUID, string) (ScheduledOrder, error) {
+	return ScheduledOrder{}, nil
+}
+
+func (repository *fakeRepository) AssignScheduledOrderDriverByActorUserID(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (ScheduledOrder, error) {
+	return ScheduledOrder{}, nil
+}
+
 func (repository *fakeRepository) UpdateOrderByActorUserID(context.Context, uuid.UUID, uuid.UUID, UpdateOrderRecord) (domain.Order, error) {
 	return domain.Order{}, nil
 }
@@ -169,6 +293,40 @@ func (repository *fakeRepository) CancelOrderByActorUserID(context.Context, uuid
 
 func (repository *fakeRepository) CompleteOrderByActorUserID(context.Context, uuid.UUID, uuid.UUID, int64) (domain.Order, error) {
 	return domain.Order{}, nil
+}
+
+func (repository *fakeRepository) ListDispatchersByOwnerUserID(context.Context, uuid.UUID) ([]Dispatcher, error) {
+	return nil, nil
+}
+
+func (repository *fakeRepository) CreateDispatcherByOwnerUserID(_ context.Context, _ uuid.UUID, record CreateDispatcherRecord) (Dispatcher, error) {
+	repository.createdDispatcherRecord = record
+	return Dispatcher{
+		DispatcherID: uuid.New(),
+		UserID:       uuid.New(),
+		TaxiParkID:   uuid.New(),
+		Phone:        record.Phone,
+		Email:        record.Email,
+		FirstName:    record.FirstName,
+		LastName:     record.LastName,
+		Role:         domain.UserRoleDispatcher,
+		IsActive:     true,
+		CreatedAt:    time.Now().UTC(),
+		UpdatedAt:    time.Now().UTC(),
+	}, nil
+}
+
+func (repository *fakeRepository) UpdateDispatcherByOwnerUserID(context.Context, uuid.UUID, uuid.UUID, UpdateDispatcherRecord) (Dispatcher, error) {
+	return Dispatcher{}, nil
+}
+
+func (repository *fakeRepository) BlockDispatcherByOwnerUserID(context.Context, uuid.UUID, uuid.UUID) error {
+	return nil
+}
+
+func (repository *fakeRepository) UnblockDispatcherByOwnerUserID(_ context.Context, _ uuid.UUID, dispatcherID uuid.UUID) error {
+	repository.unblockDispatcherID = dispatcherID
+	return nil
 }
 
 func (repository *fakeRepository) CreateDriverByOwnerUserID(_ context.Context, _ uuid.UUID, record CreateDriverRecord) (CreateDriverResult, error) {
@@ -252,4 +410,8 @@ type fakePasswordHasher struct{}
 
 func (fakePasswordHasher) HashPassword(password string) (string, error) {
 	return "hash:" + password, nil
+}
+
+func ptrTime(value time.Time) *time.Time {
+	return &value
 }

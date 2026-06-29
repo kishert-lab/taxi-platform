@@ -238,24 +238,35 @@ const dispatchOrderSelectColumns = `
 	id,
 	passenger_id,
 	driver_id,
+	preassigned_driver_id,
 	city_id,
 	tariff_id,
 	status,
+	order_type,
+	scheduled_status,
 	pickup_address,
 	ST_Y(pickup_location::geometry) AS pickup_latitude,
 	ST_X(pickup_location::geometry) AS pickup_longitude,
 	COALESCE(destination_address, '') AS destination_address,
 	CASE WHEN destination_location IS NULL THEN NULL ELSE ST_Y(destination_location::geometry) END AS destination_latitude,
 	CASE WHEN destination_location IS NULL THEN NULL ELSE ST_X(destination_location::geometry) END AS destination_longitude,
+	scheduled_at,
+	activation_at,
+	COALESCE(scheduled_timezone, '') AS scheduled_timezone,
 	requested_at,
 	accepted_at,
 	started_at,
 	completed_at,
 	cancelled_at,
+	activated_at,
+	scheduled_cancelled_at,
+	scheduled_expired_at,
 	COALESCE(cancellation_reason, '') AS cancellation_reason,
+	COALESCE(scheduled_cancel_reason, '') AS scheduled_cancel_reason,
 	payment_method,
 	COALESCE(passenger_comment, '') AS passenger_comment,
 	dispatch_attempt,
+	scheduled_created_by,
 	version,
 	created_at,
 	updated_at,
@@ -264,14 +275,22 @@ const dispatchOrderSelectColumns = `
 func scanDispatchOrder(row pgx.Row) (domain.Order, error) {
 	var order domain.Order
 	var driverID pgtype.UUID
+	var preassignedDriverID pgtype.UUID
 	var tariffID pgtype.UUID
+	var scheduledCreatedBy pgtype.UUID
 	var destinationLatitude pgtype.Float8
 	var destinationLongitude pgtype.Float8
+	var scheduledAt pgtype.Timestamptz
+	var activationAt pgtype.Timestamptz
 	var acceptedAt pgtype.Timestamptz
 	var startedAt pgtype.Timestamptz
 	var completedAt pgtype.Timestamptz
 	var cancelledAt pgtype.Timestamptz
+	var activatedAt pgtype.Timestamptz
+	var scheduledCancelledAt pgtype.Timestamptz
+	var scheduledExpiredAt pgtype.Timestamptz
 	var deletedAt pgtype.Timestamptz
+	var scheduledStatus pgtype.Text
 	var pickupLatitude float64
 	var pickupLongitude float64
 
@@ -279,24 +298,35 @@ func scanDispatchOrder(row pgx.Row) (domain.Order, error) {
 		&order.ID,
 		&order.PassengerID,
 		&driverID,
+		&preassignedDriverID,
 		&order.CityID,
 		&tariffID,
 		&order.Status,
+		&order.OrderType,
+		&scheduledStatus,
 		&order.PickupAddress,
 		&pickupLatitude,
 		&pickupLongitude,
 		&order.DestinationAddress,
 		&destinationLatitude,
 		&destinationLongitude,
+		&scheduledAt,
+		&activationAt,
+		&order.ScheduledTimezone,
 		&order.RequestedAt,
 		&acceptedAt,
 		&startedAt,
 		&completedAt,
 		&cancelledAt,
+		&activatedAt,
+		&scheduledCancelledAt,
+		&scheduledExpiredAt,
 		&order.CancellationReason,
+		&order.ScheduledCancelReason,
 		&order.PaymentMethod,
 		&order.PassengerComment,
 		&order.DispatchAttempt,
+		&scheduledCreatedBy,
 		&order.Version,
 		&order.CreatedAt,
 		&order.UpdatedAt,
@@ -315,9 +345,17 @@ func scanDispatchOrder(row pgx.Row) (domain.Order, error) {
 		value := uuid.UUID(driverID.Bytes)
 		order.DriverID = &value
 	}
+	if preassignedDriverID.Valid {
+		value := uuid.UUID(preassignedDriverID.Bytes)
+		order.PreassignedDriverID = &value
+	}
 	if tariffID.Valid {
 		value := uuid.UUID(tariffID.Bytes)
 		order.TariffID = &value
+	}
+	if scheduledStatus.Valid {
+		value := domain.ScheduledOrderStatus(scheduledStatus.String)
+		order.ScheduledStatus = &value
 	}
 	if destinationLatitude.Valid && destinationLongitude.Valid {
 		value, err := domain.NewCoordinates(destinationLatitude.Float64, destinationLongitude.Float64)
@@ -329,6 +367,12 @@ func scanDispatchOrder(row pgx.Row) (domain.Order, error) {
 	if acceptedAt.Valid {
 		order.AcceptedAt = &acceptedAt.Time
 	}
+	if scheduledAt.Valid {
+		order.ScheduledAt = &scheduledAt.Time
+	}
+	if activationAt.Valid {
+		order.ActivationAt = &activationAt.Time
+	}
 	if startedAt.Valid {
 		order.StartedAt = &startedAt.Time
 	}
@@ -337,6 +381,19 @@ func scanDispatchOrder(row pgx.Row) (domain.Order, error) {
 	}
 	if cancelledAt.Valid {
 		order.CancelledAt = &cancelledAt.Time
+	}
+	if activatedAt.Valid {
+		order.ActivatedAt = &activatedAt.Time
+	}
+	if scheduledCancelledAt.Valid {
+		order.ScheduledCancelledAt = &scheduledCancelledAt.Time
+	}
+	if scheduledExpiredAt.Valid {
+		order.ScheduledExpiredAt = &scheduledExpiredAt.Time
+	}
+	if scheduledCreatedBy.Valid {
+		value := uuid.UUID(scheduledCreatedBy.Bytes)
+		order.ScheduledCreatedBy = &value
 	}
 	if deletedAt.Valid {
 		order.DeletedAt = &deletedAt.Time

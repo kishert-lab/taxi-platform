@@ -60,6 +60,11 @@ type DriverOrderRouteSuccessResponse struct {
 	Meta response.Meta          `json:"meta"`
 }
 
+type DriverOrderRouteBatchSuccessResponse struct {
+	Data dto.DriverOrderRouteBatchResponse `json:"data"`
+	Meta response.Meta                     `json:"meta"`
+}
+
 type AuthCodeSentSuccessResponse struct {
 	Data dto.AuthCodeSentResponse `json:"data"`
 	Meta response.Meta            `json:"meta"`

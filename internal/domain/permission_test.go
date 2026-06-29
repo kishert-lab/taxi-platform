@@ -30,15 +30,33 @@ func TestRoleHasPermission(t *testing.T) {
 			expected:           true,
 		},
 		{
+			name:               "driver can create passenger order",
+			role:               UserRoleDriver,
+			requiredPermission: PermissionPassengerCreateOrder,
+			expected:           true,
+		},
+		{
 			name:               "dispatcher can assign driver",
 			role:               UserRoleDispatcher,
 			requiredPermission: PermissionDispatcherAssignDriver,
 			expected:           true,
 		},
 		{
+			name:               "dispatcher can view current passenger order",
+			role:               UserRoleDispatcher,
+			requiredPermission: PermissionPassengerViewCurrentOrder,
+			expected:           true,
+		},
+		{
 			name:               "admin can manage commissions",
 			role:               UserRoleAdmin,
 			requiredPermission: PermissionAdminManageCommissions,
+			expected:           true,
+		},
+		{
+			name:               "admin can cancel passenger order",
+			role:               UserRoleAdmin,
+			requiredPermission: PermissionPassengerCancelOrder,
 			expected:           true,
 		},
 		{
@@ -51,6 +69,12 @@ func TestRoleHasPermission(t *testing.T) {
 			name:               "taxi park can view finance",
 			role:               UserRoleTaxiPark,
 			requiredPermission: PermissionTaxiParkViewFinance,
+			expected:           true,
+		},
+		{
+			name:               "taxi park can rate passenger trip",
+			role:               UserRoleTaxiPark,
+			requiredPermission: PermissionPassengerRateTrip,
 			expected:           true,
 		},
 	}

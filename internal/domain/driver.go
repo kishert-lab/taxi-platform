@@ -27,39 +27,39 @@ const (
 )
 
 type Driver struct {
-	ID                    uuid.UUID
-	UserID                uuid.UUID
-	CityID                uuid.UUID
-	TaxiParkID            *uuid.UUID
-	Status                DriverStatus
-	VerificationStatus    VerificationLifecycleStatus
-	Rating                float64
-	RatingsCount          int
-	CompletedOrdersCount  int
-	BirthDate             *time.Time
-	LicenseSeries         string
-	LicenseNumber         string
-	LicenseCategory       string
-	LicenseIssuedAt       *time.Time
-	LicenseExpiresAt      *time.Time
-	DrivingExperienceFrom *time.Time
-	HasNoTaxiWorkRestrictions bool
-	FederalLaw580Compliant    bool
+	ID                            uuid.UUID
+	UserID                        uuid.UUID
+	CityID                        uuid.UUID
+	TaxiParkID                    *uuid.UUID
+	Status                        DriverStatus
+	VerificationStatus            VerificationLifecycleStatus
+	Rating                        float64
+	RatingsCount                  int
+	CompletedOrdersCount          int
+	BirthDate                     *time.Time
+	LicenseSeries                 string
+	LicenseNumber                 string
+	LicenseCategory               string
+	LicenseIssuedAt               *time.Time
+	LicenseExpiresAt              *time.Time
+	DrivingExperienceFrom         *time.Time
+	HasNoTaxiWorkRestrictions     bool
+	FederalLaw580Compliant        bool
 	RegionalRequirementsCompliant bool
-	MedicalCheckPassed        bool
-	PretripControlRequired    bool
-	PretripControlPassed      bool
-	NoTransportBan            bool
-	VerificationCheckedAt     *time.Time
-	VerificationCheckedBy     *uuid.UUID
-	CommissionBasisPoints *int32
-	IsVerified            bool
-	BlockedReason         string
-	TaxiParkComment       string
-	MustChangePassword    bool
-	CreatedAt             time.Time
-	UpdatedAt             time.Time
-	DeletedAt             *time.Time
+	MedicalCheckPassed            bool
+	PretripControlRequired        bool
+	PretripControlPassed          bool
+	NoTransportBan                bool
+	VerificationCheckedAt         *time.Time
+	VerificationCheckedBy         *uuid.UUID
+	CommissionBasisPoints         *int32
+	IsVerified                    bool
+	BlockedReason                 string
+	TaxiParkComment               string
+	MustChangePassword            bool
+	CreatedAt                     time.Time
+	UpdatedAt                     time.Time
+	DeletedAt                     *time.Time
 }
 
 var (

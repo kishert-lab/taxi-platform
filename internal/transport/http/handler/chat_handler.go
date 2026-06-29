@@ -39,7 +39,7 @@ func (handler *ChatHandler) RegisterRoutes(router gin.IRouter) {
 	driver.GET("/orders/:id/chat/passenger/messages", handler.ListDriverPassengerMessages)
 	driver.POST("/orders/:id/chat/passenger/messages", handler.SendDriverPassengerMessage)
 
-	passenger := router.Group("/passenger", middleware.RequireRole(domain.UserRolePassenger))
+	passenger := router.Group("/passenger", middleware.RequireAuthenticated())
 	passenger.GET("/orders/:id/chat/driver/messages", handler.ListPassengerDriverMessages)
 	passenger.POST("/orders/:id/chat/driver/messages", handler.SendPassengerDriverMessage)
 	passenger.GET("/support/chat/messages", handler.ListPassengerSupportMessages)

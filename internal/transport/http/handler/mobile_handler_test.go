@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/kishert-lab/taxi-platform/internal/domain"
+	driverapp "github.com/kishert-lab/taxi-platform/internal/driver"
 	"github.com/kishert-lab/taxi-platform/internal/dto"
 	"github.com/kishert-lab/taxi-platform/internal/middleware"
 	"github.com/kishert-lab/taxi-platform/pkg/response"
@@ -84,6 +85,107 @@ func TestDriverCanAcceptOrder(t *testing.T) {
 	if driverUseCase.acceptOrderID != orderID {
 		t.Fatalf("expected order id %s, got %s", orderID, driverUseCase.acceptOrderID)
 	}
+}
+
+func TestDriverCanUploadBufferedRouteBatch(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	driverID := uuid.New()
+	orderID := uuid.New()
+	driverUseCase := &fakeDriverMobileUseCase{
+		routeBatchResult: dto.DriverOrderRouteBatchResponse{
+			OrderID:        orderID,
+			AcceptedPoints: 2,
+			IgnoredPoints:  1,
+		},
+	}
+	router := driverRouter(driverID, domain.UserRoleDriver, driverUseCase)
+
+	responseRecorder := performJSON(router, http.MethodPost, "/api/v1/driver/orders/"+orderID.String()+"/route/batch", `{
+		"points": [
+			{
+				"location": {"latitude": 56.8, "longitude": 60.6},
+				"heading": 180,
+				"speed_mps": 7.5,
+				"accuracy_meters": 8.0,
+				"recorded_at": "2026-06-28T10:00:00Z"
+			}
+		]
+	}`)
+
+	if responseRecorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", responseRecorder.Code, responseRecorder.Body.String())
+	}
+	if driverUseCase.routeBatchDriverID != driverID {
+		t.Fatalf("expected driver id %s, got %s", driverID, driverUseCase.routeBatchDriverID)
+	}
+	if driverUseCase.routeBatchOrderID != orderID {
+		t.Fatalf("expected order id %s, got %s", orderID, driverUseCase.routeBatchOrderID)
+	}
+	if len(driverUseCase.routeBatchRequest.Points) != 1 {
+		t.Fatalf("expected one route point, got %d", len(driverUseCase.routeBatchRequest.Points))
+	}
+}
+
+func TestDriverBufferedRouteBatchValidation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	router := driverRouter(uuid.New(), domain.UserRoleDriver, &fakeDriverMobileUseCase{})
+
+	emptyBatch := performJSON(router, http.MethodPost, "/api/v1/driver/orders/"+uuid.New().String()+"/route/batch", `{"points":[]}`)
+	if emptyBatch.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for empty batch, got %d: %s", emptyBatch.Code, emptyBatch.Body.String())
+	}
+	assertErrorCode(t, emptyBatch, response.CodeValidationError)
+
+	tooLargePoints := make([]map[string]any, 0, 501)
+	for index := 0; index < 501; index++ {
+		tooLargePoints = append(tooLargePoints, map[string]any{
+			"location": map[string]float64{
+				"latitude":  56.8,
+				"longitude": 60.6,
+			},
+			"recorded_at": "2026-06-28T10:00:00Z",
+		})
+	}
+	requestBody, err := json.Marshal(map[string]any{"points": tooLargePoints})
+	if err != nil {
+		t.Fatalf("marshal oversized batch: %v", err)
+	}
+	tooLargeBatch := performJSON(router, http.MethodPost, "/api/v1/driver/orders/"+uuid.New().String()+"/route/batch", string(requestBody))
+	if tooLargeBatch.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for oversized batch, got %d: %s", tooLargeBatch.Code, tooLargeBatch.Body.String())
+	}
+	assertErrorCode(t, tooLargeBatch, response.CodeValidationError)
+}
+
+func TestDriverBufferedRouteBatchErrors(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	driverID := uuid.New()
+	orderID := uuid.New()
+
+	forbiddenRouter := driverRouter(driverID, domain.UserRoleDriver, &fakeDriverMobileUseCase{
+		routeBatchErr: errors.Join(driverapp.ErrOrderAccessDenied),
+	})
+	forbiddenResponse := performJSON(forbiddenRouter, http.MethodPost, "/api/v1/driver/orders/"+orderID.String()+"/route/batch", `{
+		"points": [{"location":{"latitude":56.8,"longitude":60.6},"recorded_at":"2026-06-28T10:00:00Z"}]
+	}`)
+	if forbiddenResponse.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", forbiddenResponse.Code, forbiddenResponse.Body.String())
+	}
+	assertErrorCode(t, forbiddenResponse, response.CodeForbidden)
+
+	notFoundRouter := driverRouter(driverID, domain.UserRoleDriver, &fakeDriverMobileUseCase{
+		routeBatchErr: driverapp.ErrCurrentOrderNotFound,
+	})
+	notFoundResponse := performJSON(notFoundRouter, http.MethodPost, "/api/v1/driver/orders/"+orderID.String()+"/route/batch", `{
+		"points": [{"location":{"latitude":56.8,"longitude":60.6},"recorded_at":"2026-06-28T10:00:00Z"}]
+	}`)
+	if notFoundResponse.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", notFoundResponse.Code, notFoundResponse.Body.String())
+	}
+	assertErrorCode(t, notFoundResponse, response.CodeOrderNotFound)
 }
 
 func TestInvalidTransitionReturnsOrderInvalidState(t *testing.T) {
@@ -186,16 +288,21 @@ func TestUnauthorizedRequestRejected(t *testing.T) {
 	assertErrorCode(t, responseRecorder, response.CodeUnauthorized)
 }
 
-func TestRoleMismatchRejected(t *testing.T) {
+func TestAuthenticatedNonPassengerCanUsePassengerRoutes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	router := passengerRouter(uuid.New(), domain.UserRoleDriver, &fakePassengerOrderUseCase{})
+	orderUseCase := &fakePassengerOrderUseCase{
+		currentResult: dto.PassengerOrderResponse{
+			OrderID: uuid.New(),
+			Status:  domain.OrderStatusCreated,
+		},
+	}
+	router := passengerRouter(uuid.New(), domain.UserRoleDriver, orderUseCase)
 	responseRecorder := performJSON(router, http.MethodGet, "/api/v1/passenger/orders/current", "")
 
-	if responseRecorder.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d: %s", responseRecorder.Code, responseRecorder.Body.String())
+	if responseRecorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", responseRecorder.Code, responseRecorder.Body.String())
 	}
-	assertErrorCode(t, responseRecorder, response.CodeForbidden)
 }
 
 func passengerRouter(userID uuid.UUID, role domain.UserRole, orderUseCase PassengerOrderUseCase) *gin.Engine {
@@ -321,10 +428,15 @@ func (useCase *fakePassengerOrderUseCase) RatePassengerOrder(_ context.Context, 
 }
 
 type fakeDriverMobileUseCase struct {
-	acceptResult   dto.DriverOrderResponse
-	acceptErr      error
-	acceptDriverID uuid.UUID
-	acceptOrderID  uuid.UUID
+	acceptResult       dto.DriverOrderResponse
+	acceptErr          error
+	acceptDriverID     uuid.UUID
+	acceptOrderID      uuid.UUID
+	routeBatchResult   dto.DriverOrderRouteBatchResponse
+	routeBatchErr      error
+	routeBatchDriverID uuid.UUID
+	routeBatchOrderID  uuid.UUID
+	routeBatchRequest  dto.DriverOrderRouteBatchRequest
 }
 
 func (useCase *fakeDriverMobileUseCase) GetDriverProfile(_ context.Context, driverID uuid.UUID) (dto.DriverProfileResponse, error) {
@@ -377,6 +489,16 @@ func (useCase *fakeDriverMobileUseCase) ListDriverOrderOffers(_ context.Context,
 
 func (useCase *fakeDriverMobileUseCase) GetDriverOrderRoute(_ context.Context, _ uuid.UUID, orderID uuid.UUID) (dto.OrderRouteResponse, error) {
 	return dto.OrderRouteResponse{OrderID: orderID, Points: []dto.OrderRoutePointResponse{}}, nil
+}
+
+func (useCase *fakeDriverMobileUseCase) AppendOrderRoutePoints(_ context.Context, driverID uuid.UUID, orderID uuid.UUID, request dto.DriverOrderRouteBatchRequest) (dto.DriverOrderRouteBatchResponse, error) {
+	useCase.routeBatchDriverID = driverID
+	useCase.routeBatchOrderID = orderID
+	useCase.routeBatchRequest = request
+	if useCase.routeBatchErr != nil {
+		return dto.DriverOrderRouteBatchResponse{}, useCase.routeBatchErr
+	}
+	return useCase.routeBatchResult, nil
 }
 
 func (useCase *fakeDriverMobileUseCase) AcceptDriverOrder(_ context.Context, driverID uuid.UUID, orderID uuid.UUID) (dto.DriverOrderResponse, error) {

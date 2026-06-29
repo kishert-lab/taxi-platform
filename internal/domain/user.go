@@ -159,6 +159,10 @@ func NormalizePhone(phone string) (string, error) {
 	normalized = strings.ReplaceAll(normalized, "(", "")
 	normalized = strings.ReplaceAll(normalized, ")", "")
 
+	if len(normalized) == 11 && strings.HasPrefix(normalized, "8") {
+		normalized = "+7" + normalized[1:]
+	}
+
 	if !phonePattern.MatchString(normalized) {
 		return "", ErrInvalidPhone
 	}

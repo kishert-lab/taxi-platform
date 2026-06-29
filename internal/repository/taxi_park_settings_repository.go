@@ -56,6 +56,11 @@ func (repository *PostgresTaxiParkSettingsRepository) UpdateSettingsByOwnerUserI
 	var dispatchAcceptLockTTLSec *int
 	var dispatchWorkerPollTimeoutSec *int
 	var dispatchRecoveryIntervalSec *int
+	var scheduledOrdersEnabled *bool
+	var scheduledMinBeforeMinutes *int
+	var scheduledActivationBeforeMinutes *int
+	var scheduledExpireAfterMinutes *int
+	var allowScheduledDriverPreassignment *bool
 	if request.Dispatch != nil {
 		dispatchInitialRadiusMeters = request.Dispatch.InitialRadiusMeters
 		dispatchMaxRadiusMeters = request.Dispatch.MaxRadiusMeters
@@ -73,6 +78,13 @@ func (repository *PostgresTaxiParkSettingsRepository) UpdateSettingsByOwnerUserI
 				return domain.TaxiParkSettings{}, fmt.Errorf("marshal taxi park dispatch radius attempts: %w", err)
 			}
 		}
+	}
+	if request.Scheduled != nil {
+		scheduledOrdersEnabled = request.Scheduled.ScheduledOrdersEnabled
+		scheduledMinBeforeMinutes = request.Scheduled.ScheduledMinBeforeMinutes
+		scheduledActivationBeforeMinutes = request.Scheduled.ScheduledActivationBeforeMinutes
+		scheduledExpireAfterMinutes = request.Scheduled.ScheduledExpireAfterMinutes
+		allowScheduledDriverPreassignment = request.Scheduled.AllowScheduledDriverPreassignment
 	}
 
 	settings, err := scanTaxiParkSettings(repository.pool.QueryRow(ctx, `
@@ -107,7 +119,12 @@ func (repository *PostgresTaxiParkSettingsRepository) UpdateSettingsByOwnerUserI
 			    dispatch_offer_ttl_sec = COALESCE($28, s.dispatch_offer_ttl_sec),
 			    dispatch_accept_lock_ttl_sec = COALESCE($29, s.dispatch_accept_lock_ttl_sec),
 			    dispatch_worker_poll_timeout_sec = COALESCE($30, s.dispatch_worker_poll_timeout_sec),
-			    dispatch_recovery_interval_sec = COALESCE($31, s.dispatch_recovery_interval_sec)
+			    dispatch_recovery_interval_sec = COALESCE($31, s.dispatch_recovery_interval_sec),
+			    scheduled_orders_enabled = COALESCE($32, s.scheduled_orders_enabled),
+			    scheduled_min_before_minutes = COALESCE($33, s.scheduled_min_before_minutes),
+			    scheduled_activation_before_minutes = COALESCE($34, s.scheduled_activation_before_minutes),
+			    scheduled_expire_after_minutes = COALESCE($35, s.scheduled_expire_after_minutes),
+			    allow_scheduled_driver_preassignment = COALESCE($36, s.allow_scheduled_driver_preassignment)
 			FROM taxi_parks p
 			WHERE p.id = s.taxi_park_id AND p.owner_user_id = $1 AND p.deleted_at IS NULL
 			RETURNING s.id
@@ -148,6 +165,11 @@ func (repository *PostgresTaxiParkSettingsRepository) UpdateSettingsByOwnerUserI
 		dispatchAcceptLockTTLSec,
 		dispatchWorkerPollTimeoutSec,
 		dispatchRecoveryIntervalSec,
+		scheduledOrdersEnabled,
+		scheduledMinBeforeMinutes,
+		scheduledActivationBeforeMinutes,
+		scheduledExpireAfterMinutes,
+		allowScheduledDriverPreassignment,
 	))
 
 	if err != nil {
@@ -385,6 +407,393 @@ func (repository *PostgresTaxiParkSettingsRepository) CreateOrderByOwnerUserID(c
 	}
 
 	return order, nil
+}
+
+func (repository *PostgresTaxiParkSettingsRepository) CreateScheduledOrderByActorUserID(ctx context.Context, actorUserID uuid.UUID, record taxiparkapp.CreateScheduledOrderRecord) (taxiparkapp.ScheduledOrder, error) {
+	transaction, err := repository.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return taxiparkapp.ScheduledOrder{}, fmt.Errorf("begin taxi park scheduled order transaction: %w", err)
+	}
+	defer rollbackTx(ctx, transaction)
+
+	taxiParkID, cityID, err := taxiParkIDAndCityByActor(ctx, transaction, actorUserID)
+	if err != nil {
+		return taxiparkapp.ScheduledOrder{}, err
+	}
+
+	var settings struct {
+		enabled                 bool
+		activationBeforeMinutes int
+		allowPreassignment      bool
+	}
+	if err := transaction.QueryRow(ctx, `
+		SELECT scheduled_orders_enabled, scheduled_activation_before_minutes, allow_scheduled_driver_preassignment
+		FROM taxi_park_settings
+		WHERE taxi_park_id = $1`, taxiParkID).Scan(
+		&settings.enabled,
+		&settings.activationBeforeMinutes,
+		&settings.allowPreassignment,
+	); err != nil {
+		return taxiparkapp.ScheduledOrder{}, fmt.Errorf("select taxi park scheduled settings: %w", err)
+	}
+	if !settings.enabled {
+		return taxiparkapp.ScheduledOrder{}, taxiparkapp.ErrScheduledOrdersDisabled
+	}
+	if record.PreassignedDriverID != nil {
+		if !settings.allowPreassignment {
+			return taxiparkapp.ScheduledOrder{}, taxiparkapp.ErrInvalidScheduledOrder
+		}
+		if err := ensureDriverBelongsToTaxiPark(ctx, transaction, taxiParkID, *record.PreassignedDriverID); err != nil {
+			return taxiparkapp.ScheduledOrder{}, err
+		}
+	}
+
+	passengerID := actorUserID
+	if record.PassengerPhone != "" {
+		firstName, lastName := splitPassengerName(record.PassengerName)
+		if err := transaction.QueryRow(ctx, `
+			INSERT INTO users (
+				phone, role, registration_type, first_name, last_name,
+				is_phone_confirmed, is_active
+			)
+			VALUES ($1, 'passenger', 'passenger', NULLIF($2, ''), NULLIF($3, ''), true, true)
+			ON CONFLICT (phone, role) DO UPDATE
+			SET first_name = COALESCE(NULLIF(EXCLUDED.first_name, ''), users.first_name),
+			    last_name = COALESCE(NULLIF(EXCLUDED.last_name, ''), users.last_name),
+			    updated_at = now()
+			RETURNING id`, record.PassengerPhone, firstName, lastName).Scan(&passengerID); err != nil {
+			return taxiparkapp.ScheduledOrder{}, fmt.Errorf("upsert passenger for scheduled order: %w", err)
+		}
+	}
+
+	metadata, err := json.Marshal(map[string]any{
+		"created_by_user_id": actorUserID,
+		"created_by_role":    "taxi_park",
+		"taxi_park_id":       taxiParkID,
+		"passenger_phone":    record.PassengerPhone,
+		"passenger_name":     record.PassengerName,
+	})
+	if err != nil {
+		return taxiparkapp.ScheduledOrder{}, fmt.Errorf("marshal scheduled order metadata: %w", err)
+	}
+
+	var destinationLatitude any
+	var destinationLongitude any
+	if record.DestinationLocation != nil {
+		destinationLatitude = record.DestinationLocation.Latitude
+		destinationLongitude = record.DestinationLocation.Longitude
+	}
+
+	orderTariffID, taxiParkTariffID, basePriceCents, pricePerKMCents, minimumPriceCents, err := repository.resolveOrderTariff(ctx, transaction, taxiParkID, record.TariffID)
+	if err != nil {
+		return taxiparkapp.ScheduledOrder{}, err
+	}
+
+	activationAt := record.ScheduledAt.Add(-time.Duration(settings.activationBeforeMinutes) * time.Minute)
+	scheduledStatus := domain.ScheduledOrderStatusConfirmed
+	if record.PreassignedDriverID != nil {
+		scheduledStatus = domain.ScheduledOrderStatusDriverAssigned
+	}
+
+	order, err := scanDispatchOrder(transaction.QueryRow(ctx, `
+		WITH order_points AS (
+			SELECT ST_SetSRID(ST_MakePoint($6, $5), 4326)::geography AS pickup_location,
+			       CASE
+			           WHEN $8::double precision IS NULL OR $9::double precision IS NULL THEN NULL
+			           ELSE ST_SetSRID(ST_MakePoint($9, $8), 4326)::geography
+			       END AS destination_location
+		),
+		inserted_order AS (
+			INSERT INTO orders (
+				passenger_id, driver_id, preassigned_driver_id, city_id, tariff_id, status, order_type, scheduled_status,
+				scheduled_at, activation_at, scheduled_timezone, scheduled_created_by,
+				pickup_address, pickup_location, destination_address, destination_location,
+				estimated_price, payment_method, passenger_comment, dispatch_attempt, version, metadata
+			)
+			SELECT $1,
+			       CASE WHEN $17::uuid IS NULL THEN NULL ELSE $17::uuid END,
+			       $17::uuid,
+			       $2, $3::uuid, 'created', 'scheduled', $18::varchar,
+			       $19, $20, $21, $22,
+			       $4, p.pickup_location, $7, p.destination_location,
+			       CASE
+			           WHEN p.destination_location IS NULL THEN (GREATEST($16::bigint, $14::bigint)::numeric / 100)
+			           ELSE GREATEST(
+			               $16::bigint::numeric,
+			               $14::bigint::numeric + ((ST_Distance(p.pickup_location, p.destination_location) / 1000.0)::numeric * $15::bigint::numeric)
+			           ) / 100
+			       END,
+			       $10, NULLIF($11, ''), 0, 1, $12::jsonb || jsonb_build_object('taxi_park_tariff_id', $13::uuid)
+			FROM order_points p
+			RETURNING `+dispatchOrderSelectColumns+`
+		)
+		SELECT * FROM inserted_order`,
+		passengerID,
+		cityID,
+		nullableUUID(orderTariffID),
+		record.PickupAddress,
+		record.PickupLocation.Latitude,
+		record.PickupLocation.Longitude,
+		record.DestinationAddress,
+		destinationLatitude,
+		destinationLongitude,
+		record.PaymentMethod,
+		record.Comment,
+		string(metadata),
+		nullableUUID(taxiParkTariffID),
+		basePriceCents,
+		pricePerKMCents,
+		minimumPriceCents,
+		record.PreassignedDriverID,
+		scheduledStatus,
+		record.ScheduledAt,
+		activationAt,
+		record.Timezone,
+		actorUserID,
+	))
+	if err != nil {
+		return taxiparkapp.ScheduledOrder{}, fmt.Errorf("insert scheduled order: %w", err)
+	}
+
+	if err := insertTaxiParkOrderEvent(ctx, transaction, order, actorUserID, domain.OrderEventCreated, map[string]any{
+		"order_id":              order.ID,
+		"order_type":            order.OrderType,
+		"scheduled_status":      scheduledStatus,
+		"scheduled_at":          record.ScheduledAt,
+		"activation_at":         activationAt,
+		"preassigned_driver_id": record.PreassignedDriverID,
+	}); err != nil {
+		return taxiparkapp.ScheduledOrder{}, err
+	}
+
+	if err := transaction.Commit(ctx); err != nil {
+		return taxiparkapp.ScheduledOrder{}, fmt.Errorf("commit scheduled order transaction: %w", err)
+	}
+	return taxiparkapp.ScheduledOrder{Order: order}, nil
+}
+
+func (repository *PostgresTaxiParkSettingsRepository) ListScheduledOrdersByActorUserID(ctx context.Context, actorUserID uuid.UUID) ([]taxiparkapp.ScheduledOrder, error) {
+	transaction, err := repository.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("begin list scheduled orders transaction: %w", err)
+	}
+	defer rollbackTx(ctx, transaction)
+
+	taxiParkID, err := taxiParkIDByActor(ctx, transaction, actorUserID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := transaction.Query(ctx, `
+		SELECT `+dispatchOrderSelectColumns+`
+		FROM orders
+		WHERE metadata->>'taxi_park_id' = $1
+		  AND order_type = 'scheduled'
+		  AND deleted_at IS NULL
+		ORDER BY scheduled_at ASC, created_at DESC`, taxiParkID.String())
+	if err != nil {
+		return nil, fmt.Errorf("select scheduled orders: %w", err)
+	}
+	defer rows.Close()
+
+	orders := make([]taxiparkapp.ScheduledOrder, 0)
+	for rows.Next() {
+		order, scanErr := scanDispatchOrder(rows)
+		if scanErr != nil {
+			return nil, fmt.Errorf("scan scheduled order: %w", scanErr)
+		}
+		orders = append(orders, taxiparkapp.ScheduledOrder{Order: order})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate scheduled orders: %w", err)
+	}
+	if err := transaction.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit list scheduled orders transaction: %w", err)
+	}
+	return orders, nil
+}
+
+func (repository *PostgresTaxiParkSettingsRepository) GetScheduledOrderByActorUserID(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID) (taxiparkapp.ScheduledOrder, error) {
+	order, err := repository.scheduledOrderByActorUserID(ctx, actorUserID, orderID)
+	if err != nil {
+		return taxiparkapp.ScheduledOrder{}, err
+	}
+	return taxiparkapp.ScheduledOrder{Order: order}, nil
+}
+
+func (repository *PostgresTaxiParkSettingsRepository) UpdateScheduledOrderByActorUserID(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID, record taxiparkapp.UpdateScheduledOrderRecord) (taxiparkapp.ScheduledOrder, error) {
+	transaction, err := repository.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return taxiparkapp.ScheduledOrder{}, fmt.Errorf("begin scheduled order update transaction: %w", err)
+	}
+	defer rollbackTx(ctx, transaction)
+
+	taxiParkID, err := taxiParkIDByActor(ctx, transaction, actorUserID)
+	if err != nil {
+		return taxiparkapp.ScheduledOrder{}, err
+	}
+	currentOrder, err := scheduledTaxiParkOrderForUpdate(ctx, transaction, taxiParkID, orderID)
+	if err != nil {
+		return taxiparkapp.ScheduledOrder{}, err
+	}
+	if currentOrder.ScheduledStatus == nil || currentOrder.ScheduledStatus.IsTerminal() {
+		return taxiparkapp.ScheduledOrder{}, domain.ErrInvalidOrderStatusTransition
+	}
+
+	var activationBeforeMinutes int
+	if err := transaction.QueryRow(ctx, `
+		SELECT scheduled_activation_before_minutes
+		FROM taxi_park_settings
+		WHERE taxi_park_id = $1`, taxiParkID).Scan(&activationBeforeMinutes); err != nil {
+		return taxiparkapp.ScheduledOrder{}, fmt.Errorf("select scheduled activation settings: %w", err)
+	}
+
+	if record.PreassignedDriverID != nil {
+		if err := ensureDriverBelongsToTaxiPark(ctx, transaction, taxiParkID, *record.PreassignedDriverID); err != nil {
+			return taxiparkapp.ScheduledOrder{}, err
+		}
+	}
+
+	scheduledAt := currentOrder.ScheduledAt
+	if record.ScheduledAt != nil {
+		scheduledAt = record.ScheduledAt
+	}
+	activationAt := currentOrder.ActivationAt
+	if scheduledAt != nil {
+		value := scheduledAt.Add(-time.Duration(activationBeforeMinutes) * time.Minute)
+		activationAt = &value
+	}
+
+	var scheduledStatus domain.ScheduledOrderStatus
+	if record.PreassignedDriverID != nil {
+		scheduledStatus = domain.ScheduledOrderStatusDriverAssigned
+	} else if currentOrder.PreassignedDriverID != nil {
+		scheduledStatus = domain.ScheduledOrderStatusDriverAssigned
+	} else {
+		scheduledStatus = domain.ScheduledOrderStatusConfirmed
+	}
+
+	order, err := scanDispatchOrder(transaction.QueryRow(ctx, `
+		WITH order_points AS (
+			SELECT
+				CASE WHEN $3::double precision IS NULL OR $4::double precision IS NULL THEN pickup_location
+				     ELSE ST_SetSRID(ST_MakePoint($4, $3), 4326)::geography
+				END AS pickup_location,
+				CASE WHEN $6::double precision IS NULL OR $7::double precision IS NULL THEN destination_location
+				     ELSE ST_SetSRID(ST_MakePoint($7, $6), 4326)::geography
+				END AS destination_location
+			FROM orders
+			WHERE id = $1
+		)
+		UPDATE orders
+		SET pickup_address = COALESCE($2::text, pickup_address),
+		    pickup_location = p.pickup_location,
+		    destination_address = COALESCE($5::text, destination_address),
+		    destination_location = p.destination_location,
+		    payment_method = COALESCE($8::payment_method, payment_method),
+		    passenger_comment = COALESCE($9::text, passenger_comment),
+		    scheduled_at = COALESCE($10, scheduled_at),
+		    activation_at = COALESCE($11, activation_at),
+		    scheduled_timezone = COALESCE(NULLIF($12::text, ''), scheduled_timezone),
+		    preassigned_driver_id = COALESCE($13::uuid, preassigned_driver_id),
+		    driver_id = COALESCE($13::uuid, driver_id),
+		    scheduled_status = $14::varchar,
+		    version = version + 1
+		FROM order_points p
+		WHERE id = $1
+		  AND version = $15
+		  AND deleted_at IS NULL
+		RETURNING `+dispatchOrderSelectColumns,
+		orderID,
+		nullableStringPtr(record.PickupAddress),
+		nullableLatitude(record.PickupLocation),
+		nullableLongitude(record.PickupLocation),
+		nullableStringPtr(record.DestinationAddress),
+		nullableLatitude(record.DestinationLocation),
+		nullableLongitude(record.DestinationLocation),
+		nullablePaymentMethod(record.PaymentMethod),
+		nullableStringPtr(record.Comment),
+		scheduledAt,
+		activationAt,
+		nullableStringPtr(record.Timezone),
+		record.PreassignedDriverID,
+		scheduledStatus,
+		currentOrder.Version,
+	))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return taxiparkapp.ScheduledOrder{}, fmt.Errorf("scheduled order concurrent update: %w", domain.ErrInvalidOrderStatusTransition)
+		}
+		return taxiparkapp.ScheduledOrder{}, fmt.Errorf("update scheduled order: %w", err)
+	}
+	if err := insertTaxiParkOrderEvent(ctx, transaction, order, actorUserID, domain.OrderEventUpdated, map[string]any{
+		"order_id":         order.ID,
+		"scheduled_status": scheduledStatus,
+		"scheduled_at":     order.ScheduledAt,
+		"activation_at":    order.ActivationAt,
+		"version":          order.Version,
+	}); err != nil {
+		return taxiparkapp.ScheduledOrder{}, err
+	}
+	if err := transaction.Commit(ctx); err != nil {
+		return taxiparkapp.ScheduledOrder{}, fmt.Errorf("commit scheduled order update transaction: %w", err)
+	}
+	return taxiparkapp.ScheduledOrder{Order: order}, nil
+}
+
+func (repository *PostgresTaxiParkSettingsRepository) CancelScheduledOrderByActorUserID(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID, reason string) (taxiparkapp.ScheduledOrder, error) {
+	transaction, err := repository.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return taxiparkapp.ScheduledOrder{}, fmt.Errorf("begin scheduled order cancel transaction: %w", err)
+	}
+	defer rollbackTx(ctx, transaction)
+
+	taxiParkID, err := taxiParkIDByActor(ctx, transaction, actorUserID)
+	if err != nil {
+		return taxiparkapp.ScheduledOrder{}, err
+	}
+	currentOrder, err := scheduledTaxiParkOrderForUpdate(ctx, transaction, taxiParkID, orderID)
+	if err != nil {
+		return taxiparkapp.ScheduledOrder{}, err
+	}
+	if currentOrder.ScheduledStatus == nil || currentOrder.ScheduledStatus.IsTerminal() {
+		return taxiparkapp.ScheduledOrder{}, domain.ErrInvalidOrderStatusTransition
+	}
+
+	order, err := scanDispatchOrder(transaction.QueryRow(ctx, `
+		UPDATE orders
+		SET scheduled_status = $2::varchar,
+		    scheduled_cancel_reason = $3,
+		    scheduled_cancelled_at = $4,
+		    version = version + 1
+		WHERE id = $1
+		  AND version = $5
+		  AND deleted_at IS NULL
+		RETURNING `+dispatchOrderSelectColumns,
+		orderID,
+		domain.ScheduledOrderStatusCancelled,
+		nullableString(reason),
+		time.Now().UTC(),
+		currentOrder.Version,
+	))
+	if err != nil {
+		return taxiparkapp.ScheduledOrder{}, fmt.Errorf("cancel scheduled order: %w", err)
+	}
+	if err := insertTaxiParkOrderEvent(ctx, transaction, order, actorUserID, domain.OrderEventCancelled, map[string]any{
+		"order_id":                order.ID,
+		"scheduled_status":        domain.ScheduledOrderStatusCancelled,
+		"scheduled_cancel_reason": reason,
+	}); err != nil {
+		return taxiparkapp.ScheduledOrder{}, err
+	}
+	if err := transaction.Commit(ctx); err != nil {
+		return taxiparkapp.ScheduledOrder{}, fmt.Errorf("commit scheduled order cancel transaction: %w", err)
+	}
+	return taxiparkapp.ScheduledOrder{Order: order}, nil
+}
+
+func (repository *PostgresTaxiParkSettingsRepository) AssignScheduledOrderDriverByActorUserID(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID, driverID uuid.UUID) (taxiparkapp.ScheduledOrder, error) {
+	record := taxiparkapp.UpdateScheduledOrderRecord{PreassignedDriverID: &driverID}
+	return repository.UpdateScheduledOrderByActorUserID(ctx, actorUserID, orderID, record)
 }
 
 func (repository *PostgresTaxiParkSettingsRepository) GetOrderByActorUserID(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID) (domain.Order, error) {
@@ -721,6 +1130,231 @@ func (repository *PostgresTaxiParkSettingsRepository) CreateDriverByOwnerUserID(
 	}
 
 	return result, nil
+}
+
+func (repository *PostgresTaxiParkSettingsRepository) ListDispatchersByOwnerUserID(ctx context.Context, ownerUserID uuid.UUID) ([]taxiparkapp.Dispatcher, error) {
+	rows, err := repository.pool.Query(ctx, `
+		SELECT staff.id, staff.user_id, staff.taxi_park_id, u.phone, COALESCE(u.email, ''),
+		       COALESCE(u.first_name, ''), COALESCE(u.last_name, ''), staff.role, staff.is_active,
+		       staff.created_at, staff.updated_at
+		FROM taxi_park_staff staff
+		JOIN taxi_parks tp ON tp.id = staff.taxi_park_id
+		JOIN users u ON u.id = staff.user_id
+		WHERE tp.owner_user_id = $1
+		  AND staff.role = 'dispatcher'
+		  AND staff.deleted_at IS NULL
+		  AND u.deleted_at IS NULL
+		ORDER BY staff.created_at DESC`, ownerUserID)
+	if err != nil {
+		return nil, fmt.Errorf("select taxi park dispatchers: %w", err)
+	}
+	defer rows.Close()
+
+	dispatchers := make([]taxiparkapp.Dispatcher, 0)
+	for rows.Next() {
+		dispatcher, err := scanTaxiParkDispatcher(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan taxi park dispatcher: %w", err)
+		}
+		dispatchers = append(dispatchers, dispatcher)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate taxi park dispatchers: %w", err)
+	}
+	return dispatchers, nil
+}
+
+func (repository *PostgresTaxiParkSettingsRepository) CreateDispatcherByOwnerUserID(ctx context.Context, ownerUserID uuid.UUID, record taxiparkapp.CreateDispatcherRecord) (taxiparkapp.Dispatcher, error) {
+	transaction, err := repository.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return taxiparkapp.Dispatcher{}, fmt.Errorf("begin create taxi park dispatcher transaction: %w", err)
+	}
+	defer rollbackTx(ctx, transaction)
+
+	taxiParkID, err := taxiParkIDByOwner(ctx, transaction, ownerUserID)
+	if err != nil {
+		return taxiparkapp.Dispatcher{}, err
+	}
+
+	var userID uuid.UUID
+	if err := transaction.QueryRow(ctx, `
+		INSERT INTO users (
+			phone,
+			email,
+			role,
+			registration_type,
+			first_name,
+			last_name,
+			password_hash,
+			must_change_password,
+			is_phone_confirmed,
+			phone_confirmed_at,
+			is_email_confirmed,
+			is_active
+		)
+		VALUES ($1, $2, 'dispatcher', 'passenger', $3, $4, $5, false, true, now(), false, true)
+		RETURNING id`,
+		record.Phone,
+		nullableString(record.Email),
+		nullableString(record.FirstName),
+		nullableString(record.LastName),
+		record.PasswordHash,
+	).Scan(&userID); err != nil {
+		if isUniqueViolation(err) {
+			return taxiparkapp.Dispatcher{}, taxiparkapp.ErrDispatcherAlreadyExists
+		}
+		return taxiparkapp.Dispatcher{}, fmt.Errorf("insert taxi park dispatcher user: %w", err)
+	}
+
+	dispatcher, err := scanTaxiParkDispatcher(transaction.QueryRow(ctx, `
+		INSERT INTO taxi_park_staff (taxi_park_id, user_id, role, is_active)
+		VALUES ($1, $2, 'dispatcher', true)
+		RETURNING id, user_id, taxi_park_id,
+		          (SELECT phone FROM users WHERE id = $2),
+		          COALESCE((SELECT email FROM users WHERE id = $2), ''),
+		          COALESCE((SELECT first_name FROM users WHERE id = $2), ''),
+		          COALESCE((SELECT last_name FROM users WHERE id = $2), ''),
+		          role, is_active, created_at, updated_at`,
+		taxiParkID, userID))
+	if err != nil {
+		if isUniqueViolation(err) {
+			return taxiparkapp.Dispatcher{}, taxiparkapp.ErrDispatcherAlreadyExists
+		}
+		return taxiparkapp.Dispatcher{}, fmt.Errorf("insert taxi park dispatcher staff: %w", err)
+	}
+
+	if err := transaction.Commit(ctx); err != nil {
+		return taxiparkapp.Dispatcher{}, fmt.Errorf("commit create taxi park dispatcher transaction: %w", err)
+	}
+	return dispatcher, nil
+}
+
+func (repository *PostgresTaxiParkSettingsRepository) UpdateDispatcherByOwnerUserID(ctx context.Context, ownerUserID uuid.UUID, dispatcherID uuid.UUID, record taxiparkapp.UpdateDispatcherRecord) (taxiparkapp.Dispatcher, error) {
+	if _, err := repository.pool.Exec(ctx, `
+		UPDATE users u
+		SET email = COALESCE(NULLIF($3::text, ''), u.email),
+		    first_name = COALESCE($4::text, u.first_name),
+		    last_name = COALESCE($5::text, u.last_name)
+		FROM taxi_park_staff staff
+		JOIN taxi_parks tp ON tp.id = staff.taxi_park_id
+		WHERE u.id = staff.user_id
+		  AND tp.owner_user_id = $1
+		  AND staff.id = $2
+		  AND staff.role = 'dispatcher'
+		  AND staff.deleted_at IS NULL
+		  AND u.deleted_at IS NULL`,
+		ownerUserID,
+		dispatcherID,
+		nullableStringPtr(record.Email),
+		nullableStringPtr(record.FirstName),
+		nullableStringPtr(record.LastName),
+	); err != nil {
+		if isUniqueViolation(err) {
+			return taxiparkapp.Dispatcher{}, taxiparkapp.ErrDispatcherAlreadyExists
+		}
+		return taxiparkapp.Dispatcher{}, fmt.Errorf("update taxi park dispatcher user: %w", err)
+	}
+
+	dispatcher, err := scanTaxiParkDispatcher(repository.pool.QueryRow(ctx, `
+		SELECT staff.id, staff.user_id, staff.taxi_park_id, u.phone, COALESCE(u.email, ''),
+		       COALESCE(u.first_name, ''), COALESCE(u.last_name, ''), staff.role, staff.is_active,
+		       staff.created_at, staff.updated_at
+		FROM taxi_park_staff staff
+		JOIN taxi_parks tp ON tp.id = staff.taxi_park_id
+		JOIN users u ON u.id = staff.user_id
+		WHERE tp.owner_user_id = $1
+		  AND staff.id = $2
+		  AND staff.role = 'dispatcher'
+		  AND staff.deleted_at IS NULL
+		  AND u.deleted_at IS NULL`,
+		ownerUserID, dispatcherID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return taxiparkapp.Dispatcher{}, taxiparkapp.ErrTaxiParkResourceNotFound
+		}
+		return taxiparkapp.Dispatcher{}, fmt.Errorf("select updated taxi park dispatcher: %w", err)
+	}
+	return dispatcher, nil
+}
+
+func (repository *PostgresTaxiParkSettingsRepository) BlockDispatcherByOwnerUserID(ctx context.Context, ownerUserID uuid.UUID, dispatcherID uuid.UUID) error {
+	transaction, err := repository.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin block taxi park dispatcher transaction: %w", err)
+	}
+	defer rollbackTx(ctx, transaction)
+
+	var userID uuid.UUID
+	if err := transaction.QueryRow(ctx, `
+		UPDATE taxi_park_staff staff
+		SET is_active = false,
+		    updated_at = now()
+		FROM taxi_parks tp
+		WHERE tp.id = staff.taxi_park_id
+		  AND tp.owner_user_id = $1
+		  AND staff.id = $2
+		  AND staff.role = 'dispatcher'
+		  AND staff.deleted_at IS NULL
+		RETURNING staff.user_id`, ownerUserID, dispatcherID).Scan(&userID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return taxiparkapp.ErrTaxiParkResourceNotFound
+		}
+		return fmt.Errorf("block taxi park dispatcher staff: %w", err)
+	}
+
+	if _, err := transaction.Exec(ctx, `
+		UPDATE users
+		SET is_active = false,
+		    updated_at = now()
+		WHERE id = $1
+		  AND deleted_at IS NULL`, userID); err != nil {
+		return fmt.Errorf("block taxi park dispatcher user: %w", err)
+	}
+
+	if err := transaction.Commit(ctx); err != nil {
+		return fmt.Errorf("commit block taxi park dispatcher transaction: %w", err)
+	}
+	return nil
+}
+
+func (repository *PostgresTaxiParkSettingsRepository) UnblockDispatcherByOwnerUserID(ctx context.Context, ownerUserID uuid.UUID, dispatcherID uuid.UUID) error {
+	transaction, err := repository.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin unblock taxi park dispatcher transaction: %w", err)
+	}
+	defer rollbackTx(ctx, transaction)
+
+	var userID uuid.UUID
+	if err := transaction.QueryRow(ctx, `
+		UPDATE taxi_park_staff staff
+		SET is_active = true,
+		    updated_at = now()
+		FROM taxi_parks tp
+		WHERE tp.id = staff.taxi_park_id
+		  AND tp.owner_user_id = $1
+		  AND staff.id = $2
+		  AND staff.role = 'dispatcher'
+		  AND staff.deleted_at IS NULL
+		RETURNING staff.user_id`, ownerUserID, dispatcherID).Scan(&userID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return taxiparkapp.ErrTaxiParkResourceNotFound
+		}
+		return fmt.Errorf("unblock taxi park dispatcher staff: %w", err)
+	}
+
+	if _, err := transaction.Exec(ctx, `
+		UPDATE users
+		SET is_active = true,
+		    updated_at = now()
+		WHERE id = $1
+		  AND deleted_at IS NULL`, userID); err != nil {
+		return fmt.Errorf("unblock taxi park dispatcher user: %w", err)
+	}
+
+	if err := transaction.Commit(ctx); err != nil {
+		return fmt.Errorf("commit unblock taxi park dispatcher transaction: %w", err)
+	}
+	return nil
 }
 
 func (repository *PostgresTaxiParkSettingsRepository) UpdateDriverByOwnerUserID(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID, record taxiparkapp.UpdateDriverRecord) (taxiparkapp.CreateDriverResult, error) {
@@ -1425,6 +2059,8 @@ const taxiParkSettingsColumns = `
 	s.dispatch_radius_attempts_meters, s.dispatch_max_drivers_per_offer,
 	s.dispatch_driver_location_max_age_sec, s.dispatch_offer_ttl_sec, s.dispatch_accept_lock_ttl_sec,
 	s.dispatch_worker_poll_timeout_sec, s.dispatch_recovery_interval_sec,
+	s.scheduled_orders_enabled, s.scheduled_min_before_minutes, s.scheduled_activation_before_minutes,
+	s.scheduled_expire_after_minutes, s.allow_scheduled_driver_preassignment,
 	s.allow_cash_payment, s.allow_card_payment, s.allow_transfer_payment, s.is_active,
 	s.created_at, s.updated_at`
 
@@ -1470,6 +2106,11 @@ func scanTaxiParkSettings(row pgx.Row) (domain.TaxiParkSettings, error) {
 		&settings.DispatchAcceptLockTTLSec,
 		&settings.DispatchWorkerPollTimeoutSec,
 		&settings.DispatchRecoveryIntervalSec,
+		&settings.ScheduledOrdersEnabled,
+		&settings.ScheduledMinBeforeMinutes,
+		&settings.ScheduledActivationBeforeMinutes,
+		&settings.ScheduledExpireAfterMinutes,
+		&settings.AllowScheduledDriverPreassignment,
 		&settings.AllowCashPayment,
 		&settings.AllowCardPayment,
 		&settings.AllowTransferPayment,
@@ -1608,6 +2249,26 @@ func scanTaxiParkDriverResult(row pgx.Row) (taxiparkapp.CreateDriverResult, erro
 		result.VerificationCheckedBy = &value
 	}
 	return result, nil
+}
+
+func scanTaxiParkDispatcher(row pgx.Row) (taxiparkapp.Dispatcher, error) {
+	var dispatcher taxiparkapp.Dispatcher
+	if err := row.Scan(
+		&dispatcher.DispatcherID,
+		&dispatcher.UserID,
+		&dispatcher.TaxiParkID,
+		&dispatcher.Phone,
+		&dispatcher.Email,
+		&dispatcher.FirstName,
+		&dispatcher.LastName,
+		&dispatcher.Role,
+		&dispatcher.IsActive,
+		&dispatcher.CreatedAt,
+		&dispatcher.UpdatedAt,
+	); err != nil {
+		return taxiparkapp.Dispatcher{}, err
+	}
+	return dispatcher, nil
 }
 
 func scanTaxiParkDriverLocation(row pgx.Row) (taxiparkapp.DriverLocation, error) {
@@ -1940,6 +2601,54 @@ func taxiParkOrderForUpdate(ctx context.Context, transaction pgx.Tx, taxiParkID 
 	return order, nil
 }
 
+func scheduledTaxiParkOrderForUpdate(ctx context.Context, transaction pgx.Tx, taxiParkID uuid.UUID, orderID uuid.UUID) (domain.Order, error) {
+	order, err := scanDispatchOrder(transaction.QueryRow(ctx, `
+		SELECT `+dispatchOrderSelectColumns+`
+		FROM orders
+		WHERE id = $1
+		  AND metadata->>'taxi_park_id' = $2
+		  AND order_type = 'scheduled'
+		  AND deleted_at IS NULL
+		FOR UPDATE`,
+		orderID,
+		taxiParkID.String(),
+	))
+	if err != nil {
+		return domain.Order{}, mapTaxiParkOrderScanError("select scheduled order for update", err)
+	}
+	return order, nil
+}
+
+func (repository *PostgresTaxiParkSettingsRepository) scheduledOrderByActorUserID(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID) (domain.Order, error) {
+	transaction, err := repository.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return domain.Order{}, fmt.Errorf("begin scheduled order get transaction: %w", err)
+	}
+	defer rollbackTx(ctx, transaction)
+
+	taxiParkID, err := taxiParkIDByActor(ctx, transaction, actorUserID)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	order, err := scanDispatchOrder(transaction.QueryRow(ctx, `
+		SELECT `+dispatchOrderSelectColumns+`
+		FROM orders
+		WHERE id = $1
+		  AND metadata->>'taxi_park_id' = $2
+		  AND order_type = 'scheduled'
+		  AND deleted_at IS NULL`,
+		orderID,
+		taxiParkID.String(),
+	))
+	if err != nil {
+		return domain.Order{}, mapTaxiParkOrderScanError("select scheduled order", err)
+	}
+	if err := transaction.Commit(ctx); err != nil {
+		return domain.Order{}, fmt.Errorf("commit scheduled order get transaction: %w", err)
+	}
+	return order, nil
+}
+
 func mapTaxiParkOrderScanError(operation string, err error) error {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return taxiparkapp.ErrTaxiParkResourceNotFound
@@ -1962,6 +2671,24 @@ func insertTaxiParkOrderEvent(ctx context.Context, transaction pgx.Tx, order dom
 		string(payloadBytes),
 	); err != nil {
 		return fmt.Errorf("insert taxi park order event: %w", err)
+	}
+	return nil
+}
+
+func ensureDriverBelongsToTaxiPark(ctx context.Context, transaction pgx.Tx, taxiParkID uuid.UUID, driverID uuid.UUID) error {
+	var exists bool
+	if err := transaction.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM drivers
+			WHERE id = $2
+			  AND taxi_park_id = $1
+			  AND deleted_at IS NULL
+		)`, taxiParkID, driverID).Scan(&exists); err != nil {
+		return fmt.Errorf("check scheduled order driver ownership: %w", err)
+	}
+	if !exists {
+		return taxiparkapp.ErrTaxiParkResourceNotFound
 	}
 	return nil
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -21,7 +22,7 @@ type HTTPRequestAuditLogger interface {
 
 func RequestAudit(logger HTTPRequestAuditLogger) gin.HandlerFunc {
 	return func(context *gin.Context) {
-		if logger == nil {
+		if logger == nil || shouldSkipRequestAudit(context.Request) {
 			context.Next()
 			return
 		}
@@ -47,6 +48,19 @@ func RequestAudit(logger HTTPRequestAuditLogger) gin.HandlerFunc {
 			ContentType:  context.ContentType(),
 			RequestBody:  requestBody,
 		})
+	}
+}
+
+func shouldSkipRequestAudit(request *http.Request) bool {
+	if request == nil || request.URL == nil {
+		return false
+	}
+
+	switch normalizedPath := strings.TrimRight(request.URL.Path, "/"); normalizedPath {
+	case "/health/live", "/health/ready", "/api/v1/health", "/api/v1/health/live", "/api/v1/health/ready":
+		return true
+	default:
+		return false
 	}
 }
 

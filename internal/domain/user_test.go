@@ -1,33 +1,31 @@
 package domain
 
-import (
-	"errors"
-	"testing"
-)
+import "testing"
 
-func TestValidateRequiredRegistrationConsent(t *testing.T) {
-	t.Parallel()
+func TestNormalizePhone(t *testing.T) {
+	t.Run("keeps international format", func(t *testing.T) {
+		normalized, err := NormalizePhone("+79991234567")
+		if err != nil {
+			t.Fatalf("NormalizePhone returned error: %v", err)
+		}
+		if normalized != "+79991234567" {
+			t.Fatalf("unexpected normalized phone: %s", normalized)
+		}
+	})
 
-	err := ValidateRequiredRegistrationConsent(true, true, "1.0", "1.0")
-	if err != nil {
-		t.Fatalf("expected consent to be valid: %v", err)
-	}
-}
+	t.Run("converts russian local prefix", func(t *testing.T) {
+		normalized, err := NormalizePhone("8 (999) 123-45-67")
+		if err != nil {
+			t.Fatalf("NormalizePhone returned error: %v", err)
+		}
+		if normalized != "+79991234567" {
+			t.Fatalf("unexpected normalized phone: %s", normalized)
+		}
+	})
 
-func TestValidateRequiredRegistrationConsentRejectsMissingConsent(t *testing.T) {
-	t.Parallel()
-
-	err := ValidateRequiredRegistrationConsent(false, true, "1.0", "1.0")
-	if !errors.Is(err, ErrConsentRequired) {
-		t.Fatalf("expected consent required error, got %v", err)
-	}
-}
-
-func TestValidateRequiredRegistrationConsentRejectsMissingDocumentVersion(t *testing.T) {
-	t.Parallel()
-
-	err := ValidateRequiredRegistrationConsent(true, true, "", "1.0")
-	if !errors.Is(err, ErrConsentRequired) {
-		t.Fatalf("expected consent required error, got %v", err)
-	}
+	t.Run("rejects invalid phone", func(t *testing.T) {
+		if _, err := NormalizePhone("123"); err == nil {
+			t.Fatal("expected invalid phone error")
+		}
+	})
 }

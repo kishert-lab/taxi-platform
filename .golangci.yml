@@ -20,3 +20,19 @@ issues:
       linters:
         - revive
         - misspell
+    - path: internal/finance/models.go
+      text: "stutters; consider calling this"
+      linters:
+        - revive
+    - path: internal/dispatch/model.go
+      text: "stutters; consider calling this"
+      linters:
+        - revive
+    - path: internal/dispatch/contracts.go
+      text: "stutters; consider calling this"
+      linters:
+        - revive
+    - path: internal/order/contracts.go
+      text: "stutters; consider calling this"
+      linters:
+        - revive

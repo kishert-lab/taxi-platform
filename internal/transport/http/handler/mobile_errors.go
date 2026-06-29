@@ -38,10 +38,6 @@ func failUnauthorized(context *gin.Context, message string) {
 	response.Fail(context, http.StatusUnauthorized, response.CodeUnauthorized, message, nil)
 }
 
-func failForbidden(context *gin.Context, message string) {
-	response.Fail(context, http.StatusForbidden, response.CodeForbidden, message, nil)
-}
-
 func failByError(context *gin.Context, err error) {
 	if err != nil {
 		_ = context.Error(err)
@@ -57,6 +53,10 @@ func failByError(context *gin.Context, err error) {
 		response.Fail(context, http.StatusNotFound, response.CodeOrderNotFound, "Order not found", nil)
 	case errors.Is(err, driverapp.ErrCurrentOrderNotFound):
 		response.Fail(context, http.StatusNotFound, response.CodeOrderNotFound, "Order not found", nil)
+	case errors.Is(err, driverapp.ErrOrderAccessDenied):
+		response.Fail(context, http.StatusForbidden, response.CodeForbidden, "Order is forbidden", nil)
+	case errors.Is(err, driverapp.ErrOrderRouteForbidden):
+		response.Fail(context, http.StatusForbidden, response.CodeForbidden, "Order route upload is forbidden for current order state", nil)
 	case errors.Is(err, domain.ErrInvalidOrderStatusTransition):
 		response.Fail(context, http.StatusConflict, response.CodeOrderInvalidState, "Order invalid state", nil)
 	case errors.Is(err, dispatch.ErrOrderAlreadyAssigned):
@@ -93,11 +93,21 @@ func failByError(context *gin.Context, err error) {
 		response.Fail(context, http.StatusBadRequest, response.CodeValidationError, "Invalid taxi park order request", map[string]any{
 			"reason": err.Error(),
 		})
+	case errors.Is(err, taxiparkapp.ErrInvalidScheduledOrder):
+		response.Fail(context, http.StatusBadRequest, response.CodeValidationError, "Invalid scheduled order request", map[string]any{
+			"reason": err.Error(),
+		})
+	case errors.Is(err, taxiparkapp.ErrScheduledOrdersDisabled):
+		response.Fail(context, http.StatusConflict, response.CodeOrderInvalidState, "Scheduled orders are disabled for taxi park", nil)
 	case errors.Is(err, taxiparkapp.ErrOrderTariffNotFound):
 		response.Fail(context, http.StatusNotFound, response.CodeNotFound, "Taxi park order tariff not found", map[string]any{
 			"field":  "tariff_id",
 			"reason": "Tariff must be active and belong to the current taxi park or taxi park city",
 		})
+	case errors.Is(err, taxiparkapp.ErrInvalidDispatcherPassword):
+		response.Fail(context, http.StatusBadRequest, response.CodeValidationError, "Dispatcher password must contain at least 8 characters", nil)
+	case errors.Is(err, taxiparkapp.ErrDispatcherAlreadyExists):
+		response.Fail(context, http.StatusConflict, response.CodeValidationError, "Dispatcher with this phone or email already exists", nil)
 	case errors.Is(err, taxiparkapp.ErrInvalidDriverPassword):
 		response.Fail(context, http.StatusBadRequest, response.CodeValidationError, "Driver password must contain at least 8 characters", nil)
 	case errors.Is(err, taxiparkapp.ErrDriverPhoneAlreadyExists):

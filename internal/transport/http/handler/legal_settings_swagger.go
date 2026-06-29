@@ -25,6 +25,26 @@ type TaxiParkCreateDriverSuccessResponse struct {
 	Meta response.Meta                    `json:"meta"`
 }
 
+type TaxiParkDispatcherSuccessResponse struct {
+	Data dto.TaxiParkDispatcherResponse `json:"data"`
+	Meta response.Meta                  `json:"meta"`
+}
+
+type TaxiParkDispatchersSuccessResponse struct {
+	Data dto.TaxiParkDispatchersResponse `json:"data"`
+	Meta response.Meta                   `json:"meta"`
+}
+
+type ScheduledOrderSuccessResponse struct {
+	Data dto.ScheduledOrderResponse `json:"data"`
+	Meta response.Meta              `json:"meta"`
+}
+
+type ScheduledOrdersSuccessResponse struct {
+	Data dto.ScheduledOrdersResponse `json:"data"`
+	Meta response.Meta               `json:"meta"`
+}
+
 type TaxiParkDriverPasswordSuccessResponse struct {
 	Data dto.TaxiParkDriverPasswordResponse `json:"data"`
 	Meta response.Meta                      `json:"meta"`

@@ -89,6 +89,13 @@ func main() {
 			}
 		}()
 	}
+	if routes.scheduled != nil {
+		go func() {
+			if scheduledErr := routes.scheduled.Run(ctx); scheduledErr != nil && !errors.Is(scheduledErr, context.Canceled) {
+				log.Error("scheduled worker stopped", zap.Error(scheduledErr))
+			}
+		}()
+	}
 	staleDriverService := geoservice.NewLocationService(
 		repository.NewPostgresDriverLocationRepository(postgresPool),
 		redisclient.NewLocationThrottle(redisClient),
@@ -227,10 +234,6 @@ type healthResponse struct {
 type apiHealthResponse struct {
 	Status  string `json:"status" example:"ok"`
 	Service string `json:"service" example:"taxi-platform"`
-}
-
-type errorResponse struct {
-	Error string `json:"error" example:"route not found"`
 }
 
 // handleLiveHealth godoc

@@ -26,6 +26,7 @@ import (
 	legalapp "github.com/kishert-lab/taxi-platform/internal/legal"
 	redisinfra "github.com/kishert-lab/taxi-platform/internal/redis"
 	"github.com/kishert-lab/taxi-platform/internal/repository"
+	scheduledapp "github.com/kishert-lab/taxi-platform/internal/scheduled"
 	"github.com/kishert-lab/taxi-platform/internal/security"
 	"github.com/kishert-lab/taxi-platform/internal/service"
 	taxiparkapp "github.com/kishert-lab/taxi-platform/internal/taxipark"
@@ -46,6 +47,7 @@ type applicationRoutes struct {
 	websocket    *handler.WebSocketHandler
 	requestAudit *auditapp.Service
 	dispatch     *dispatchapp.Worker
+	scheduled    *scheduledapp.Worker
 }
 
 func newApplicationRoutes(postgresPool *pgxpool.Pool, redisClient *goredis.Client, config *configs.Config, logger *zap.Logger) applicationRoutes {
@@ -139,6 +141,18 @@ func newApplicationRoutes(postgresPool *pgxpool.Pool, redisClient *goredis.Clien
 	taxiParkSettingsRepository := repository.NewPostgresTaxiParkSettingsRepository(postgresPool)
 	taxiParkSettingsService := taxiparkapp.NewServiceWithDispatch(taxiParkSettingsRepository, passwordHasher, dispatchService, realtimeGateway).
 		WithFinanceProcessor(financeService)
+	scheduledRepository := repository.NewPostgresScheduledOrderRepository(postgresPool)
+	scheduledService := scheduledapp.NewService(
+		scheduledRepository,
+		dispatchService,
+		realtimeGateway,
+		logger,
+		scheduledapp.Config{BatchSize: config.Scheduled.BatchSize},
+	)
+	scheduledWorker := scheduledapp.NewWorker(scheduledService, logger, scheduledapp.WorkerConfig{
+		Enabled:     config.Scheduled.WorkerEnabled,
+		TickSeconds: config.Scheduled.TickSeconds,
+	})
 	legalRepository := repository.NewPostgresLegalRepository(postgresPool)
 	legalService := legalapp.NewService(legalRepository)
 	chatRepository := repository.NewPostgresChatRepository(postgresPool)
@@ -176,6 +190,7 @@ func newApplicationRoutes(postgresPool *pgxpool.Pool, redisClient *goredis.Clien
 		websocket:    handler.NewWebSocketHandler(mobileAuthService, requestAuditService, config.HTTP.CORS.AllowedOrigins, redisClient),
 		requestAudit: requestAuditService,
 		dispatch:     dispatchWorker,
+		scheduled:    scheduledWorker,
 	}
 }
 

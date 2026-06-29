@@ -574,18 +574,14 @@ func (repository *PostgresFinanceRepository) getTaxiParkOverviewByID(ctx context
 }
 
 func (repository *PostgresFinanceRepository) getTaxiParkPlatformFeeDebtByID(ctx context.Context, taxiParkID uuid.UUID) (domain.Money, error) {
-	var balanceText string
+	var amountCents int64
 	if err := repository.pool.QueryRow(ctx, `
-		SELECT COALESCE(balance_after::text, '0.00')
+		SELECT COALESCE((balance_after * 100)::bigint, 0)
 		FROM taxi_park_platform_fee_ledger
 		WHERE taxi_park_id = $1
 		ORDER BY created_at DESC
-		LIMIT 1`, taxiParkID).Scan(&balanceText); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		LIMIT 1`, taxiParkID).Scan(&amountCents); err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return domain.Money{}, fmt.Errorf("select taxi park platform fee debt: %w", err)
-	}
-	amountCents, err := numericTextToCents(balanceText)
-	if err != nil {
-		return domain.Money{}, err
 	}
 	return domain.Money{Amount: amountCents, Currency: "RUB"}, nil
 }
@@ -788,23 +784,6 @@ func scanFinanceDocuments(rows pgx.Rows) ([]finance.FinanceDocument, error) {
 		return nil, fmt.Errorf("iterate finance documents: %w", err)
 	}
 	return items, nil
-}
-
-func numericTextToCents(value string) (int64, error) {
-	var whole int64
-	var fraction int64
-	if _, err := fmt.Sscanf(value, "%d.%d", &whole, &fraction); err != nil {
-		if _, errInt := fmt.Sscanf(value, "%d", &whole); errInt != nil {
-			return 0, fmt.Errorf("parse numeric text %q: %w", value, err)
-		}
-		return whole * 100, nil
-	}
-	if fraction >= 100 {
-		for fraction >= 100 {
-			fraction /= 10
-		}
-	}
-	return whole*100 + fraction, nil
 }
 
 func nullableTime(target **time.Time) any {

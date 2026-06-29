@@ -12,17 +12,18 @@ import (
 )
 
 type Config struct {
-	App      AppConfig      `mapstructure:"app"`
-	Server   ServerConfig   `mapstructure:"server"`
-	HTTP     HTTPConfig     `mapstructure:"http"`
-	Database DatabaseConfig `mapstructure:"database"`
-	Redis    RedisConfig    `mapstructure:"redis"`
-	JWT      JWTConfig      `mapstructure:"jwt"`
-	Auth     AuthConfig     `mapstructure:"auth"`
-	Logger   LoggerConfig   `mapstructure:"logger"`
-	Security SecurityConfig `mapstructure:"security"`
-	Dispatch DispatchConfig `mapstructure:"dispatch"`
-	Geocoder GeocoderConfig `mapstructure:"geocoder"`
+	App       AppConfig       `mapstructure:"app"`
+	Server    ServerConfig    `mapstructure:"server"`
+	HTTP      HTTPConfig      `mapstructure:"http"`
+	Database  DatabaseConfig  `mapstructure:"database"`
+	Redis     RedisConfig     `mapstructure:"redis"`
+	JWT       JWTConfig       `mapstructure:"jwt"`
+	Auth      AuthConfig      `mapstructure:"auth"`
+	Logger    LoggerConfig    `mapstructure:"logger"`
+	Security  SecurityConfig  `mapstructure:"security"`
+	Dispatch  DispatchConfig  `mapstructure:"dispatch"`
+	Scheduled ScheduledConfig `mapstructure:"scheduled"`
+	Geocoder  GeocoderConfig  `mapstructure:"geocoder"`
 }
 
 type AppConfig struct {
@@ -144,6 +145,16 @@ type DispatchConfig struct {
 	RecoveryInterval     time.Duration `mapstructure:"recovery_interval"`
 }
 
+type ScheduledConfig struct {
+	WorkerEnabled                  bool   `mapstructure:"worker_enabled"`
+	TickSeconds                    int    `mapstructure:"tick_seconds"`
+	BatchSize                      int    `mapstructure:"batch_size"`
+	DefaultTimezone                string `mapstructure:"default_timezone"`
+	DefaultMinBeforeMinutes        int    `mapstructure:"default_min_before_minutes"`
+	DefaultActivationBeforeMinutes int    `mapstructure:"default_activation_before_minutes"`
+	DefaultExpireAfterMinutes      int    `mapstructure:"default_expire_after_minutes"`
+}
+
 type GeocoderConfig struct {
 	PeliasURL                 string  `mapstructure:"pelias_url"`
 	YandexAPIKey              string  `mapstructure:"yandex_api_key"`
@@ -207,6 +218,19 @@ func bindEnvironmentAliases() error {
 		"jwt.refresh_secret":             {"JWT_REFRESH_SECRET"},
 		"dispatch.initial_radius_meters": {"DISPATCH_INITIAL_RADIUS"},
 		"dispatch.max_radius_meters":     {"DISPATCH_MAX_RADIUS"},
+		"scheduled.worker_enabled":       {"SCHEDULED_ORDERS_WORKER_ENABLED"},
+		"scheduled.tick_seconds":         {"SCHEDULED_ORDERS_TICK_SECONDS"},
+		"scheduled.batch_size":           {"SCHEDULED_ORDERS_BATCH_SIZE"},
+		"scheduled.default_timezone":     {"SCHEDULED_DEFAULT_TIMEZONE"},
+		"scheduled.default_min_before_minutes": {
+			"SCHEDULED_DEFAULT_MIN_BEFORE_MINUTES",
+		},
+		"scheduled.default_activation_before_minutes": {
+			"SCHEDULED_DEFAULT_ACTIVATION_BEFORE_MINUTES",
+		},
+		"scheduled.default_expire_after_minutes": {
+			"SCHEDULED_DEFAULT_EXPIRE_AFTER_MINUTES",
+		},
 		"geocoder.pelias_url":            {"GEOCODER_PELIAS_URL"},
 		"geocoder.yandex_api_key":        {"GEOCODER_YANDEX_API_KEY"},
 		"geocoder.yandex_enabled":        {"GEOCODER_YANDEX_ENABLED"},
@@ -335,6 +359,13 @@ func setDefaults() {
 	viper.SetDefault("dispatch.accept_lock_ttl", "30s")
 	viper.SetDefault("dispatch.worker_poll_timeout", "5s")
 	viper.SetDefault("dispatch.recovery_interval", "30s")
+	viper.SetDefault("scheduled.worker_enabled", true)
+	viper.SetDefault("scheduled.tick_seconds", 30)
+	viper.SetDefault("scheduled.batch_size", 100)
+	viper.SetDefault("scheduled.default_timezone", "Asia/Yekaterinburg")
+	viper.SetDefault("scheduled.default_min_before_minutes", 15)
+	viper.SetDefault("scheduled.default_activation_before_minutes", 20)
+	viper.SetDefault("scheduled.default_expire_after_minutes", 15)
 	viper.SetDefault("geocoder.pelias_url", "http://pelias:4000")
 	viper.SetDefault("geocoder.yandex_api_key", "")
 	viper.SetDefault("geocoder.yandex_enabled", false)

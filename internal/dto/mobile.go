@@ -217,6 +217,24 @@ type OrderRouteResponse struct {
 	Points  []OrderRoutePointResponse `json:"points"`
 }
 
+type DriverOrderRouteBatchPointRequest struct {
+	Location       CoordinatesRequest `json:"location" binding:"required"`
+	Heading        *int16             `json:"heading,omitempty" binding:"omitempty,min=0,max=359" example:"180"`
+	SpeedMPS       *float64           `json:"speed_mps,omitempty" binding:"omitempty,min=0" example:"7.5"`
+	AccuracyMeters *float64           `json:"accuracy_meters,omitempty" binding:"omitempty,min=0" example:"8.0"`
+	RecordedAt     time.Time          `json:"recorded_at" binding:"required" example:"2026-06-28T10:00:00Z"`
+}
+
+type DriverOrderRouteBatchRequest struct {
+	Points []DriverOrderRouteBatchPointRequest `json:"points" binding:"required,min=1,max=500,dive"`
+}
+
+type DriverOrderRouteBatchResponse struct {
+	OrderID        uuid.UUID `json:"order_id" example:"44444444-4444-4444-4444-444444444444"`
+	AcceptedPoints int       `json:"accepted_points" example:"45"`
+	IgnoredPoints  int       `json:"ignored_points" example:"5"`
+}
+
 type DriverLocationBatchRequest struct {
 	Locations []DriverLocationRequest `json:"locations" binding:"required,min=1,max=50"`
 }

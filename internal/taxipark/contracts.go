@@ -22,6 +22,11 @@ type Repository interface {
 	UpdateOrderByActorUserID(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID, record UpdateOrderRecord) (domain.Order, error)
 	CancelOrderByActorUserID(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID, reason string) (domain.Order, error)
 	CompleteOrderByActorUserID(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID, finalPriceCents int64) (domain.Order, error)
+	ListDispatchersByOwnerUserID(ctx context.Context, ownerUserID uuid.UUID) ([]Dispatcher, error)
+	CreateDispatcherByOwnerUserID(ctx context.Context, ownerUserID uuid.UUID, record CreateDispatcherRecord) (Dispatcher, error)
+	UpdateDispatcherByOwnerUserID(ctx context.Context, ownerUserID uuid.UUID, dispatcherID uuid.UUID, record UpdateDispatcherRecord) (Dispatcher, error)
+	BlockDispatcherByOwnerUserID(ctx context.Context, ownerUserID uuid.UUID, dispatcherID uuid.UUID) error
+	UnblockDispatcherByOwnerUserID(ctx context.Context, ownerUserID uuid.UUID, dispatcherID uuid.UUID) error
 	CreateDriverByOwnerUserID(ctx context.Context, ownerUserID uuid.UUID, record CreateDriverRecord) (CreateDriverResult, error)
 	ListDriverLocationsByOwnerUserID(ctx context.Context, ownerUserID uuid.UUID, maxAge time.Duration) ([]DriverLocation, error)
 	UpdateDriverByOwnerUserID(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID, record UpdateDriverRecord) (CreateDriverResult, error)
@@ -39,6 +44,12 @@ type Repository interface {
 	DetachCarFromDriverByOwnerUserID(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID, carID uuid.UUID) error
 	ListDriverDocumentsByOwnerUserID(ctx context.Context, ownerUserID uuid.UUID, driverID uuid.UUID) ([]domain.TaxiParkDocument, error)
 	ListCarDocumentsByOwnerUserID(ctx context.Context, ownerUserID uuid.UUID, carID uuid.UUID) ([]domain.TaxiParkDocument, error)
+	CreateScheduledOrderByActorUserID(ctx context.Context, actorUserID uuid.UUID, record CreateScheduledOrderRecord) (ScheduledOrder, error)
+	ListScheduledOrdersByActorUserID(ctx context.Context, actorUserID uuid.UUID) ([]ScheduledOrder, error)
+	GetScheduledOrderByActorUserID(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID) (ScheduledOrder, error)
+	UpdateScheduledOrderByActorUserID(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID, record UpdateScheduledOrderRecord) (ScheduledOrder, error)
+	CancelScheduledOrderByActorUserID(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID, reason string) (ScheduledOrder, error)
+	AssignScheduledOrderDriverByActorUserID(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID, driverID uuid.UUID) (ScheduledOrder, error)
 }
 
 type PasswordHasher interface {
@@ -82,6 +93,37 @@ type UpdateOrderRecord struct {
 	Comment             *string
 }
 
+type CreateScheduledOrderRecord struct {
+	PassengerPhone      string
+	PassengerName       string
+	TariffID            uuid.UUID
+	PickupAddress       string
+	PickupLocation      domain.Coordinates
+	DestinationAddress  string
+	DestinationLocation *domain.Coordinates
+	PaymentMethod       domain.PaymentMethod
+	Comment             string
+	ScheduledAt         time.Time
+	Timezone            string
+	PreassignedDriverID *uuid.UUID
+}
+
+type UpdateScheduledOrderRecord struct {
+	PickupAddress       *string
+	PickupLocation      *domain.Coordinates
+	DestinationAddress  *string
+	DestinationLocation *domain.Coordinates
+	PaymentMethod       *domain.PaymentMethod
+	Comment             *string
+	ScheduledAt         *time.Time
+	Timezone            *string
+	PreassignedDriverID *uuid.UUID
+}
+
+type ScheduledOrder struct {
+	Order domain.Order
+}
+
 type CreateDriverRecord struct {
 	Phone                         string
 	Email                         string
@@ -105,6 +147,34 @@ type CreateDriverRecord struct {
 	VerificationStatus            domain.VerificationLifecycleStatus
 	TaxiParkComment               string
 	AttachedCarID                 *uuid.UUID
+}
+
+type CreateDispatcherRecord struct {
+	Phone        string
+	Email        string
+	FirstName    string
+	LastName     string
+	PasswordHash string
+}
+
+type UpdateDispatcherRecord struct {
+	Email     *string
+	FirstName *string
+	LastName  *string
+}
+
+type Dispatcher struct {
+	DispatcherID uuid.UUID
+	UserID       uuid.UUID
+	TaxiParkID   uuid.UUID
+	Phone        string
+	Email        string
+	FirstName    string
+	LastName     string
+	Role         domain.UserRole
+	IsActive     bool
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 type DriverLocation struct {

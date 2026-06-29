@@ -9,6 +9,8 @@ import (
 )
 
 type OrderStatus string
+type OrderType string
+type ScheduledOrderStatus string
 
 const (
 	OrderStatusCreated        OrderStatus = "created"
@@ -20,6 +22,22 @@ const (
 	OrderStatusCompleted      OrderStatus = "completed"
 	OrderStatusCancelled      OrderStatus = "cancelled"
 	OrderStatusFailed         OrderStatus = "failed"
+)
+
+const (
+	OrderTypeInstant   OrderType = "instant"
+	OrderTypeScheduled OrderType = "scheduled"
+)
+
+const (
+	ScheduledOrderStatusNew               ScheduledOrderStatus = "scheduled_new"
+	ScheduledOrderStatusConfirmed         ScheduledOrderStatus = "scheduled_confirmed"
+	ScheduledOrderStatusDriverAssigned    ScheduledOrderStatus = "scheduled_driver_assigned"
+	ScheduledOrderStatusWaitingActivation ScheduledOrderStatus = "scheduled_waiting_activation"
+	ScheduledOrderStatusActivated         ScheduledOrderStatus = "scheduled_activated"
+	ScheduledOrderStatusCancelled         ScheduledOrderStatus = "scheduled_cancelled"
+	ScheduledOrderStatusExpired           ScheduledOrderStatus = "scheduled_expired"
+	ScheduledOrderStatusFailed            ScheduledOrderStatus = "scheduled_failed"
 )
 
 type PaymentMethod string
@@ -49,31 +67,42 @@ const (
 )
 
 type Order struct {
-	ID                  uuid.UUID
-	PassengerID         uuid.UUID
-	DriverID            *uuid.UUID
-	CityID              uuid.UUID
-	TariffID            *uuid.UUID
-	Status              OrderStatus
-	PickupAddress       string
-	PickupLocation      Coordinates
-	DestinationAddress  string
-	DestinationLocation *Coordinates
-	RequestedAt         time.Time
-	AcceptedAt          *time.Time
-	StartedAt           *time.Time
-	CompletedAt         *time.Time
-	CancelledAt         *time.Time
-	CancellationReason  string
-	EstimatedPrice      *Money
-	FinalPrice          *Money
-	PaymentMethod       PaymentMethod
-	PassengerComment    string
-	DispatchAttempt     int
-	Version             int
-	CreatedAt           time.Time
-	UpdatedAt           time.Time
-	DeletedAt           *time.Time
+	ID                    uuid.UUID
+	PassengerID           uuid.UUID
+	DriverID              *uuid.UUID
+	PreassignedDriverID   *uuid.UUID
+	CityID                uuid.UUID
+	TariffID              *uuid.UUID
+	Status                OrderStatus
+	OrderType             OrderType
+	ScheduledStatus       *ScheduledOrderStatus
+	PickupAddress         string
+	PickupLocation        Coordinates
+	DestinationAddress    string
+	DestinationLocation   *Coordinates
+	ScheduledAt           *time.Time
+	ActivationAt          *time.Time
+	ScheduledTimezone     string
+	RequestedAt           time.Time
+	AcceptedAt            *time.Time
+	StartedAt             *time.Time
+	CompletedAt           *time.Time
+	CancelledAt           *time.Time
+	ActivatedAt           *time.Time
+	ScheduledCancelledAt  *time.Time
+	ScheduledExpiredAt    *time.Time
+	CancellationReason    string
+	ScheduledCancelReason string
+	EstimatedPrice        *Money
+	FinalPrice            *Money
+	PaymentMethod         PaymentMethod
+	PassengerComment      string
+	DispatchAttempt       int
+	ScheduledCreatedBy    *uuid.UUID
+	Version               int
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
+	DeletedAt             *time.Time
 }
 
 type OrderRating struct {
@@ -91,6 +120,8 @@ var (
 	ErrInvalidOrderStatusTransition = errors.New("invalid order status transition")
 	ErrInvalidPaymentMethod         = errors.New("invalid payment method")
 	ErrInvalidRatingScore           = errors.New("invalid rating score")
+	ErrInvalidOrderType             = errors.New("invalid order type")
+	ErrInvalidScheduledOrderStatus  = errors.New("invalid scheduled order status")
 )
 
 var terminalOrderStatuses = map[OrderStatus]struct{}{
@@ -136,6 +167,43 @@ func (status OrderStatus) Validate() error {
 		return nil
 	default:
 		return ErrInvalidOrderStatus
+	}
+}
+
+func (orderType OrderType) Validate() error {
+	switch orderType {
+	case OrderTypeInstant, OrderTypeScheduled:
+		return nil
+	default:
+		return ErrInvalidOrderType
+	}
+}
+
+func (status ScheduledOrderStatus) Validate() error {
+	switch status {
+	case ScheduledOrderStatusNew,
+		ScheduledOrderStatusConfirmed,
+		ScheduledOrderStatusDriverAssigned,
+		ScheduledOrderStatusWaitingActivation,
+		ScheduledOrderStatusActivated,
+		ScheduledOrderStatusCancelled,
+		ScheduledOrderStatusExpired,
+		ScheduledOrderStatusFailed:
+		return nil
+	default:
+		return ErrInvalidScheduledOrderStatus
+	}
+}
+
+func (status ScheduledOrderStatus) IsTerminal() bool {
+	switch status {
+	case ScheduledOrderStatusActivated,
+		ScheduledOrderStatusCancelled,
+		ScheduledOrderStatusExpired,
+		ScheduledOrderStatusFailed:
+		return true
+	default:
+		return false
 	}
 }
 
