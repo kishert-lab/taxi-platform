@@ -3251,6 +3251,12 @@ definitions:
   github_com_kishert-lab_taxi-platform_pkg_response.ErrorCode:
     enum:
     - VALIDATION_ERROR
+    - INVALID_PHONE
+    - INVALID_CODE
+    - CODE_EXPIRED
+    - TOO_MANY_ATTEMPTS
+    - PASSENGER_BLOCKED
+    - TOKEN_EXPIRED
     - UNAUTHORIZED
     - FORBIDDEN
     - NOT_FOUND
@@ -3266,6 +3272,12 @@ definitions:
     type: string
     x-enum-varnames:
     - CodeValidationError
+    - CodeInvalidPhone
+    - CodeInvalidCode
+    - CodeCodeExpired
+    - CodeTooManyAttempts
+    - CodePassengerBlocked
+    - CodeTokenExpired
     - CodeUnauthorized
     - CodeForbidden
     - CodeNotFound

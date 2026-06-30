@@ -12,7 +12,61 @@ import (
 	"github.com/kishert-lab/taxi-platform/internal/domain"
 	"github.com/kishert-lab/taxi-platform/internal/dto"
 	geoservice "github.com/kishert-lab/taxi-platform/internal/geo"
+	wsmsg "github.com/kishert-lab/taxi-platform/internal/ws"
 )
+
+func TestCancelDriverOrderNotifiesPassengerWithDriverCancellationPayload(t *testing.T) {
+	driverUserID := uuid.New()
+	driverID := uuid.New()
+	passengerID := uuid.New()
+	orderID := uuid.New()
+
+	repository := &fakeMobileRepository{
+		profile: Profile{
+			DriverID: driverID,
+			UserID:   driverUserID,
+			CityID:   uuid.New(),
+		},
+		transitionOrderResult: CurrentOrder{
+			OrderID:     orderID,
+			DriverID:    driverID,
+			PassengerID: passengerID,
+			Status:      domain.OrderStatusCancelled,
+			Version:     3,
+		},
+	}
+	presence := &fakePresenceStore{}
+	realtime := &fakeRealtimeGateway{}
+	notifier := &fakePassengerNotifier{}
+
+	service := NewMobileServiceWithDispatch(repository, presence, nil, nil, zap.NewNop(), realtime).
+		WithPassengerNotifier(notifier)
+
+	_, err := service.CancelDriverOrder(context.Background(), driverUserID, orderID, "driver unavailable")
+	if err != nil {
+		t.Fatalf("CancelDriverOrder returned error: %v", err)
+	}
+
+	if realtime.passengerEvent != "order.cancelled" {
+		t.Fatalf("expected passenger event order.cancelled, got %s", realtime.passengerEvent)
+	}
+	payload, ok := realtime.passengerPayload.(wsmsg.PassengerOrderStatePayload)
+	if !ok {
+		t.Fatalf("unexpected passenger payload type: %#v", realtime.passengerPayload)
+	}
+	if payload.CancelledBy != "driver" {
+		t.Fatalf("expected cancelled_by=driver, got %s", payload.CancelledBy)
+	}
+	if payload.CancellationReason != "driver unavailable" {
+		t.Fatalf("expected cancellation reason, got %s", payload.CancellationReason)
+	}
+	if !presence.markedOnline {
+		t.Fatal("expected driver to be marked online after cancellation")
+	}
+	if len(notifier.notifications) != 1 {
+		t.Fatalf("expected one passenger push notification, got %d", len(notifier.notifications))
+	}
+}
 
 func TestAppendOrderRoutePointsSuccessAndDuplicateRetry(t *testing.T) {
 	driverUserID := uuid.New()
@@ -99,13 +153,16 @@ func TestAppendOrderRoutePointsNotFound(t *testing.T) {
 }
 
 type fakeMobileRepository struct {
-	routeAccess    OrderRouteUploadAccess
-	routeAccessErr error
-	routePointKeys map[string]struct{}
+	profile               Profile
+	currentOrder          CurrentOrder
+	transitionOrderResult CurrentOrder
+	routeAccess           OrderRouteUploadAccess
+	routeAccessErr        error
+	routePointKeys        map[string]struct{}
 }
 
 func (repository *fakeMobileRepository) GetProfileByUserID(context.Context, uuid.UUID) (Profile, error) {
-	return Profile{}, nil
+	return repository.profile, nil
 }
 
 func (repository *fakeMobileRepository) UpdateProfileByUserID(context.Context, uuid.UUID, ProfilePatch) (Profile, error) {
@@ -121,7 +178,10 @@ func (repository *fakeMobileRepository) ListCarsByUserID(context.Context, uuid.U
 }
 
 func (repository *fakeMobileRepository) GetCurrentOrderByUserID(context.Context, uuid.UUID) (CurrentOrder, error) {
-	return CurrentOrder{}, ErrCurrentOrderNotFound
+	if repository.currentOrder.OrderID == uuid.Nil {
+		return CurrentOrder{}, ErrCurrentOrderNotFound
+	}
+	return repository.currentOrder, nil
 }
 
 func (repository *fakeMobileRepository) GetOrderByUserID(context.Context, uuid.UUID, uuid.UUID) (CurrentOrder, error) {
@@ -144,7 +204,7 @@ func (repository *fakeMobileRepository) GetOrderRouteUploadAccess(context.Contex
 }
 
 func (repository *fakeMobileRepository) TransitionOrderByUserID(context.Context, uuid.UUID, uuid.UUID, domain.OrderStatus, string, *int64) (CurrentOrder, error) {
-	return CurrentOrder{}, nil
+	return repository.transitionOrderResult, nil
 }
 
 func (repository *fakeMobileRepository) AppendRoutePointByUserID(context.Context, uuid.UUID, geoservice.DriverLocationUpdate) error {
@@ -170,4 +230,53 @@ func (repository *fakeMobileRepository) AppendOrderRoutePoints(_ context.Context
 
 func formatCoordinate(value float64) string {
 	return strconv.FormatFloat(value, 'f', -1, 64)
+}
+
+type fakePresenceStore struct {
+	markedOnline bool
+}
+
+func (store *fakePresenceStore) MarkOnline(context.Context, uuid.UUID, uuid.UUID, time.Duration) error {
+	store.markedOnline = true
+	return nil
+}
+
+func (store *fakePresenceStore) MarkOffline(context.Context, uuid.UUID, uuid.UUID) error {
+	return nil
+}
+
+type fakeRealtimeGateway struct {
+	passengerEvent   string
+	passengerPayload any
+}
+
+type fakePassengerNotifier struct {
+	notifications []PassengerNotification
+}
+
+func (notifier *fakePassengerNotifier) NotifyPassenger(_ context.Context, _ uuid.UUID, notification PassengerNotification) error {
+	notifier.notifications = append(notifier.notifications, notification)
+	return nil
+}
+
+func (gateway *fakeRealtimeGateway) SendDriverPresenceToTaxiPark(context.Context, uuid.UUID, any) error {
+	return nil
+}
+
+func (gateway *fakeRealtimeGateway) SendDriverLocationToTaxiPark(context.Context, uuid.UUID, any) error {
+	return nil
+}
+
+func (gateway *fakeRealtimeGateway) SendToDriver(context.Context, uuid.UUID, string, any) error {
+	return nil
+}
+
+func (gateway *fakeRealtimeGateway) SendToPassenger(_ context.Context, _ uuid.UUID, eventName string, payload any) error {
+	gateway.passengerEvent = eventName
+	gateway.passengerPayload = payload
+	return nil
+}
+
+func (gateway *fakeRealtimeGateway) SendToTaxiParkByOrder(context.Context, uuid.UUID, string, any) error {
+	return nil
 }

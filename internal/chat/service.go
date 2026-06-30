@@ -10,6 +10,7 @@ import (
 
 	"github.com/kishert-lab/taxi-platform/internal/domain"
 	"github.com/kishert-lab/taxi-platform/internal/dto"
+	wsmsg "github.com/kishert-lab/taxi-platform/internal/ws"
 )
 
 const EventChatMessage = "chat.message"
@@ -98,7 +99,7 @@ func (service *Service) SendPassengerSupportMessage(ctx context.Context, passeng
 	}
 	response := chatMessageResponse(thread, message)
 	if service.realtimeGateway != nil {
-		if err := service.realtimeGateway.SendToPassenger(ctx, passengerID, EventChatMessage, map[string]any{"message": response}); err != nil {
+		if err := service.realtimeGateway.SendToPassenger(ctx, passengerID, EventChatMessage, wsmsg.PassengerChatMessagePayload{Message: response}); err != nil {
 			return dto.ChatMessageResponse{}, fmt.Errorf("publish passenger support chat message: %w", err)
 		}
 	}
@@ -168,7 +169,7 @@ func (service *Service) publishOrderMessage(ctx context.Context, thread domain.C
 	if service.realtimeGateway == nil || thread.OrderID == nil {
 		return nil
 	}
-	payload := map[string]any{"message": message}
+	payload := wsmsg.PassengerChatMessagePayload{Message: message}
 	switch thread.Type {
 	case domain.ChatTypeDispatcherDriver:
 		if thread.DriverID != nil {

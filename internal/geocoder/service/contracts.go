@@ -13,6 +13,7 @@ import (
 type Repository interface {
 	ResolveActorCity(ctx context.Context, actorUserID uuid.UUID, actorRole string) (CityContext, bool, error)
 	ResolveCity(ctx context.Context, cityID uuid.UUID) (CityContext, bool, error)
+	ResolveCityByCoordinates(ctx context.Context, coordinates geodomain.Coordinates) (CityContext, bool, error)
 	SearchLocalPoints(ctx context.Context, request LocalSearchRequest) ([]geodomain.SearchResult, error)
 	GetExternalCache(ctx context.Context, provider geodomain.Provider, normalizedQuery string, cityID *uuid.UUID, now time.Time) ([]geodomain.SearchResult, bool, error)
 	SaveExternalCache(ctx context.Context, cache ExternalCacheRecord) error

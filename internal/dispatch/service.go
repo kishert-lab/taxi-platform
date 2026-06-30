@@ -10,6 +10,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/kishert-lab/taxi-platform/internal/domain"
+	wsmsg "github.com/kishert-lab/taxi-platform/internal/ws"
 )
 
 type Service struct {
@@ -22,6 +23,7 @@ type Service struct {
 	timeoutQueue           TimeoutQueue
 	lockManager            LockManager
 	realtimeGateway        RealtimeGateway
+	passengerNotifier      PassengerNotifier
 	metrics                Metrics
 	logger                 *zap.Logger
 	config                 Config
@@ -37,6 +39,7 @@ type NewServiceParams struct {
 	TimeoutQueue           TimeoutQueue
 	LockManager            LockManager
 	RealtimeGateway        RealtimeGateway
+	PassengerNotifier      PassengerNotifier
 	Metrics                Metrics
 	Logger                 *zap.Logger
 	Config                 Config
@@ -59,6 +62,7 @@ func NewService(params NewServiceParams) *Service {
 		timeoutQueue:           params.TimeoutQueue,
 		lockManager:            params.LockManager,
 		realtimeGateway:        params.RealtimeGateway,
+		passengerNotifier:      params.PassengerNotifier,
 		metrics:                params.Metrics,
 		logger:                 loggerOrNop(params.Logger),
 		config:                 normalizeConfig(params.Config),
@@ -270,8 +274,24 @@ func (service *Service) AcceptOffer(ctx context.Context, orderID uuid.UUID, driv
 	if err := service.realtimeGateway.SendToDriver(ctx, driverID, EventOrderAssigned, map[string]any{"order_id": orderID}); err != nil {
 		return fmt.Errorf("send order assigned event to driver: %w", err)
 	}
-	if err := service.realtimeGateway.SendToPassenger(ctx, order.PassengerID, EventPassengerDriverAssigned, map[string]any{"order_id": orderID, "driver_id": driverID}); err != nil {
+	if err := service.realtimeGateway.SendToPassenger(ctx, order.PassengerID, EventPassengerDriverAssigned, wsmsg.PassengerDriverAssignedPayload{
+		OrderID:  orderID,
+		DriverID: driverID,
+	}); err != nil {
 		return fmt.Errorf("send driver assigned event to passenger: %w", err)
+	}
+	if service.passengerNotifier != nil {
+		if err := service.passengerNotifier.NotifyPassenger(ctx, order.PassengerID, PassengerNotification{
+			Title: "Водитель найден",
+			Body:  "Водитель принял ваш заказ.",
+			Data: map[string]string{
+				"event":     "order.driver_assigned",
+				"order_id":  orderID.String(),
+				"driver_id": driverID.String(),
+			},
+		}); err != nil {
+			return fmt.Errorf("send driver assigned push to passenger: %w", err)
+		}
 	}
 	if err := service.realtimeGateway.SendToTaxiParkByOrder(ctx, orderID, "order.driver_assigned", map[string]any{"order_id": orderID, "driver_id": driverID}); err != nil {
 		return fmt.Errorf("send driver assigned event to taxi park: %w", err)
@@ -518,7 +538,9 @@ func (service *Service) failNoDriversFound(ctx context.Context, order domain.Ord
 	if err := service.orderRepository.FailOrder(ctx, order.ID, "no online drivers found in dispatch radius"); err != nil {
 		return DispatchResult{}, fmt.Errorf("fail order after dispatch exhaustion: %w", err)
 	}
-	if err := service.realtimeGateway.SendToPassenger(ctx, order.PassengerID, EventOrderNoDriversFound, map[string]any{"order_id": order.ID}); err != nil {
+	if err := service.realtimeGateway.SendToPassenger(ctx, order.PassengerID, EventOrderNoDriversFound, wsmsg.PassengerNoDriversPayload{
+		OrderID: order.ID,
+	}); err != nil {
 		return DispatchResult{}, fmt.Errorf("send no drivers found event to passenger: %w", err)
 	}
 	if err := service.realtimeGateway.SendToTaxiParkByOrder(ctx, order.ID, EventOrderNoDriversFound, map[string]any{"order_id": order.ID}); err != nil {

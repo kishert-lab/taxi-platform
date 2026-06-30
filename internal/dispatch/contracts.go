@@ -83,3 +83,13 @@ type RealtimeGateway interface {
 	SendToPassenger(ctx context.Context, passengerID uuid.UUID, eventName string, payload any) error
 	SendToTaxiParkByOrder(ctx context.Context, orderID uuid.UUID, eventName string, payload any) error
 }
+
+type PassengerNotifier interface {
+	NotifyPassenger(ctx context.Context, passengerID uuid.UUID, notification PassengerNotification) error
+}
+
+type PassengerNotification struct {
+	Title string
+	Body  string
+	Data  map[string]string
+}

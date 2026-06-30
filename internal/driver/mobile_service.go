@@ -16,6 +16,7 @@ import (
 	"github.com/kishert-lab/taxi-platform/internal/domain"
 	"github.com/kishert-lab/taxi-platform/internal/dto"
 	geoservice "github.com/kishert-lab/taxi-platform/internal/geo"
+	wsmsg "github.com/kishert-lab/taxi-platform/internal/ws"
 	"github.com/kishert-lab/taxi-platform/pkg/response"
 )
 
@@ -70,6 +71,16 @@ type FinanceProcessor interface {
 	SettleCompletedOrder(ctx context.Context, orderID uuid.UUID) (domain.OrderSettlement, error)
 }
 
+type PassengerNotifier interface {
+	NotifyPassenger(ctx context.Context, passengerID uuid.UUID, notification PassengerNotification) error
+}
+
+type PassengerNotification struct {
+	Title string
+	Body  string
+	Data  map[string]string
+}
+
 type MobileService struct {
 	repository         MobileRepository
 	presenceStore      PresenceStore
@@ -77,6 +88,7 @@ type MobileService struct {
 	dispatchController DispatchController
 	realtimeGateway    RealtimeGateway
 	financeProcessor   FinanceProcessor
+	passengerNotifier  PassengerNotifier
 	logger             *zap.Logger
 	presenceTTL        time.Duration
 }
@@ -199,6 +211,11 @@ func NewMobileServiceWithDispatch(repository MobileRepository, presenceStore Pre
 
 func (service *MobileService) WithFinanceProcessor(financeProcessor FinanceProcessor) *MobileService {
 	service.financeProcessor = financeProcessor
+	return service
+}
+
+func (service *MobileService) WithPassengerNotifier(passengerNotifier PassengerNotifier) *MobileService {
+	service.passengerNotifier = passengerNotifier
 	return service
 }
 
@@ -469,6 +486,17 @@ func (service *MobileService) MarkDriverArriving(ctx context.Context, userID uui
 	if err := service.publishOrderState(ctx, order, "order.driver_arriving"); err != nil {
 		return dto.DriverOrderResponse{}, err
 	}
+	if err := service.notifyPassenger(ctx, order.PassengerID, PassengerNotification{
+		Title: "Водитель в пути",
+		Body:  "Водитель едет к месту посадки.",
+		Data: map[string]string{
+			"event":     "order.driver_arriving",
+			"order_id":  order.OrderID.String(),
+			"driver_id": order.DriverID.String(),
+		},
+	}); err != nil {
+		return dto.DriverOrderResponse{}, err
+	}
 	return currentOrderResponse(order), nil
 }
 
@@ -478,6 +506,17 @@ func (service *MobileService) MarkDriverArrived(ctx context.Context, userID uuid
 		return dto.DriverOrderResponse{}, err
 	}
 	if err := service.publishOrderState(ctx, order, "order.driver_waiting"); err != nil {
+		return dto.DriverOrderResponse{}, err
+	}
+	if err := service.notifyPassenger(ctx, order.PassengerID, PassengerNotification{
+		Title: "Водитель ожидает",
+		Body:  "Водитель прибыл и ожидает вас.",
+		Data: map[string]string{
+			"event":     "order.driver_waiting",
+			"order_id":  order.OrderID.String(),
+			"driver_id": order.DriverID.String(),
+		},
+	}); err != nil {
 		return dto.DriverOrderResponse{}, err
 	}
 	return currentOrderResponse(order), nil
@@ -491,7 +530,20 @@ func (service *MobileService) CancelDriverOrder(ctx context.Context, userID uuid
 	if err := service.markProfileOnline(ctx, userID); err != nil {
 		return dto.DriverOrderResponse{}, err
 	}
-	if err := service.publishOrderState(ctx, order, "order.cancelled"); err != nil {
+	if err := service.publishDriverCancelledOrderState(ctx, order, reason); err != nil {
+		return dto.DriverOrderResponse{}, err
+	}
+	if err := service.notifyPassenger(ctx, order.PassengerID, PassengerNotification{
+		Title: "Заказ отменен водителем",
+		Body:  "Водитель отменил поездку.",
+		Data: map[string]string{
+			"event":               "order.cancelled",
+			"order_id":            order.OrderID.String(),
+			"driver_id":           order.DriverID.String(),
+			"cancelled_by":        "driver",
+			"cancellation_reason": strings.TrimSpace(reason),
+		},
+	}); err != nil {
 		return dto.DriverOrderResponse{}, err
 	}
 	return currentOrderResponse(order), nil
@@ -612,18 +664,18 @@ func (service *MobileService) publishPassengerDriverLocation(ctx context.Context
 		}
 		return err
 	}
-	payload := map[string]any{
-		"order_id":  order.OrderID,
-		"driver_id": profile.DriverID,
-		"status":    order.Status,
-		"location": map[string]float64{
-			"latitude":  update.Location.Latitude,
-			"longitude": update.Location.Longitude,
+	payload := wsmsg.PassengerDriverLocationPayload{
+		OrderID:  order.OrderID,
+		DriverID: profile.DriverID,
+		Status:   order.Status,
+		Location: dto.CoordinatesResponse{
+			Latitude:  update.Location.Latitude,
+			Longitude: update.Location.Longitude,
 		},
-		"heading":         update.Heading,
-		"speed_mps":       update.SpeedMPS,
-		"accuracy_meters": update.AccuracyMeters,
-		"recorded_at":     update.RecordedAt,
+		Heading:        update.Heading,
+		SpeedMPS:       update.SpeedMPS,
+		AccuracyMeters: update.AccuracyMeters,
+		RecordedAt:     update.RecordedAt,
 	}
 	if err := service.realtimeGateway.SendToPassenger(ctx, order.PassengerID, "driver.location_updated", payload); err != nil {
 		return fmt.Errorf("publish passenger driver location websocket event: %w", err)
@@ -643,11 +695,14 @@ func (service *MobileService) publishOrderState(ctx context.Context, order Curre
 	if service.realtimeGateway == nil {
 		return nil
 	}
-	payload := map[string]any{
-		"order_id":  order.OrderID,
-		"status":    order.Status,
-		"version":   order.Version,
-		"driver_id": order.DriverID,
+	payload := wsmsg.PassengerOrderStatePayload{
+		OrderID:  order.OrderID,
+		Status:   order.Status,
+		Version:  order.Version,
+		DriverID: &order.DriverID,
+	}
+	if order.DriverID == uuid.Nil {
+		payload.DriverID = nil
 	}
 	if err := service.realtimeGateway.SendToPassenger(ctx, order.PassengerID, eventName, payload); err != nil {
 		return fmt.Errorf("publish order state to passenger: %w", err)
@@ -656,6 +711,38 @@ func (service *MobileService) publishOrderState(ctx context.Context, order Curre
 		return fmt.Errorf("publish order state to taxi park: %w", err)
 	}
 	return service.realtimeGateway.SendToDriver(ctx, order.DriverID, eventName, payload)
+}
+
+func (service *MobileService) publishDriverCancelledOrderState(ctx context.Context, order CurrentOrder, reason string) error {
+	if service.realtimeGateway == nil {
+		return nil
+	}
+
+	payload := wsmsg.PassengerOrderStatePayload{
+		OrderID:            order.OrderID,
+		Status:             order.Status,
+		Version:            order.Version,
+		CancelledBy:        "driver",
+		CancellationReason: strings.TrimSpace(reason),
+	}
+	if order.DriverID != uuid.Nil {
+		payload.DriverID = &order.DriverID
+	}
+
+	if err := service.realtimeGateway.SendToPassenger(ctx, order.PassengerID, "order.cancelled", payload); err != nil {
+		return fmt.Errorf("publish driver cancelled order state to passenger: %w", err)
+	}
+
+	genericPayload := wsmsg.PassengerOrderStatePayload{
+		OrderID:  order.OrderID,
+		Status:   order.Status,
+		Version:  order.Version,
+		DriverID: payload.DriverID,
+	}
+	if err := service.realtimeGateway.SendToTaxiParkByOrder(ctx, order.OrderID, "order.cancelled", genericPayload); err != nil {
+		return fmt.Errorf("publish driver cancelled order state to taxi park: %w", err)
+	}
+	return service.realtimeGateway.SendToDriver(ctx, order.DriverID, "order.cancelled", genericPayload)
 }
 
 func profileResponse(profile Profile) dto.DriverProfileResponse {
@@ -884,4 +971,14 @@ func canAppendOrderRoutePoints(status domain.OrderStatus) bool {
 func requestIDFromContext(ctx context.Context) string {
 	requestID, _ := ctx.Value(response.RequestIDContextKey).(string)
 	return requestID
+}
+
+func (service *MobileService) notifyPassenger(ctx context.Context, passengerID uuid.UUID, notification PassengerNotification) error {
+	if service.passengerNotifier == nil || passengerID == uuid.Nil {
+		return nil
+	}
+	if err := service.passengerNotifier.NotifyPassenger(ctx, passengerID, notification); err != nil {
+		return fmt.Errorf("notify passenger: %w", err)
+	}
+	return nil
 }

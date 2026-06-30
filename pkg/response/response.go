@@ -10,6 +10,12 @@ type ErrorCode string
 
 const (
 	CodeValidationError      ErrorCode = "VALIDATION_ERROR"
+	CodeInvalidPhone         ErrorCode = "INVALID_PHONE"
+	CodeInvalidCode          ErrorCode = "INVALID_CODE"
+	CodeCodeExpired          ErrorCode = "CODE_EXPIRED"
+	CodeTooManyAttempts      ErrorCode = "TOO_MANY_ATTEMPTS"
+	CodePassengerBlocked     ErrorCode = "PASSENGER_BLOCKED"
+	CodeTokenExpired         ErrorCode = "TOKEN_EXPIRED"
 	CodeUnauthorized         ErrorCode = "UNAUTHORIZED"
 	CodeForbidden            ErrorCode = "FORBIDDEN"
 	CodeNotFound             ErrorCode = "NOT_FOUND"

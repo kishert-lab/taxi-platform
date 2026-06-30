@@ -179,7 +179,16 @@ func (gateway *RealtimeGateway) taxiParkRealtimeRecipientUserIDsByOrder(ctx cont
 func (gateway *RealtimeGateway) publishToUser(ctx context.Context, userID uuid.UUID, eventName string, payload any) error {
 	messagePayload, ok := payload.(map[string]any)
 	if !ok {
-		messagePayload = map[string]any{"data": payload}
+		payloadBytes, err := json.Marshal(payload)
+		if err != nil {
+			return fmt.Errorf("marshal realtime websocket payload: %w", err)
+		}
+		if err := json.Unmarshal(payloadBytes, &messagePayload); err != nil {
+			return fmt.Errorf("decode realtime websocket payload as object: %w", err)
+		}
+		if messagePayload == nil {
+			messagePayload = map[string]any{}
+		}
 	}
 	message := wsmsg.NewMessage(eventName, uuid.New(), messagePayload)
 	bytes, err := json.Marshal(message)

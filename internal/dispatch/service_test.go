@@ -243,8 +243,10 @@ func TestAcceptOfferAssignsDriverAndCancelsRemainingOffers(t *testing.T) {
 	offerStore.saveTestOffer(order.ID, acceptedDriverID)
 	offerStore.saveTestOffer(order.ID, otherDriverID)
 	realtimeGateway := &fakeRealtimeGateway{}
+	passengerNotifier := &fakePassengerNotifier{}
 	service := newTestService(orderRepository, &fakeDriverSearchRepository{}, offerStore, &fakeTaskQueue{}, &fakeTimeoutQueue{}, realtimeGateway)
 	service.driverStateRepository = driverStateRepository
+	service.passengerNotifier = passengerNotifier
 
 	if err := service.AcceptOffer(context.Background(), order.ID, acceptedDriverID); err != nil {
 		t.Fatalf("accept offer: %v", err)
@@ -264,6 +266,9 @@ func TestAcceptOfferAssignsDriverAndCancelsRemainingOffers(t *testing.T) {
 	}
 	if !realtimeGateway.hasPassengerEvent(order.PassengerID, EventPassengerDriverAssigned) {
 		t.Fatalf("expected passenger to receive driver assigned event")
+	}
+	if len(passengerNotifier.notifications) != 1 {
+		t.Fatalf("expected one passenger push notification, got %d", len(passengerNotifier.notifications))
 	}
 }
 
@@ -493,6 +498,15 @@ type fakeRealtimeGateway struct {
 	driverEvents    []fakeRealtimeEvent
 	passengerEvents []fakeRealtimeEvent
 	taxiParkEvents  []fakeRealtimeEvent
+}
+
+type fakePassengerNotifier struct {
+	notifications []PassengerNotification
+}
+
+func (notifier *fakePassengerNotifier) NotifyPassenger(_ context.Context, _ uuid.UUID, notification PassengerNotification) error {
+	notifier.notifications = append(notifier.notifications, notification)
+	return nil
 }
 
 type fakeDispatchStateStore struct {

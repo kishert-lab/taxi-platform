@@ -47,6 +47,21 @@ func (repository *PostgresRepository) ResolveCity(ctx context.Context, cityID uu
 	))
 }
 
+func (repository *PostgresRepository) ResolveCityByCoordinates(ctx context.Context, coordinates geodomain.Coordinates) (geoservice.CityContext, bool, error) {
+	return scanCityContext(repository.pool.QueryRow(ctx, `
+		SELECT c.id, c.name, ST_Y(c.center::geometry), ST_X(c.center::geometry)
+		FROM cities c
+		WHERE c.deleted_at IS NULL
+		ORDER BY ST_Distance(
+			c.center,
+			ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography
+		)
+		LIMIT 1`,
+		coordinates.Latitude,
+		coordinates.Longitude,
+	))
+}
+
 func (repository *PostgresRepository) resolveTaxiParkOwnerCity(ctx context.Context, ownerUserID uuid.UUID) (geoservice.CityContext, bool, error) {
 	return scanCityContext(repository.pool.QueryRow(ctx, `
 		SELECT c.id, c.name, ST_Y(c.center::geometry), ST_X(c.center::geometry)

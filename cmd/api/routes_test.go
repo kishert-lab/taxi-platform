@@ -1,13 +1,17 @@
 package main
 
 import (
+	"context"
 	"net/http"
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 
 	"github.com/kishert-lab/taxi-platform/configs"
+	"github.com/kishert-lab/taxi-platform/internal/dto"
+	geodomain "github.com/kishert-lab/taxi-platform/internal/geocoder/domain"
 	"github.com/kishert-lab/taxi-platform/internal/service"
 	"github.com/kishert-lab/taxi-platform/internal/transport/http/handler"
 )
@@ -17,16 +21,23 @@ func TestMobileAndFinanceRoutesAreRegistered(t *testing.T) {
 
 	unavailableUseCase := service.NewUnavailableUseCase()
 	routes := applicationRoutes{
-		auth:       handler.NewAuthHandler(unavailableUseCase),
-		mobileAuth: handler.NewMobileAuthHandler(unavailableUseCase),
-		order:      handler.NewOrderHandler(unavailableUseCase),
-		passenger:  handler.NewPassengerMobileHandler(unavailableUseCase, unavailableUseCase),
-		driver:     handler.NewDriverMobileHandler(unavailableUseCase),
-		finance:    handler.NewFinanceHandler(unavailableUseCase),
-		taxiPark:   handler.NewTaxiParkSettingsHandler(unavailableUseCase),
-		legal:      handler.NewLegalHandler(unavailableUseCase),
-		chat:       handler.NewChatHandler(unavailableUseCase),
-		websocket:  handler.NewWebSocketHandler(unavailableUseCase, nil, []string{"*"}),
+		auth:             handler.NewAuthHandler(unavailableUseCase),
+		mobileAuth:       handler.NewMobileAuthHandler(unavailableUseCase),
+		passengerAuth:    handler.NewPassengerAuthHandler(fakePassengerAuthUseCase{}),
+		passengerMe:      handler.NewPassengerMeHandler(fakePassengerMeUseCase{}),
+		passengerAddress: handler.NewPassengerAddressHandler(fakePassengerAddressUseCase{}),
+		passengerPush:    handler.NewPassengerPushHandler(fakePassengerPushUseCase{}),
+		passengerAuthMiddleware: func(context *gin.Context) {
+			context.Next()
+		},
+		order:     handler.NewOrderHandler(unavailableUseCase),
+		passenger: handler.NewPassengerMobileHandler(unavailableUseCase, unavailableUseCase),
+		driver:    handler.NewDriverMobileHandler(unavailableUseCase),
+		finance:   handler.NewFinanceHandler(unavailableUseCase),
+		taxiPark:  handler.NewTaxiParkSettingsHandler(unavailableUseCase),
+		legal:     handler.NewLegalHandler(unavailableUseCase),
+		chat:      handler.NewChatHandler(unavailableUseCase),
+		websocket: handler.NewWebSocketHandler(unavailableUseCase, nil, []string{"*"}),
 	}
 	router := buildRouter(testConfig(), zap.NewNop(), routes)
 
@@ -44,10 +55,19 @@ func TestMobileAndFinanceRoutesAreRegistered(t *testing.T) {
 		http.MethodPost + " /api/v1/auth/verify-code",
 		http.MethodPost + " /api/v1/auth/refresh",
 		http.MethodPost + " /api/v1/auth/logout",
+		http.MethodPost + " /api/v1/passenger/auth/request-code",
+		http.MethodPost + " /api/v1/passenger/auth/confirm-code",
+		http.MethodPost + " /api/v1/passenger/auth/refresh",
+		http.MethodPost + " /api/v1/passenger/auth/logout",
+		http.MethodGet + " /api/v1/passenger/me",
+		http.MethodPatch + " /api/v1/passenger/me",
+		http.MethodPost + " /api/v1/passenger/push-tokens",
+		http.MethodPost + " /api/v1/passenger/push/token",
 		http.MethodPost + " /api/v1/passenger/profile",
 		http.MethodGet + " /api/v1/passenger/profile",
 		http.MethodPatch + " /api/v1/passenger/profile",
 		http.MethodPost + " /api/v1/passenger/profile/photo",
+		http.MethodGet + " /api/v1/passenger/address/search",
 		http.MethodPost + " /api/v1/passenger/orders/estimate",
 		http.MethodPost + " /api/v1/passenger/orders",
 		http.MethodGet + " /api/v1/passenger/orders/current",
@@ -156,4 +176,44 @@ func testConfig() *configs.Config {
 			CORS: configs.CORSConfig{AllowedOrigins: []string{"*"}},
 		},
 	}
+}
+
+type fakePassengerAuthUseCase struct{}
+
+func (fakePassengerAuthUseCase) RequestCode(context.Context, dto.PassengerAuthRequestCodeRequest) (dto.PassengerAuthRequestCodeResponse, error) {
+	return dto.PassengerAuthRequestCodeResponse{}, nil
+}
+
+func (fakePassengerAuthUseCase) ConfirmCode(context.Context, dto.PassengerAuthConfirmCodeRequest) (dto.PassengerAuthTokenResponse, error) {
+	return dto.PassengerAuthTokenResponse{}, nil
+}
+
+func (fakePassengerAuthUseCase) Refresh(context.Context, dto.RefreshTokenRequest) (dto.PassengerAuthRefreshResponse, error) {
+	return dto.PassengerAuthRefreshResponse{}, nil
+}
+
+func (fakePassengerAuthUseCase) Logout(context.Context, dto.LogoutRequest) error {
+	return nil
+}
+
+type fakePassengerMeUseCase struct{}
+
+func (fakePassengerMeUseCase) GetMe(context.Context, uuid.UUID) (dto.PassengerMeResponse, error) {
+	return dto.PassengerMeResponse{}, nil
+}
+
+func (fakePassengerMeUseCase) UpdateMe(context.Context, uuid.UUID, dto.PassengerMePatchRequest) (dto.PassengerMeResponse, error) {
+	return dto.PassengerMeResponse{}, nil
+}
+
+type fakePassengerPushUseCase struct{}
+
+func (fakePassengerPushUseCase) RegisterToken(context.Context, uuid.UUID, dto.PassengerPushTokenRequest) (dto.PassengerPushTokenResponse, error) {
+	return dto.PassengerPushTokenResponse{}, nil
+}
+
+type fakePassengerAddressUseCase struct{}
+
+func (fakePassengerAddressUseCase) SearchPassengerAddresses(context.Context, uuid.UUID, string, *uuid.UUID, *float64, *float64, int) ([]geodomain.SearchResult, error) {
+	return nil, nil
 }

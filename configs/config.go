@@ -19,6 +19,7 @@ type Config struct {
 	Redis     RedisConfig     `mapstructure:"redis"`
 	JWT       JWTConfig       `mapstructure:"jwt"`
 	Auth      AuthConfig      `mapstructure:"auth"`
+	Push      PushConfig      `mapstructure:"push"`
 	Logger    LoggerConfig    `mapstructure:"logger"`
 	Security  SecurityConfig  `mapstructure:"security"`
 	Dispatch  DispatchConfig  `mapstructure:"dispatch"`
@@ -116,6 +117,14 @@ type AuthConfig struct {
 	ResendCooldown     time.Duration `mapstructure:"resend_cooldown"`
 	RequireEmailVerify bool          `mapstructure:"require_email_verify"`
 	RequirePhoneVerify bool          `mapstructure:"require_phone_verify"`
+	PassengerDevCode   string        `mapstructure:"passenger_dev_code"`
+}
+
+type PushConfig struct {
+	Enabled                    bool   `mapstructure:"enabled"`
+	FirebaseProjectID          string `mapstructure:"firebase_project_id"`
+	FirebaseCredentialsFile    string `mapstructure:"firebase_credentials_file"`
+	FirebaseGoogleServicesFile string `mapstructure:"firebase_google_services_file"`
 }
 
 type LoggerConfig struct {
@@ -248,6 +257,10 @@ func bindEnvironmentAliases() error {
 		"geocoder.pelias_confidence_threshold": {
 			"GEOCODER_PELIAS_CONFIDENCE_THRESHOLD",
 		},
+		"push.enabled":                       {"PUSH_ENABLED"},
+		"push.firebase_project_id":           {"FIREBASE_PROJECT_ID"},
+		"push.firebase_credentials_file":     {"FIREBASE_CREDENTIALS_FILE"},
+		"push.firebase_google_services_file": {"FIREBASE_GOOGLE_SERVICES_FILE"},
 	}
 
 	for key, envNames := range aliases {
@@ -341,6 +354,11 @@ func setDefaults() {
 	viper.SetDefault("auth.resend_cooldown", "60s")
 	viper.SetDefault("auth.require_email_verify", true)
 	viper.SetDefault("auth.require_phone_verify", true)
+	viper.SetDefault("auth.passenger_dev_code", "")
+	viper.SetDefault("push.enabled", false)
+	viper.SetDefault("push.firebase_project_id", "")
+	viper.SetDefault("push.firebase_credentials_file", "./configs/firebase-service-account.json")
+	viper.SetDefault("push.firebase_google_services_file", "./configs/google-services.json")
 	viper.SetDefault("logger.level", "info")
 	viper.SetDefault("logger.encoding", "json")
 	viper.SetDefault("logger.development", false)

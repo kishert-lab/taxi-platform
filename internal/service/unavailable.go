@@ -50,6 +50,22 @@ func (useCase *UnavailableUseCase) Logout(context.Context, dto.LogoutRequest) er
 	return common.ErrNotImplemented
 }
 
+func (useCase *UnavailableUseCase) RequestCode(context.Context, dto.PassengerAuthRequestCodeRequest) (dto.PassengerAuthRequestCodeResponse, error) {
+	return dto.PassengerAuthRequestCodeResponse{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) ConfirmCode(context.Context, dto.PassengerAuthConfirmCodeRequest) (dto.PassengerAuthTokenResponse, error) {
+	return dto.PassengerAuthTokenResponse{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) GetMe(context.Context, uuid.UUID) (dto.PassengerMeResponse, error) {
+	return dto.PassengerMeResponse{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) UpdateMe(context.Context, uuid.UUID, dto.PassengerMePatchRequest) (dto.PassengerMeResponse, error) {
+	return dto.PassengerMeResponse{}, common.ErrNotImplemented
+}
+
 func (useCase *UnavailableUseCase) AuthenticateWebSocket(context.Context, string) (uuid.UUID, domain.UserRole, error) {
 	return uuid.Nil, "", common.ErrNotImplemented
 }

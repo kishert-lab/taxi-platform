@@ -14,6 +14,7 @@ import (
 	dispatchapp "github.com/kishert-lab/taxi-platform/internal/dispatch"
 	"github.com/kishert-lab/taxi-platform/internal/domain"
 	"github.com/kishert-lab/taxi-platform/internal/dto"
+	wsmsg "github.com/kishert-lab/taxi-platform/internal/ws"
 )
 
 const defaultDriverPasswordLength = 18
@@ -283,11 +284,11 @@ func (service *Service) publishOrderEvent(ctx context.Context, order domain.Orde
 	if service.realtimeGateway == nil {
 		return nil
 	}
-	payload := map[string]any{
-		"order_id":  order.ID,
-		"status":    order.Status,
-		"version":   order.Version,
-		"driver_id": order.DriverID,
+	payload := wsmsg.PassengerOrderStatePayload{
+		OrderID:  order.ID,
+		Status:   order.Status,
+		Version:  order.Version,
+		DriverID: order.DriverID,
 	}
 	if err := service.realtimeGateway.SendToTaxiParkByOrder(ctx, order.ID, eventName, payload); err != nil {
 		return fmt.Errorf("publish taxi park order websocket event: %w", err)

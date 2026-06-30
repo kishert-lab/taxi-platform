@@ -160,6 +160,14 @@ func (service *Service) Search(ctx context.Context, request geodomain.SearchRequ
 	return []geodomain.SearchResult{}, nil
 }
 
+func (service *Service) ResolveCityByCoordinates(ctx context.Context, coordinates geodomain.Coordinates) (CityContext, bool, error) {
+	cityContext, found, err := service.repository.ResolveCityByCoordinates(ctx, coordinates)
+	if err != nil {
+		return CityContext{}, false, fmt.Errorf("resolve city by coordinates: %w", err)
+	}
+	return cityContext, found, nil
+}
+
 func (service *Service) searchExternalProvider(ctx context.Context, provider geodomain.Provider, normalizedQuery string, request geodomain.SearchRequest, externalRequest geodomain.SearchRequest, requestedAt time.Time) ([]geodomain.SearchResult, error) {
 	cachedResults, found, err := service.repository.GetExternalCache(ctx, provider, normalizedQuery, request.CityID, requestedAt)
 	if err != nil {

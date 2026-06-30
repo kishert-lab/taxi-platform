@@ -411,6 +411,10 @@ func (repository *fakeRepository) ResolveCity(context.Context, uuid.UUID) (CityC
 	return repository.city, repository.cityFound, nil
 }
 
+func (repository *fakeRepository) ResolveCityByCoordinates(context.Context, geodomain.Coordinates) (CityContext, bool, error) {
+	return repository.city, repository.cityFound, nil
+}
+
 func (repository *fakeRepository) SearchLocalPoints(_ context.Context, request LocalSearchRequest) ([]geodomain.SearchResult, error) {
 	repository.lastLocalSearch = request
 	return nil, nil

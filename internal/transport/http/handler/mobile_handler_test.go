@@ -15,6 +15,7 @@ import (
 	"github.com/kishert-lab/taxi-platform/internal/domain"
 	driverapp "github.com/kishert-lab/taxi-platform/internal/driver"
 	"github.com/kishert-lab/taxi-platform/internal/dto"
+	geodomain "github.com/kishert-lab/taxi-platform/internal/geocoder/domain"
 	"github.com/kishert-lab/taxi-platform/internal/middleware"
 	"github.com/kishert-lab/taxi-platform/pkg/response"
 )
@@ -31,7 +32,7 @@ func TestPassengerCanCreateOrder(t *testing.T) {
 			AllowedActions: []string{"cancel"},
 		},
 	}
-	router := passengerRouter(passengerID, domain.UserRolePassenger, orderUseCase)
+	router := passengerRouter(passengerID, domain.UserRolePassenger, orderUseCase, &fakePassengerAddressUseCase{})
 
 	requestBody := `{
 		"city_id":"11111111-1111-1111-1111-111111111111",
@@ -217,7 +218,7 @@ func TestCurrentOrderReturnsAllowedActions(t *testing.T) {
 			AllowedActions: []string{"cancel", "call_driver"},
 		},
 	}
-	router := passengerRouter(passengerID, domain.UserRolePassenger, orderUseCase)
+	router := passengerRouter(passengerID, domain.UserRolePassenger, orderUseCase, &fakePassengerAddressUseCase{})
 
 	responseRecorder := performJSON(router, http.MethodGet, "/api/v1/passenger/orders/current", "")
 
@@ -251,7 +252,7 @@ func TestEstimateReturnsTariffPrice(t *testing.T) {
 			PriceType:   "estimated",
 		},
 	}
-	router := passengerRouter(uuid.New(), domain.UserRolePassenger, orderUseCase)
+	router := passengerRouter(uuid.New(), domain.UserRolePassenger, orderUseCase, &fakePassengerAddressUseCase{})
 
 	requestBody := `{
 		"city_id":"11111111-1111-1111-1111-111111111111",
@@ -279,7 +280,7 @@ func TestEstimateReturnsTariffPrice(t *testing.T) {
 func TestUnauthorizedRequestRejected(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	router := passengerRouter(uuid.Nil, "", &fakePassengerOrderUseCase{})
+	router := passengerRouter(uuid.Nil, "", &fakePassengerOrderUseCase{}, &fakePassengerAddressUseCase{})
 	responseRecorder := performJSON(router, http.MethodGet, "/api/v1/passenger/orders/current", "")
 
 	if responseRecorder.Code != http.StatusUnauthorized {
@@ -297,7 +298,7 @@ func TestAuthenticatedNonPassengerCanUsePassengerRoutes(t *testing.T) {
 			Status:  domain.OrderStatusCreated,
 		},
 	}
-	router := passengerRouter(uuid.New(), domain.UserRoleDriver, orderUseCase)
+	router := passengerRouter(uuid.New(), domain.UserRoleDriver, orderUseCase, &fakePassengerAddressUseCase{})
 	responseRecorder := performJSON(router, http.MethodGet, "/api/v1/passenger/orders/current", "")
 
 	if responseRecorder.Code != http.StatusOK {
@@ -305,12 +306,46 @@ func TestAuthenticatedNonPassengerCanUsePassengerRoutes(t *testing.T) {
 	}
 }
 
-func passengerRouter(userID uuid.UUID, role domain.UserRole, orderUseCase PassengerOrderUseCase) *gin.Engine {
+func TestPassengerCanSearchAddresses(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	passengerID := uuid.New()
+	addressUseCase := &fakePassengerAddressUseCase{
+		results: []geodomain.SearchResult{
+			{
+				ID:          "pelias:address:1",
+				Provider:    geodomain.ProviderPelias,
+				Name:        "Мира 8",
+				Address:     "Пермь, улица Мира, 8",
+				Coordinates: geodomain.Coordinates{Latitude: 58.010455, Longitude: 56.229443},
+				Confidence:  0.91,
+			},
+		},
+	}
+
+	router := passengerRouter(passengerID, domain.UserRolePassenger, &fakePassengerOrderUseCase{}, addressUseCase)
+	responseRecorder := performJSON(router, http.MethodGet, "/api/v1/passenger/address/search?q=%D0%9C%D0%B8%D1%80%D0%B0&limit=5", "")
+
+	if responseRecorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", responseRecorder.Code, responseRecorder.Body.String())
+	}
+	if addressUseCase.passengerID != passengerID {
+		t.Fatalf("expected passenger id %s, got %s", passengerID, addressUseCase.passengerID)
+	}
+	if addressUseCase.query != "Мира" || addressUseCase.limit != 5 {
+		t.Fatalf("unexpected address search request: query=%q limit=%d", addressUseCase.query, addressUseCase.limit)
+	}
+}
+
+func passengerRouter(userID uuid.UUID, role domain.UserRole, orderUseCase PassengerOrderUseCase, addressUseCase PassengerAddressUseCase) *gin.Engine {
 	router := gin.New()
 	router.Use(middleware.RequestID())
 	router.Use(testAuthContext(userID, role))
 	api := router.Group("/api/v1")
 	NewPassengerMobileHandler(&fakePassengerProfileUseCase{}, orderUseCase).RegisterRoutes(api)
+	NewPassengerAddressHandler(addressUseCase).RegisterRoutes(api, func(context *gin.Context) {
+		context.Next()
+	})
 	return router
 }
 
@@ -327,6 +362,9 @@ func testAuthContext(userID uuid.UUID, role domain.UserRole) gin.HandlerFunc {
 	return func(context *gin.Context) {
 		if userID != uuid.Nil {
 			context.Set("user_id", userID)
+			if role == domain.UserRolePassenger {
+				context.Set(middleware.PassengerIDContextKey, userID)
+			}
 		}
 		if role != "" {
 			context.Set(middleware.UserRoleContextKey, role)
@@ -425,6 +463,27 @@ func (useCase *fakePassengerOrderUseCase) CancelPassengerOrder(_ context.Context
 
 func (useCase *fakePassengerOrderUseCase) RatePassengerOrder(_ context.Context, _ uuid.UUID, _ uuid.UUID, _ dto.RateOrderRequest) (dto.PassengerOrderResponse, error) {
 	return dto.PassengerOrderResponse{}, useCase.err
+}
+
+type fakePassengerAddressUseCase struct {
+	passengerID uuid.UUID
+	query       string
+	cityID      *uuid.UUID
+	latitude    *float64
+	longitude   *float64
+	limit       int
+	results     []geodomain.SearchResult
+	err         error
+}
+
+func (useCase *fakePassengerAddressUseCase) SearchPassengerAddresses(_ context.Context, passengerID uuid.UUID, query string, cityID *uuid.UUID, focusLatitude *float64, focusLongitude *float64, limit int) ([]geodomain.SearchResult, error) {
+	useCase.passengerID = passengerID
+	useCase.query = query
+	useCase.cityID = cityID
+	useCase.latitude = focusLatitude
+	useCase.longitude = focusLongitude
+	useCase.limit = limit
+	return useCase.results, useCase.err
 }
 
 type fakeDriverMobileUseCase struct {

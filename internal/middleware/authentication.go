@@ -18,9 +18,42 @@ type AccessTokenParser interface {
 	ParseAccessToken(token string) (authapp.TokenClaims, error)
 }
 
+type publicPathMatcher interface {
+	Matches(path string) bool
+}
+
+type exactPublicPath string
+
+func ExactPublicPath(path string) publicPathMatcher {
+	return exactPublicPath(path)
+}
+
+func (path exactPublicPath) Matches(candidate string) bool {
+	return candidate == string(path)
+}
+
+type prefixPublicPath string
+
+func PrefixPublicPath(path string) publicPathMatcher {
+	return prefixPublicPath(path)
+}
+
+func (path prefixPublicPath) Matches(candidate string) bool {
+	return strings.HasPrefix(candidate, string(path))
+}
+
 func AuthenticateAccessToken(parser AccessTokenParser, publicPathPrefixes ...string) gin.HandlerFunc {
+	matchers := make([]publicPathMatcher, 0, len(publicPathPrefixes))
+	for _, prefix := range publicPathPrefixes {
+		matchers = append(matchers, PrefixPublicPath(prefix))
+	}
+
+	return AuthenticateAccessTokenWithMatchers(parser, matchers...)
+}
+
+func AuthenticateAccessTokenWithMatchers(parser AccessTokenParser, matchers ...publicPathMatcher) gin.HandlerFunc {
 	return func(context *gin.Context) {
-		if isPublicPath(context.Request.URL.Path, publicPathPrefixes) {
+		if isPublicPath(context.Request.URL.Path, matchers) {
 			context.Next()
 			return
 		}
@@ -59,9 +92,9 @@ func bearerToken(header string) string {
 	return strings.TrimSpace(fields[1])
 }
 
-func isPublicPath(path string, prefixes []string) bool {
-	for _, prefix := range prefixes {
-		if strings.HasPrefix(path, prefix) {
+func isPublicPath(path string, matchers []publicPathMatcher) bool {
+	for _, matcher := range matchers {
+		if matcher.Matches(path) {
 			return true
 		}
 	}

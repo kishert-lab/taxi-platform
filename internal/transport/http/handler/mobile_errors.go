@@ -16,6 +16,7 @@ import (
 	"github.com/kishert-lab/taxi-platform/internal/finance"
 	geoservice "github.com/kishert-lab/taxi-platform/internal/geo"
 	orderapp "github.com/kishert-lab/taxi-platform/internal/order"
+	passengerapp "github.com/kishert-lab/taxi-platform/internal/passenger"
 	taxiparkapp "github.com/kishert-lab/taxi-platform/internal/taxipark"
 	"github.com/kishert-lab/taxi-platform/pkg/response"
 )
@@ -45,9 +46,21 @@ func failByError(context *gin.Context, err error) {
 	switch {
 	case errors.Is(err, auth.ErrInvalidCredentials), errors.Is(err, auth.ErrInvalidCode), errors.Is(err, auth.ErrInvalidToken), errors.Is(err, auth.ErrInactiveUser):
 		response.Fail(context, http.StatusUnauthorized, response.CodeUnauthorized, "Unauthorized", nil)
+	case errors.Is(err, passengerapp.ErrInvalidToken), errors.Is(err, passengerapp.ErrInvalidRefreshToken):
+		response.Fail(context, http.StatusUnauthorized, response.CodeUnauthorized, "Unauthorized", nil)
+	case errors.Is(err, passengerapp.ErrPassengerBlocked):
+		response.Fail(context, http.StatusForbidden, response.CodePassengerBlocked, "Passenger is blocked", nil)
+	case errors.Is(err, passengerapp.ErrCodeExpired):
+		response.Fail(context, http.StatusUnauthorized, response.CodeCodeExpired, "Code expired", nil)
+	case errors.Is(err, passengerapp.ErrCodeAlreadyUsed), errors.Is(err, passengerapp.ErrInvalidCode):
+		response.Fail(context, http.StatusUnauthorized, response.CodeInvalidCode, "Invalid confirmation code", nil)
+	case errors.Is(err, passengerapp.ErrTooManyAttempts):
+		response.Fail(context, http.StatusTooManyRequests, response.CodeTooManyAttempts, "Too many confirmation attempts", nil)
 	case errors.Is(err, auth.ErrDriverAccessDenied):
 		response.Fail(context, http.StatusForbidden, response.CodeForbidden, "Driver access is blocked", nil)
-	case errors.Is(err, domain.ErrInvalidPhone), errors.Is(err, domain.ErrInvalidEmail), errors.Is(err, domain.ErrInvalidUserRole), errors.Is(err, domain.ErrInvalidVerificationStatus), errors.Is(err, domain.ErrInvalidPaymentMethod), errors.Is(err, domain.ErrInvalidChatType), errors.Is(err, domain.ErrInvalidChatMessage):
+	case errors.Is(err, domain.ErrInvalidPhone):
+		response.Fail(context, http.StatusBadRequest, response.CodeInvalidPhone, "Invalid phone", nil)
+	case errors.Is(err, domain.ErrInvalidEmail), errors.Is(err, domain.ErrInvalidUserRole), errors.Is(err, domain.ErrInvalidVerificationStatus), errors.Is(err, domain.ErrInvalidPaymentMethod), errors.Is(err, domain.ErrInvalidChatType), errors.Is(err, domain.ErrInvalidChatMessage), errors.Is(err, domain.ErrInvalidPushToken), errors.Is(err, domain.ErrInvalidPushPlatform):
 		response.Fail(context, http.StatusBadRequest, response.CodeValidationError, "Invalid request", nil)
 	case errors.Is(err, ErrMobileOrderNotFound):
 		response.Fail(context, http.StatusNotFound, response.CodeOrderNotFound, "Order not found", nil)

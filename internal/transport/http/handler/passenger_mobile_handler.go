@@ -2,11 +2,13 @@ package handler
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
 	"github.com/kishert-lab/taxi-platform/internal/dto"
+	geodomain "github.com/kishert-lab/taxi-platform/internal/geocoder/domain"
 	"github.com/kishert-lab/taxi-platform/internal/middleware"
 	"github.com/kishert-lab/taxi-platform/pkg/response"
 )
@@ -26,6 +28,18 @@ type PassengerOrderUseCase interface {
 	GetPassengerOrder(ctx context.Context, passengerID uuid.UUID, orderID uuid.UUID) (dto.PassengerOrderResponse, error)
 	CancelPassengerOrder(ctx context.Context, passengerID uuid.UUID, orderID uuid.UUID, request dto.CancelOrderRequest) (dto.PassengerOrderResponse, error)
 	RatePassengerOrder(ctx context.Context, passengerID uuid.UUID, orderID uuid.UUID, request dto.RateOrderRequest) (dto.PassengerOrderResponse, error)
+}
+
+type PassengerAddressUseCase interface {
+	SearchPassengerAddresses(
+		ctx context.Context,
+		passengerID uuid.UUID,
+		query string,
+		cityID *uuid.UUID,
+		focusLatitude *float64,
+		focusLongitude *float64,
+		limit int,
+	) ([]geodomain.SearchResult, error)
 }
 
 type PassengerMobileHandler struct {
@@ -50,6 +64,28 @@ func (handler *PassengerMobileHandler) RegisterRoutes(router gin.IRouter) {
 	passenger.GET("/orders/:id", handler.GetOrder)
 	passenger.POST("/orders/:id/cancel", handler.CancelOrder)
 	passenger.POST("/orders/:id/rate", handler.RateOrder)
+}
+
+type PassengerAddressSearchResultResponse struct {
+	ID              string                  `json:"id" example:"pelias:address:123"`
+	LocalPointID    *uuid.UUID              `json:"local_point_id,omitempty" example:"11111111-1111-1111-1111-111111111111"`
+	Provider        geodomain.Provider      `json:"provider" example:"pelias"`
+	Name            string                  `json:"name" example:"Мира 8"`
+	Address         string                  `json:"address" example:"Пермь, улица Мира, 8"`
+	CityID          *uuid.UUID              `json:"city_id,omitempty" example:"22222222-2222-2222-2222-222222222222"`
+	Coordinates     dto.CoordinatesResponse `json:"coordinates"`
+	Confidence      float64                 `json:"confidence" example:"0.91"`
+	TrustLevel      geodomain.TrustLevel    `json:"trust_level,omitempty" example:"trusted"`
+	ExternalPlaceID string                  `json:"external_place_id,omitempty" example:"yandex:123"`
+}
+
+type PassengerAddressSearchResponse struct {
+	Results []PassengerAddressSearchResultResponse `json:"results"`
+}
+
+type PassengerAddressSearchSuccessResponse struct {
+	Data PassengerAddressSearchResponse `json:"data"`
+	Meta response.Meta                  `json:"meta"`
 }
 
 // CreateProfile godoc
@@ -415,4 +451,60 @@ func passengerOrderIDs(context *gin.Context) (uuid.UUID, uuid.UUID, bool) {
 	}
 
 	return passengerID, orderID, true
+}
+
+func passengerAddressSearchQuery(context *gin.Context) (*uuid.UUID, *float64, *float64, int, error) {
+	var cityID *uuid.UUID
+	if value := context.Query("city_id"); value != "" {
+		parsed, err := uuid.Parse(value)
+		if err != nil {
+			return nil, nil, nil, 0, err
+		}
+		cityID = &parsed
+	}
+
+	var focusLatitude *float64
+	var focusLongitude *float64
+	if context.Query("lat") != "" || context.Query("lon") != "" {
+		latitude, err := strconv.ParseFloat(context.Query("lat"), 64)
+		if err != nil {
+			return nil, nil, nil, 0, err
+		}
+		longitude, err := strconv.ParseFloat(context.Query("lon"), 64)
+		if err != nil {
+			return nil, nil, nil, 0, err
+		}
+		focusLatitude = &latitude
+		focusLongitude = &longitude
+	}
+
+	limit := 10
+	if value := context.Query("limit"); value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil {
+			return nil, nil, nil, 0, err
+		}
+		limit = parsed
+	}
+
+	return cityID, focusLatitude, focusLongitude, limit, nil
+}
+
+func passengerAddressSearchResults(results []geodomain.SearchResult) []PassengerAddressSearchResultResponse {
+	responseItems := make([]PassengerAddressSearchResultResponse, 0, len(results))
+	for _, result := range results {
+		responseItems = append(responseItems, PassengerAddressSearchResultResponse{
+			ID:              result.ID,
+			LocalPointID:    result.LocalPointID,
+			Provider:        result.Provider,
+			Name:            result.Name,
+			Address:         result.Address,
+			CityID:          result.CityID,
+			Coordinates:     dto.CoordinatesResponse{Latitude: result.Coordinates.Latitude, Longitude: result.Coordinates.Longitude},
+			Confidence:      result.Confidence,
+			TrustLevel:      result.TrustLevel,
+			ExternalPlaceID: result.ExternalPlaceID,
+		})
+	}
+	return responseItems
 }

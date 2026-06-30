@@ -205,7 +205,7 @@ func buildRouter(config *configs.Config, log *zap.Logger, routes applicationRout
 	api.GET("/health", func(context *gin.Context) {
 		handleAPIHealth(context, config)
 	})
-	api.Use(middleware.AuthenticateAccessToken(
+	api.Use(middleware.AuthenticateAccessTokenWithMatchers(
 		authapp.NewTokenManager(authapp.TokenManagerConfig{
 			AccessSecret:  config.JWT.AccessSecret,
 			RefreshSecret: config.JWT.RefreshSecret,
@@ -213,9 +213,17 @@ func buildRouter(config *configs.Config, log *zap.Logger, routes applicationRout
 			AccessTTL:     config.JWT.AccessTTL,
 			RefreshTTL:    config.JWT.RefreshTTL,
 		}),
-		"/api/v1/auth",
-		"/api/v1/public",
-		"/api/v1/ws",
+		middleware.PrefixPublicPath("/api/v1/auth"),
+		middleware.PrefixPublicPath("/api/v1/public"),
+		middleware.PrefixPublicPath("/api/v1/ws"),
+		middleware.ExactPublicPath("/api/v1/passenger/auth/request-code"),
+		middleware.ExactPublicPath("/api/v1/passenger/auth/confirm-code"),
+		middleware.ExactPublicPath("/api/v1/passenger/auth/refresh"),
+		middleware.ExactPublicPath("/api/v1/passenger/auth/logout"),
+		middleware.ExactPublicPath("/api/v1/passenger/me"),
+		middleware.ExactPublicPath("/api/v1/passenger/address/search"),
+		middleware.ExactPublicPath("/api/v1/passenger/push/token"),
+		middleware.ExactPublicPath("/api/v1/passenger/push-tokens"),
 	))
 	routes.Register(api)
 
