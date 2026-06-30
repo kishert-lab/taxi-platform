@@ -38,14 +38,16 @@ type ChatThread struct {
 }
 
 type ChatMessage struct {
-	ID           uuid.UUID
-	ThreadID     uuid.UUID
-	OrderID      *uuid.UUID
-	SenderUserID uuid.UUID
-	SenderRole   UserRole
-	Body         string
-	CreatedAt    time.Time
-	EditedAt     *time.Time
+	ID                uuid.UUID
+	ThreadID          uuid.UUID
+	OrderID           *uuid.UUID
+	SenderID          uuid.UUID
+	SenderUserID      *uuid.UUID
+	SenderPassengerID *uuid.UUID
+	SenderRole        UserRole
+	Body              string
+	CreatedAt         time.Time
+	EditedAt          *time.Time
 }
 
 var (

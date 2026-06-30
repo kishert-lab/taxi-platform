@@ -201,13 +201,15 @@ func chatMessagesResponse(thread domain.ChatThread, messages []domain.ChatMessag
 
 func chatMessageResponse(thread domain.ChatThread, message domain.ChatMessage) dto.ChatMessageResponse {
 	return dto.ChatMessageResponse{
-		ID:           message.ID,
-		ThreadID:     message.ThreadID,
-		OrderID:      message.OrderID,
-		ChatType:     thread.Type,
-		SenderUserID: message.SenderUserID,
-		SenderRole:   message.SenderRole,
-		Body:         message.Body,
-		CreatedAt:    message.CreatedAt,
+		ID:                message.ID,
+		ThreadID:          message.ThreadID,
+		OrderID:           message.OrderID,
+		ChatType:          thread.Type,
+		SenderID:          message.SenderID,
+		SenderUserID:      message.SenderUserID,
+		SenderPassengerID: message.SenderPassengerID,
+		SenderRole:        message.SenderRole,
+		Body:              message.Body,
+		CreatedAt:         message.CreatedAt,
 	}
 }

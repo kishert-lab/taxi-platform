@@ -50,12 +50,22 @@ func failByError(context *gin.Context, err error) {
 		response.Fail(context, http.StatusUnauthorized, response.CodeUnauthorized, "Unauthorized", nil)
 	case errors.Is(err, passengerapp.ErrPassengerBlocked):
 		response.Fail(context, http.StatusForbidden, response.CodePassengerBlocked, "Passenger is blocked", nil)
+	case errors.Is(err, passengerapp.ErrPassengerInactive):
+		response.Fail(context, http.StatusForbidden, response.CodeForbidden, "Passenger is inactive", nil)
 	case errors.Is(err, passengerapp.ErrCodeExpired):
 		response.Fail(context, http.StatusUnauthorized, response.CodeCodeExpired, "Code expired", nil)
 	case errors.Is(err, passengerapp.ErrCodeAlreadyUsed), errors.Is(err, passengerapp.ErrInvalidCode):
 		response.Fail(context, http.StatusUnauthorized, response.CodeInvalidCode, "Invalid confirmation code", nil)
 	case errors.Is(err, passengerapp.ErrTooManyAttempts):
 		response.Fail(context, http.StatusTooManyRequests, response.CodeTooManyAttempts, "Too many confirmation attempts", nil)
+	case errors.Is(err, passengerapp.ErrPassengerCarClassRequired):
+		response.Fail(context, http.StatusBadRequest, response.CodeValidationError, "Car class is required", nil)
+	case errors.Is(err, passengerapp.ErrPassengerCarClassNotFound):
+		response.Fail(context, http.StatusNotFound, response.CodeNotFound, "Car class not found", nil)
+	case errors.Is(err, passengerapp.ErrPassengerActiveOrderExists):
+		response.Fail(context, http.StatusConflict, response.CodeOrderInvalidState, "Passenger already has active order", nil)
+	case errors.Is(err, passengerapp.ErrPassengerOrderNotFound):
+		response.Fail(context, http.StatusNotFound, response.CodeOrderNotFound, "Order not found", nil)
 	case errors.Is(err, auth.ErrDriverAccessDenied):
 		response.Fail(context, http.StatusForbidden, response.CodeForbidden, "Driver access is blocked", nil)
 	case errors.Is(err, domain.ErrInvalidPhone):

@@ -20,6 +20,11 @@ type ProfilePhotoUploadSuccessResponse struct {
 	Meta response.Meta                  `json:"meta"`
 }
 
+type PassengerPushTokenSuccessResponse struct {
+	Data dto.PassengerPushTokenResponse `json:"data"`
+	Meta response.Meta                  `json:"meta"`
+}
+
 type OrderEstimateSuccessResponse struct {
 	Data dto.OrderEstimateResponse `json:"data"`
 	Meta response.Meta             `json:"meta"`
@@ -38,6 +43,11 @@ type PassengerOrderSuccessResponse struct {
 type PassengerOrderHistorySuccessResponse struct {
 	Data dto.OrderHistoryResponse `json:"data"`
 	Meta response.Meta            `json:"meta"`
+}
+
+type PassengerCarClassesSuccessResponse struct {
+	Data dto.PassengerCarClassesResponse `json:"data"`
+	Meta response.Meta                   `json:"meta"`
 }
 
 type DriverOrderSuccessResponse struct {

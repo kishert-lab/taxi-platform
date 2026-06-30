@@ -57,6 +57,16 @@ func (repository *PostgresDriverSearchRepository) FindNearestOnlineDrivers(ctx c
 		  	LEFT JOIN car_driver_assignments cda ON cda.car_id = c.id
 		  	WHERE c.taxi_park_id = d.taxi_park_id
 		  	  AND (c.driver_id = d.id OR cda.driver_id = d.id)
+		  	  AND (
+		  	  	$8::uuid IS NULL
+		  	  	OR c.car_class = (
+		  	  		SELECT cc.code
+		  	  		FROM car_classes cc
+		  	  		WHERE cc.id = $8
+		  	  		  AND cc.deleted_at IS NULL
+		  	  		  AND cc.is_active = true
+		  	  	)
+		  	  )
 		  	  AND c.verification_status = 'verified'
 		  	  AND c.is_active = true
 		  	  AND c.deleted_at IS NULL
@@ -79,6 +89,7 @@ func (repository *PostgresDriverSearchRepository) FindNearestOnlineDrivers(ctx c
 		excludeIDs,
 		query.Limit,
 		int(query.LocationMaxAge.Seconds()),
+		query.CarClassID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("query nearest online drivers: %w", err)

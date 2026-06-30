@@ -6,7 +6,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -17,6 +19,7 @@ import (
 const (
 	defaultCleanEndpoint   = "https://cleaner.dadata.ru/api/v1/clean/address"
 	defaultSuggestEndpoint = "https://suggestions.dadata.ru/suggestions/api/4_1/rs/suggest/address"
+	maxFocusDistanceMeters = 250000.0
 )
 
 type Client struct {
@@ -57,11 +60,11 @@ func (client *Client) Search(ctx context.Context, request geodomain.SearchReques
 
 	cleanResults, cleanErr := client.clean(ctx, query)
 	if cleanErr == nil && len(cleanResults) > 0 {
-		return cleanResults, nil
+		return prioritizeByFocus(cleanResults, request.Focus), nil
 	}
 	suggestResults, suggestErr := client.suggest(ctx, request, query)
 	if suggestErr == nil {
-		return suggestResults, nil
+		return prioritizeByFocus(suggestResults, request.Focus), nil
 	}
 	if cleanErr != nil {
 		return nil, fmt.Errorf("dadata clean failed: %w; suggest failed: %w", cleanErr, suggestErr)
@@ -126,6 +129,9 @@ func (client *Client) suggest(ctx context.Context, request geodomain.SearchReque
 	if count <= 0 {
 		count = 10
 	}
+	if request.Focus != nil && count < 20 {
+		count = 20
+	}
 	body, err := json.Marshal(map[string]any{
 		"query": query,
 		"count": count,
@@ -174,6 +180,60 @@ func (client *Client) suggest(ctx context.Context, request geodomain.SearchReque
 		})
 	}
 	return results, nil
+}
+
+func prioritizeByFocus(results []geodomain.SearchResult, focus *geodomain.Coordinates) []geodomain.SearchResult {
+	if focus == nil || len(results) == 0 {
+		return results
+	}
+
+	type scoredResult struct {
+		result   geodomain.SearchResult
+		distance float64
+	}
+	scored := make([]scoredResult, 0, len(results))
+	for _, result := range results {
+		scored = append(scored, scoredResult{
+			result:   result,
+			distance: distanceMeters(*focus, result.Coordinates),
+		})
+	}
+
+	sort.SliceStable(scored, func(left int, right int) bool {
+		return scored[left].distance < scored[right].distance
+	})
+
+	filtered := make([]geodomain.SearchResult, 0, len(scored))
+	for _, item := range scored {
+		if item.distance <= maxFocusDistanceMeters {
+			filtered = append(filtered, item.result)
+		}
+	}
+	if len(filtered) > 0 {
+		return filtered
+	}
+
+	ordered := make([]geodomain.SearchResult, 0, len(scored))
+	for _, item := range scored {
+		ordered = append(ordered, item.result)
+	}
+	return ordered
+}
+
+func distanceMeters(from geodomain.Coordinates, to geodomain.Coordinates) float64 {
+	const earthRadiusMeters = 6371000.0
+
+	latitudeFrom := from.Latitude * math.Pi / 180
+	latitudeTo := to.Latitude * math.Pi / 180
+	deltaLatitude := (to.Latitude - from.Latitude) * math.Pi / 180
+	deltaLongitude := (to.Longitude - from.Longitude) * math.Pi / 180
+
+	sinLatitude := math.Sin(deltaLatitude / 2)
+	sinLongitude := math.Sin(deltaLongitude / 2)
+	a := sinLatitude*sinLatitude + math.Cos(latitudeFrom)*math.Cos(latitudeTo)*sinLongitude*sinLongitude
+	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+
+	return earthRadiusMeters * c
 }
 
 type cleanAddressResponse struct {

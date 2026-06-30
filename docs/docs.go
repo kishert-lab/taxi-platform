@@ -2949,6 +2949,120 @@ const docTemplate = `{
                 }
             }
         },
+        "/passenger/address/search": {
+            "get": {
+                "description": "Searches address suggestions for passenger mobile order form.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "passenger"
+                ],
+                "summary": "Search passenger addresses",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Bearer passenger access token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Address query",
+                        "name": "q",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "City UUID",
+                        "name": "city_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "Focus latitude",
+                        "name": "lat",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "Focus longitude",
+                        "name": "lon",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Result limit",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_handler.PassengerAddressSearchSuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/passenger/car-classes": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "passenger-orders"
+                ],
+                "summary": "List active passenger car classes",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_handler.PassengerCarClassesSuccessResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/passenger/orders": {
             "post": {
                 "security": [
@@ -3628,6 +3742,64 @@ const docTemplate = `{
                     },
                     "403": {
                         "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/passenger/push-tokens": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "passenger"
+                ],
+                "summary": "Register passenger push token",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Bearer access token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Passenger push token registration payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.PassengerPushTokenRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_handler.PassengerPushTokenSuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Error"
                         }
@@ -7676,6 +7848,10 @@ const docTemplate = `{
                     "type": "string",
                     "example": "Lada"
                 },
+                "car_class": {
+                    "type": "string",
+                    "example": "economy"
+                },
                 "color": {
                     "type": "string",
                     "example": "White"
@@ -7720,6 +7896,14 @@ const docTemplate = `{
                 "order_id": {
                     "type": "string",
                     "example": "33333333-3333-3333-3333-333333333333"
+                },
+                "sender_id": {
+                    "type": "string",
+                    "example": "44444444-4444-4444-4444-444444444444"
+                },
+                "sender_passenger_id": {
+                    "type": "string",
+                    "example": "55555555-5555-5555-5555-555555555555"
                 },
                 "sender_role": {
                     "allOf": [
@@ -8630,12 +8814,14 @@ const docTemplate = `{
         "github_com_kishert-lab_taxi-platform_internal_dto.OrderEstimateRequest": {
             "type": "object",
             "required": [
-                "city_id",
                 "destination_location",
-                "pickup_location",
-                "tariff_id"
+                "pickup_location"
             ],
             "properties": {
+                "car_class_id": {
+                    "type": "string",
+                    "example": "33333333-3333-3333-3333-333333333333"
+                },
                 "city_id": {
                     "type": "string",
                     "example": "11111111-1111-1111-1111-111111111111"
@@ -8655,6 +8841,18 @@ const docTemplate = `{
         "github_com_kishert-lab_taxi-platform_internal_dto.OrderEstimateResponse": {
             "type": "object",
             "properties": {
+                "car_class": {
+                    "type": "string",
+                    "example": "economy"
+                },
+                "car_class_id": {
+                    "type": "string",
+                    "example": "33333333-3333-3333-3333-333333333333"
+                },
+                "car_class_name": {
+                    "type": "string",
+                    "example": "Эконом"
+                },
                 "currency": {
                     "type": "string",
                     "example": "RUB"
@@ -8917,18 +9115,76 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_kishert-lab_taxi-platform_internal_dto.PassengerCarClassResponse": {
+            "type": "object",
+            "properties": {
+                "base_price": {
+                    "type": "integer",
+                    "example": 12000
+                },
+                "code": {
+                    "type": "string",
+                    "example": "economy"
+                },
+                "currency": {
+                    "type": "string",
+                    "example": "RUB"
+                },
+                "description": {
+                    "type": "string",
+                    "example": "Базовый класс автомобиля"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "33333333-3333-3333-3333-333333333333"
+                },
+                "minimum_price": {
+                    "type": "integer",
+                    "example": 18000
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Эконом"
+                },
+                "price_per_km": {
+                    "type": "integer",
+                    "example": 1800
+                },
+                "price_per_minute": {
+                    "type": "integer",
+                    "example": 600
+                },
+                "sort_order": {
+                    "type": "integer",
+                    "example": 10
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.PassengerCarClassesResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.PassengerCarClassResponse"
+                    }
+                }
+            }
+        },
         "github_com_kishert-lab_taxi-platform_internal_dto.PassengerCreateOrderRequest": {
             "type": "object",
             "required": [
-                "city_id",
                 "destination_address",
                 "destination_location",
                 "payment_type",
                 "pickup_address",
-                "pickup_location",
-                "tariff_id"
+                "pickup_location"
             ],
             "properties": {
+                "car_class_id": {
+                    "type": "string",
+                    "example": "33333333-3333-3333-3333-333333333333"
+                },
                 "city_id": {
                     "type": "string",
                     "example": "11111111-1111-1111-1111-111111111111"
@@ -8943,6 +9199,10 @@ const docTemplate = `{
                 },
                 "destination_location": {
                     "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.CoordinatesRequest"
+                },
+                "passenger_location_sharing_enabled": {
+                    "type": "boolean",
+                    "example": false
                 },
                 "passenger_phone": {
                     "type": "string",
@@ -8964,6 +9224,14 @@ const docTemplate = `{
                 "pickup_address": {
                     "type": "string",
                     "example": "Lenina 1"
+                },
+                "pickup_comment": {
+                    "type": "string",
+                    "example": "Вход со двора"
+                },
+                "pickup_entrance": {
+                    "type": "string",
+                    "example": "2"
                 },
                 "pickup_location": {
                     "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.CoordinatesRequest"
@@ -8990,6 +9258,18 @@ const docTemplate = `{
                 "car": {
                     "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.CarDTO"
                 },
+                "car_class": {
+                    "type": "string",
+                    "example": "economy"
+                },
+                "car_class_id": {
+                    "type": "string",
+                    "example": "33333333-3333-3333-3333-333333333333"
+                },
+                "car_class_name": {
+                    "type": "string",
+                    "example": "Эконом"
+                },
                 "destination_point": {
                     "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.PointDTO"
                 },
@@ -9003,6 +9283,14 @@ const docTemplate = `{
                 "order_id": {
                     "type": "string",
                     "example": "44444444-4444-4444-4444-444444444444"
+                },
+                "pickup_comment": {
+                    "type": "string",
+                    "example": "Вход со двора"
+                },
+                "pickup_entrance": {
+                    "type": "string",
+                    "example": "2"
                 },
                 "pickup_point": {
                     "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.PointDTO"
@@ -9097,6 +9385,49 @@ const docTemplate = `{
                 "ratings_count": {
                     "type": "integer",
                     "example": 37
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.PassengerPushTokenRequest": {
+            "type": "object",
+            "required": [
+                "platform",
+                "token"
+            ],
+            "properties": {
+                "device_id": {
+                    "type": "string",
+                    "example": "pixel-8-pro"
+                },
+                "platform": {
+                    "type": "string",
+                    "enum": [
+                        "android",
+                        "ios",
+                        "web"
+                    ],
+                    "example": "android"
+                },
+                "token": {
+                    "type": "string",
+                    "example": "fcm_device_token"
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.PassengerPushTokenResponse": {
+            "type": "object",
+            "properties": {
+                "device_id": {
+                    "type": "string",
+                    "example": "pixel-8-pro"
+                },
+                "platform": {
+                    "type": "string",
+                    "example": "android"
+                },
+                "token": {
+                    "type": "string",
+                    "example": "fcm_device_token"
                 }
             }
         },
@@ -12394,6 +12725,91 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_transport_http_handler.PassengerAddressSearchResponse": {
+            "type": "object",
+            "properties": {
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_transport_http_handler.PassengerAddressSearchResultResponse"
+                    }
+                }
+            }
+        },
+        "internal_transport_http_handler.PassengerAddressSearchResultResponse": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string",
+                    "example": "Пермь, улица Мира, 8"
+                },
+                "city_id": {
+                    "type": "string",
+                    "example": "22222222-2222-2222-2222-222222222222"
+                },
+                "confidence": {
+                    "type": "number",
+                    "example": 0.91
+                },
+                "coordinates": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.CoordinatesResponse"
+                },
+                "external_place_id": {
+                    "type": "string",
+                    "example": "yandex:123"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "pelias:address:123"
+                },
+                "local_point_id": {
+                    "type": "string",
+                    "example": "11111111-1111-1111-1111-111111111111"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Мира 8"
+                },
+                "provider": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_geocoder_domain.Provider"
+                        }
+                    ],
+                    "example": "pelias"
+                },
+                "trust_level": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_geocoder_domain.TrustLevel"
+                        }
+                    ],
+                    "example": "trusted"
+                }
+            }
+        },
+        "internal_transport_http_handler.PassengerAddressSearchSuccessResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/internal_transport_http_handler.PassengerAddressSearchResponse"
+                },
+                "meta": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta"
+                }
+            }
+        },
+        "internal_transport_http_handler.PassengerCarClassesSuccessResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.PassengerCarClassesResponse"
+                },
+                "meta": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta"
+                }
+            }
+        },
         "internal_transport_http_handler.PassengerOrderHistorySuccessResponse": {
             "type": "object",
             "properties": {
@@ -12421,6 +12837,17 @@ const docTemplate = `{
             "properties": {
                 "data": {
                     "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.PassengerProfileResponse"
+                },
+                "meta": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta"
+                }
+            }
+        },
+        "internal_transport_http_handler.PassengerPushTokenSuccessResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.PassengerPushTokenResponse"
                 },
                 "meta": {
                     "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_pkg_response.Meta"

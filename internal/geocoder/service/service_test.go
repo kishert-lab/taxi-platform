@@ -255,6 +255,43 @@ func TestSearchUsesExplicitCityContextForExternalGeocoder(t *testing.T) {
 	}
 }
 
+func TestSearchRetriesExternalGeocoderWithoutCityPrefixWhenQualifiedQueryIsEmpty(t *testing.T) {
+	cityID := uuid.New()
+	center, _ := geodomain.NewCoordinates(56.8389, 60.6057)
+	repository := &fakeRepository{cityFound: true, city: CityContext{CityID: cityID, Name: "Екатеринбург", Center: center}}
+	pelias := fakeClient{
+		searchResultsQueue: [][]geodomain.SearchResult{
+			{},
+			{testResult(geodomain.ProviderPelias, 0.90)},
+		},
+	}
+	service := New(repository, &pelias, nil, nil, zap.NewNop(), Config{
+		ExternalCacheTTL:          30 * 24 * time.Hour,
+		PeliasConfidenceThreshold: 0.75,
+		DefaultLimit:              10,
+	})
+
+	results, err := service.Search(context.Background(), geodomain.SearchRequest{
+		Query:  "Ленина",
+		CityID: &cityID,
+	})
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if len(results) != 1 || results[0].Provider != geodomain.ProviderPelias {
+		t.Fatalf("expected pelias result after retry, got %#v", results)
+	}
+	if len(pelias.requests) != 2 {
+		t.Fatalf("expected two pelias requests, got %d", len(pelias.requests))
+	}
+	if pelias.requests[0].Query != "Екатеринбург, Ленина" {
+		t.Fatalf("expected first city-qualified query, got %q", pelias.requests[0].Query)
+	}
+	if pelias.requests[1].Query != "Ленина" {
+		t.Fatalf("expected retry without city prefix, got %q", pelias.requests[1].Query)
+	}
+}
+
 func TestConfirmPointDelegatesToRepository(t *testing.T) {
 	repository := &fakeRepository{}
 	service := newTestService(repository, fakeClient{}, fakeClient{})
@@ -374,17 +411,25 @@ func testResult(provider geodomain.Provider, confidence float64) geodomain.Searc
 }
 
 type fakeClient struct {
-	results     []geodomain.SearchResult
-	err         error
-	calls       int
-	lastRequest geodomain.SearchRequest
+	results             []geodomain.SearchResult
+	searchResultsQueue  [][]geodomain.SearchResult
+	err                 error
+	calls               int
+	lastRequest         geodomain.SearchRequest
+	requests            []geodomain.SearchRequest
 }
 
 func (client *fakeClient) Search(_ context.Context, request geodomain.SearchRequest) ([]geodomain.SearchResult, error) {
 	client.calls++
 	client.lastRequest = request
+	client.requests = append(client.requests, request)
 	if client.err != nil {
 		return nil, client.err
+	}
+	if len(client.searchResultsQueue) > 0 {
+		results := client.searchResultsQueue[0]
+		client.searchResultsQueue = client.searchResultsQueue[1:]
+		return results, nil
 	}
 	return client.results, nil
 }

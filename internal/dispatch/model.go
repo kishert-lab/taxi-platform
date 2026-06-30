@@ -34,6 +34,7 @@ type Config struct {
 
 type NearestDriversQuery struct {
 	CityID         uuid.UUID
+	CarClassID     *uuid.UUID
 	Pickup         domain.Coordinates
 	RadiusMeters   int
 	Limit          int

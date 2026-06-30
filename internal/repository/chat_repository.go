@@ -65,14 +65,23 @@ func (repository *PostgresChatRepository) EnsurePassengerSupportThread(ctx conte
 	return thread, nil
 }
 
-func (repository *PostgresChatRepository) CreateMessage(ctx context.Context, thread domain.ChatThread, senderUserID uuid.UUID, senderRole domain.UserRole, body string) (domain.ChatMessage, error) {
+func (repository *PostgresChatRepository) CreateMessage(ctx context.Context, thread domain.ChatThread, senderID uuid.UUID, senderRole domain.UserRole, body string) (domain.ChatMessage, error) {
+	var senderUserID any
+	var senderPassengerID any
+	if senderRole == domain.UserRolePassenger {
+		senderPassengerID = senderID
+	} else {
+		senderUserID = senderID
+	}
+
 	message, err := scanChatMessage(repository.pool.QueryRow(ctx, `
-		INSERT INTO chat_messages (thread_id, order_id, sender_user_id, sender_role, body)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, thread_id, order_id, sender_user_id, sender_role, body, created_at, edited_at`,
+		INSERT INTO chat_messages (thread_id, order_id, sender_user_id, sender_passenger_id, sender_role, body)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id, thread_id, order_id, sender_user_id, sender_passenger_id, sender_role, body, created_at, edited_at`,
 		thread.ID,
 		nullableUUID(thread.OrderID),
 		senderUserID,
+		senderPassengerID,
 		senderRole,
 		body,
 	))
@@ -84,9 +93,9 @@ func (repository *PostgresChatRepository) CreateMessage(ctx context.Context, thr
 
 func (repository *PostgresChatRepository) ListMessages(ctx context.Context, thread domain.ChatThread, limit int) ([]domain.ChatMessage, error) {
 	rows, err := repository.pool.Query(ctx, `
-		SELECT id, thread_id, order_id, sender_user_id, sender_role, body, created_at, edited_at
+		SELECT id, thread_id, order_id, sender_user_id, sender_passenger_id, sender_role, body, created_at, edited_at
 		FROM (
-			SELECT id, thread_id, order_id, sender_user_id, sender_role, body, created_at, edited_at
+			SELECT id, thread_id, order_id, sender_user_id, sender_passenger_id, sender_role, body, created_at, edited_at
 			FROM chat_messages
 			WHERE thread_id = $1 AND deleted_at IS NULL
 			ORDER BY created_at DESC
@@ -211,12 +220,15 @@ func scanChatThread(row pgx.Row) (domain.ChatThread, error) {
 func scanChatMessage(row pgx.Row) (domain.ChatMessage, error) {
 	var message domain.ChatMessage
 	var orderID pgtype.UUID
+	var senderUserID pgtype.UUID
+	var senderPassengerID pgtype.UUID
 	var editedAt pgtype.Timestamptz
 	if err := row.Scan(
 		&message.ID,
 		&message.ThreadID,
 		&orderID,
-		&message.SenderUserID,
+		&senderUserID,
+		&senderPassengerID,
 		&message.SenderRole,
 		&message.Body,
 		&message.CreatedAt,
@@ -225,6 +237,16 @@ func scanChatMessage(row pgx.Row) (domain.ChatMessage, error) {
 		return domain.ChatMessage{}, err
 	}
 	message.OrderID = uuidPointer(orderID)
+	if senderUserID.Valid {
+		value := uuid.UUID(senderUserID.Bytes)
+		message.SenderUserID = &value
+		message.SenderID = value
+	}
+	if senderPassengerID.Valid {
+		value := uuid.UUID(senderPassengerID.Bytes)
+		message.SenderPassengerID = &value
+		message.SenderID = value
+	}
 	if editedAt.Valid {
 		message.EditedAt = &editedAt.Time
 	}

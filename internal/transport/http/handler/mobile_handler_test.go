@@ -28,6 +28,7 @@ func TestPassengerCanCreateOrder(t *testing.T) {
 	orderUseCase := &fakePassengerOrderUseCase{
 		createResult: dto.PassengerOrderResponse{
 			OrderID:        orderID,
+			CarClass:       "economy",
 			Status:         domain.OrderStatusSearching,
 			AllowedActions: []string{"cancel"},
 		},
@@ -35,7 +36,6 @@ func TestPassengerCanCreateOrder(t *testing.T) {
 	router := passengerRouter(passengerID, domain.UserRolePassenger, orderUseCase, &fakePassengerAddressUseCase{})
 
 	requestBody := `{
-		"city_id":"11111111-1111-1111-1111-111111111111",
 		"pickup_location":{"latitude":56.838011,"longitude":60.597465},
 		"pickup_address":"Lenina 1",
 		"destination_location":{"latitude":56.848011,"longitude":60.607465},
@@ -245,6 +245,7 @@ func TestEstimateReturnsTariffPrice(t *testing.T) {
 		estimateResult: dto.OrderEstimateResponse{
 			TariffID:    expectedTariffID,
 			TariffName:  "Economy",
+			CarClass:    "economy",
 			DistanceKM:  4.2,
 			DurationMin: 11,
 			Price:       250,
@@ -255,7 +256,6 @@ func TestEstimateReturnsTariffPrice(t *testing.T) {
 	router := passengerRouter(uuid.New(), domain.UserRolePassenger, orderUseCase, &fakePassengerAddressUseCase{})
 
 	requestBody := `{
-		"city_id":"11111111-1111-1111-1111-111111111111",
 		"tariff_id":"22222222-2222-2222-2222-222222222222",
 		"pickup_location":{"latitude":56.838011,"longitude":60.597465},
 		"destination_location":{"latitude":56.848011,"longitude":60.607465}
@@ -272,7 +272,7 @@ func TestEstimateReturnsTariffPrice(t *testing.T) {
 	if err := json.Unmarshal(responseRecorder.Body.Bytes(), &responseBody); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if responseBody.Data.TariffID != expectedTariffID || responseBody.Data.Price != 250 {
+	if responseBody.Data.TariffID != expectedTariffID || responseBody.Data.Price != 250 || responseBody.Data.CarClass != "economy" {
 		t.Fatalf("unexpected estimate: %#v", responseBody.Data)
 	}
 }
@@ -289,7 +289,7 @@ func TestUnauthorizedRequestRejected(t *testing.T) {
 	assertErrorCode(t, responseRecorder, response.CodeUnauthorized)
 }
 
-func TestAuthenticatedNonPassengerCanUsePassengerRoutes(t *testing.T) {
+func TestAuthenticatedNonPassengerCannotUsePassengerRoutes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	orderUseCase := &fakePassengerOrderUseCase{
@@ -301,9 +301,10 @@ func TestAuthenticatedNonPassengerCanUsePassengerRoutes(t *testing.T) {
 	router := passengerRouter(uuid.New(), domain.UserRoleDriver, orderUseCase, &fakePassengerAddressUseCase{})
 	responseRecorder := performJSON(router, http.MethodGet, "/api/v1/passenger/orders/current", "")
 
-	if responseRecorder.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", responseRecorder.Code, responseRecorder.Body.String())
+	if responseRecorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d: %s", responseRecorder.Code, responseRecorder.Body.String())
 	}
+	assertErrorCode(t, responseRecorder, response.CodeUnauthorized)
 }
 
 func TestPassengerCanSearchAddresses(t *testing.T) {
@@ -343,6 +344,9 @@ func passengerRouter(userID uuid.UUID, role domain.UserRole, orderUseCase Passen
 	router.Use(testAuthContext(userID, role))
 	api := router.Group("/api/v1")
 	NewPassengerMobileHandler(&fakePassengerProfileUseCase{}, orderUseCase).RegisterRoutes(api)
+	NewPassengerOrdersHandler(orderUseCase).RegisterRoutes(api, func(context *gin.Context) {
+		context.Next()
+	})
 	NewPassengerAddressHandler(addressUseCase).RegisterRoutes(api, func(context *gin.Context) {
 		context.Next()
 	})

@@ -134,6 +134,7 @@ func (service *Service) ProcessTask(ctx context.Context, task DispatchTask) (Dis
 
 	candidates, err := service.driverSearchRepository.FindNearestOnlineDrivers(ctx, NearestDriversQuery{
 		CityID:         order.CityID,
+		CarClassID:     order.CarClassID,
 		Pickup:         order.PickupLocation,
 		RadiusMeters:   radiusMeters,
 		Limit:          config.MaxDriversPerOffer,

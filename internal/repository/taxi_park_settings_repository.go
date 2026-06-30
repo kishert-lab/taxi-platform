@@ -281,18 +281,13 @@ func (repository *PostgresTaxiParkSettingsRepository) CreateOrderByOwnerUserID(c
 
 	passengerID := ownerUserID
 	if record.PassengerPhone != "" {
-		firstName, lastName := splitPassengerName(record.PassengerName)
 		if err := transaction.QueryRow(ctx, `
-			INSERT INTO users (
-				phone, role, registration_type, first_name, last_name,
-				is_phone_confirmed, is_active
-			)
-			VALUES ($1, 'passenger', 'passenger', NULLIF($2, ''), NULLIF($3, ''), true, true)
-			ON CONFLICT (phone, role) DO UPDATE
-			SET first_name = COALESCE(NULLIF(EXCLUDED.first_name, ''), users.first_name),
-			    last_name = COALESCE(NULLIF(EXCLUDED.last_name, ''), users.last_name),
+			INSERT INTO passengers (phone, name, is_active, phone_verified_at)
+			VALUES ($1, NULLIF($2, ''), true, now())
+			ON CONFLICT (phone) DO UPDATE
+			SET name = COALESCE(NULLIF(EXCLUDED.name, ''), passengers.name),
 			    updated_at = now()
-			RETURNING id`, record.PassengerPhone, firstName, lastName).Scan(&passengerID); err != nil {
+			RETURNING id`, record.PassengerPhone, record.PassengerName).Scan(&passengerID); err != nil {
 			return domain.Order{}, fmt.Errorf("upsert passenger for taxi park order: %w", err)
 		}
 	}
@@ -450,18 +445,13 @@ func (repository *PostgresTaxiParkSettingsRepository) CreateScheduledOrderByActo
 
 	passengerID := actorUserID
 	if record.PassengerPhone != "" {
-		firstName, lastName := splitPassengerName(record.PassengerName)
 		if err := transaction.QueryRow(ctx, `
-			INSERT INTO users (
-				phone, role, registration_type, first_name, last_name,
-				is_phone_confirmed, is_active
-			)
-			VALUES ($1, 'passenger', 'passenger', NULLIF($2, ''), NULLIF($3, ''), true, true)
-			ON CONFLICT (phone, role) DO UPDATE
-			SET first_name = COALESCE(NULLIF(EXCLUDED.first_name, ''), users.first_name),
-			    last_name = COALESCE(NULLIF(EXCLUDED.last_name, ''), users.last_name),
+			INSERT INTO passengers (phone, name, is_active, phone_verified_at)
+			VALUES ($1, NULLIF($2, ''), true, now())
+			ON CONFLICT (phone) DO UPDATE
+			SET name = COALESCE(NULLIF(EXCLUDED.name, ''), passengers.name),
 			    updated_at = now()
-			RETURNING id`, record.PassengerPhone, firstName, lastName).Scan(&passengerID); err != nil {
+			RETURNING id`, record.PassengerPhone, record.PassengerName).Scan(&passengerID); err != nil {
 			return taxiparkapp.ScheduledOrder{}, fmt.Errorf("upsert passenger for scheduled order: %w", err)
 		}
 	}

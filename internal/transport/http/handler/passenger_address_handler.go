@@ -32,9 +32,9 @@ func (handler *PassengerAddressHandler) RegisterRoutes(router gin.IRouter, passe
 // @Param lon query number false "Focus longitude"
 // @Param limit query int false "Result limit"
 // @Success 200 {object} PassengerAddressSearchSuccessResponse
-// @Failure 400 {object} response.Envelope
-// @Failure 401 {object} response.Envelope
-// @Failure 500 {object} response.Envelope
+// @Failure 400 {object} response.Error
+// @Failure 401 {object} response.Error
+// @Failure 500 {object} response.Error
 // @Router /passenger/address/search [get]
 func (handler *PassengerAddressHandler) SearchAddresses(context *gin.Context) {
 	passengerID, ok := middleware.PassengerIDFromContext(context)

@@ -222,6 +222,9 @@ func buildRouter(config *configs.Config, log *zap.Logger, routes applicationRout
 		middleware.ExactPublicPath("/api/v1/passenger/auth/logout"),
 		middleware.ExactPublicPath("/api/v1/passenger/me"),
 		middleware.ExactPublicPath("/api/v1/passenger/address/search"),
+		middleware.ExactPublicPath("/api/v1/passenger/car-classes"),
+		middleware.PrefixPublicPath("/api/v1/passenger/orders"),
+		middleware.PrefixPublicPath("/api/v1/passenger/support/chat"),
 		middleware.ExactPublicPath("/api/v1/passenger/push/token"),
 		middleware.ExactPublicPath("/api/v1/passenger/push-tokens"),
 	))

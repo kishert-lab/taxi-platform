@@ -73,6 +73,12 @@ func TestSendPassengerSupportMessagePublishesToPassenger(t *testing.T) {
 	if message.Body != "support hello" {
 		t.Fatalf("unexpected support message body: %q", message.Body)
 	}
+	if message.SenderPassengerID == nil || *message.SenderPassengerID != passengerID {
+		t.Fatalf("expected sender_passenger_id %s, got %#v", passengerID, message.SenderPassengerID)
+	}
+	if message.SenderUserID != nil {
+		t.Fatalf("expected sender_user_id to be nil for passenger message, got %#v", message.SenderUserID)
+	}
 	if gateway.passengerEvents != 1 {
 		t.Fatalf("expected passenger websocket event, got %d", gateway.passengerEvents)
 	}
@@ -144,16 +150,22 @@ func (repository *fakeChatRepository) EnsurePassengerSupportThread(context.Conte
 	return domain.ChatThread{ID: uuid.New(), Type: domain.ChatTypePassengerSupport}, nil
 }
 
-func (repository *fakeChatRepository) CreateMessage(_ context.Context, thread domain.ChatThread, senderUserID uuid.UUID, senderRole domain.UserRole, body string) (domain.ChatMessage, error) {
-	return domain.ChatMessage{
-		ID:           uuid.New(),
-		ThreadID:     thread.ID,
-		OrderID:      thread.OrderID,
-		SenderUserID: senderUserID,
-		SenderRole:   senderRole,
-		Body:         body,
-		CreatedAt:    time.Now().UTC(),
-	}, nil
+func (repository *fakeChatRepository) CreateMessage(_ context.Context, thread domain.ChatThread, senderID uuid.UUID, senderRole domain.UserRole, body string) (domain.ChatMessage, error) {
+	message := domain.ChatMessage{
+		ID:         uuid.New(),
+		ThreadID:   thread.ID,
+		OrderID:    thread.OrderID,
+		SenderID:   senderID,
+		SenderRole: senderRole,
+		Body:       body,
+		CreatedAt:  time.Now().UTC(),
+	}
+	if senderRole == domain.UserRolePassenger {
+		message.SenderPassengerID = &senderID
+	} else {
+		message.SenderUserID = &senderID
+	}
+	return message, nil
 }
 
 func (repository *fakeChatRepository) ListMessages(context.Context, domain.ChatThread, int) ([]domain.ChatMessage, error) {

@@ -45,6 +45,8 @@ type applicationRoutes struct {
 	passengerAuth           *handler.PassengerAuthHandler
 	passengerMe             *handler.PassengerMeHandler
 	passengerAddress        *handler.PassengerAddressHandler
+	passengerCarClasses     *handler.PassengerCarClassHandler
+	passengerOrders         *handler.PassengerOrdersHandler
 	passengerPush           *handler.PassengerPushHandler
 	passengerAuthMiddleware gin.HandlerFunc
 	order                   *handler.OrderHandler
@@ -218,6 +220,8 @@ func newApplicationRoutes(postgresPool *pgxpool.Pool, redisClient *goredis.Clien
 		},
 	)
 	passengerAddressSearchService := passengerapp.NewAddressSearchService(geocoderService)
+	passengerOrderRepository := repository.NewPostgresPassengerOrderRepository(postgresPool)
+	passengerOrderService := passengerapp.NewOrderService(passengerRepository, passengerOrderRepository, dispatchService, geocoderService)
 
 	return applicationRoutes{
 		auth:                    handler.NewAuthHandler(registrationService),
@@ -225,6 +229,8 @@ func newApplicationRoutes(postgresPool *pgxpool.Pool, redisClient *goredis.Clien
 		passengerAuth:           handler.NewPassengerAuthHandler(passengerAuthService),
 		passengerMe:             handler.NewPassengerMeHandler(passengerProfileService),
 		passengerAddress:        handler.NewPassengerAddressHandler(passengerAddressSearchService),
+		passengerCarClasses:     handler.NewPassengerCarClassHandler(passengerOrderService),
+		passengerOrders:         handler.NewPassengerOrdersHandler(passengerOrderService),
 		passengerPush:           handler.NewPassengerPushHandler(passengerPushTokenService),
 		passengerAuthMiddleware: passengerAuthMiddleware,
 		order:                   handler.NewOrderHandler(unavailableUseCase),
@@ -263,6 +269,10 @@ func (routes applicationRoutes) Register(api gin.IRouter) {
 	routes.passengerAuth.RegisterRoutes(api, routes.passengerAuthMiddleware)
 	routes.passengerMe.RegisterRoutes(api, routes.passengerAuthMiddleware)
 	routes.passengerAddress.RegisterRoutes(api, routes.passengerAuthMiddleware)
+	if routes.passengerCarClasses != nil {
+		routes.passengerCarClasses.RegisterRoutes(api, routes.passengerAuthMiddleware)
+	}
+	routes.passengerOrders.RegisterRoutes(api, routes.passengerAuthMiddleware)
 	routes.passengerPush.RegisterRoutes(api, routes.passengerAuthMiddleware)
 	routes.order.RegisterRoutes(api)
 	routes.passenger.RegisterRoutes(api)
@@ -270,7 +280,7 @@ func (routes applicationRoutes) Register(api gin.IRouter) {
 	routes.finance.RegisterRoutes(api)
 	routes.taxiPark.RegisterRoutes(api)
 	routes.legal.RegisterRoutes(api)
-	routes.chat.RegisterRoutes(api)
+	routes.chat.RegisterRoutes(api, routes.passengerAuthMiddleware)
 	routes.geocoder.RegisterRoutes(api)
 	routes.websocket.RegisterRoutes(api)
 }

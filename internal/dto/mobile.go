@@ -87,39 +87,52 @@ type ProfilePhotoUploadResponse struct {
 }
 
 type OrderEstimateRequest struct {
-	CityID              uuid.UUID          `json:"city_id" binding:"required" example:"11111111-1111-1111-1111-111111111111"`
-	TariffID            uuid.UUID          `json:"tariff_id" binding:"required" example:"22222222-2222-2222-2222-222222222222"`
+	CityID              *uuid.UUID         `json:"city_id,omitempty" example:"11111111-1111-1111-1111-111111111111"`
+	CarClassID          *uuid.UUID         `json:"car_class_id,omitempty" example:"33333333-3333-3333-3333-333333333333"`
+	TariffID            uuid.UUID          `json:"tariff_id,omitempty" example:"22222222-2222-2222-2222-222222222222"`
 	PickupLocation      CoordinatesRequest `json:"pickup_location" binding:"required"`
 	DestinationLocation CoordinatesRequest `json:"destination_location" binding:"required"`
 }
 
 type OrderEstimateResponse struct {
-	TariffID    uuid.UUID `json:"tariff_id" example:"22222222-2222-2222-2222-222222222222"`
-	TariffName  string    `json:"tariff_name" example:"Economy"`
-	DistanceKM  float64   `json:"distance_km" example:"4.2"`
-	DurationMin int64     `json:"duration_min" example:"11"`
-	Price       int64     `json:"price" example:"250"`
-	Currency    string    `json:"currency" example:"RUB"`
-	PriceType   string    `json:"price_type" example:"estimated"`
+	TariffID     uuid.UUID  `json:"tariff_id" example:"22222222-2222-2222-2222-222222222222"`
+	TariffName   string     `json:"tariff_name" example:"Economy"`
+	CarClassID   *uuid.UUID `json:"car_class_id,omitempty" example:"33333333-3333-3333-3333-333333333333"`
+	CarClassName string     `json:"car_class_name,omitempty" example:"Эконом"`
+	CarClass     string     `json:"car_class,omitempty" example:"economy"`
+	DistanceKM   float64    `json:"distance_km" example:"4.2"`
+	DurationMin  int64      `json:"duration_min" example:"11"`
+	Price        int64      `json:"price" example:"250"`
+	Currency     string     `json:"currency" example:"RUB"`
+	PriceType    string     `json:"price_type" example:"estimated"`
 }
 
 type PassengerCreateOrderRequest struct {
-	CityID              uuid.UUID            `json:"city_id" binding:"required" example:"11111111-1111-1111-1111-111111111111"`
-	PickupLocation      CoordinatesRequest   `json:"pickup_location" binding:"required"`
-	PickupAddress       string               `json:"pickup_address" binding:"required" example:"Lenina 1"`
-	DestinationLocation CoordinatesRequest   `json:"destination_location" binding:"required"`
-	DestinationAddress  string               `json:"destination_address" binding:"required" example:"Mira 10"`
-	TariffID            uuid.UUID            `json:"tariff_id" binding:"required" example:"22222222-2222-2222-2222-222222222222"`
-	PaymentType         domain.PaymentMethod `json:"payment_type" binding:"required,oneof=cash card corporate" example:"cash"`
-	Comment             string               `json:"comment" example:"Entrance 2"`
-	PassengerPhone      string               `json:"passenger_phone,omitempty" example:"+79990000000"`
+	CityID                          *uuid.UUID           `json:"city_id,omitempty" example:"11111111-1111-1111-1111-111111111111"`
+	CarClassID                      *uuid.UUID           `json:"car_class_id,omitempty" example:"33333333-3333-3333-3333-333333333333"`
+	PickupLocation                  CoordinatesRequest   `json:"pickup_location" binding:"required"`
+	PickupAddress                   string               `json:"pickup_address" binding:"required" example:"Lenina 1"`
+	PickupEntrance                  string               `json:"pickup_entrance,omitempty" example:"2"`
+	PickupComment                   string               `json:"pickup_comment,omitempty" example:"Вход со двора"`
+	DestinationLocation             CoordinatesRequest   `json:"destination_location" binding:"required"`
+	DestinationAddress              string               `json:"destination_address" binding:"required" example:"Mira 10"`
+	TariffID                        uuid.UUID            `json:"tariff_id,omitempty" example:"22222222-2222-2222-2222-222222222222"`
+	PaymentType                     domain.PaymentMethod `json:"payment_type" binding:"required,oneof=cash card corporate" example:"cash"`
+	Comment                         string               `json:"comment" example:"Entrance 2"`
+	PassengerPhone                  string               `json:"passenger_phone,omitempty" example:"+79990000000"`
+	PassengerLocationSharingEnabled bool                 `json:"passenger_location_sharing_enabled,omitempty" example:"false"`
 }
 
 type PassengerOrderResponse struct {
 	OrderID          uuid.UUID           `json:"order_id" example:"44444444-4444-4444-4444-444444444444"`
 	Driver           *AssignedDriverDTO  `json:"driver,omitempty"`
 	Car              *CarDTO             `json:"car,omitempty"`
+	CarClassID       *uuid.UUID          `json:"car_class_id,omitempty" example:"33333333-3333-3333-3333-333333333333"`
+	CarClassName     string              `json:"car_class_name,omitempty" example:"Эконом"`
+	CarClass         string              `json:"car_class,omitempty" example:"economy"`
 	PickupPoint      PointDTO            `json:"pickup_point"`
+	PickupEntrance   string              `json:"pickup_entrance,omitempty" example:"2"`
+	PickupComment    string              `json:"pickup_comment,omitempty" example:"Вход со двора"`
 	DestinationPoint PointDTO            `json:"destination_point"`
 	Status           domain.OrderStatus  `json:"status" example:"driver_arriving"`
 	Price            *MoneyResponse      `json:"price,omitempty"`
@@ -127,6 +140,23 @@ type PassengerOrderResponse struct {
 	AllowedActions   []string            `json:"allowed_actions" example:"cancel,call_driver"`
 	Timeline         []OrderTimelineItem `json:"timeline,omitempty"`
 	Version          int                 `json:"version" example:"3"`
+}
+
+type PassengerCarClassResponse struct {
+	ID             uuid.UUID `json:"id" example:"33333333-3333-3333-3333-333333333333"`
+	Code           string    `json:"code" example:"economy"`
+	Name           string    `json:"name" example:"Эконом"`
+	Description    string    `json:"description,omitempty" example:"Базовый класс автомобиля"`
+	BasePrice      int64     `json:"base_price" example:"12000"`
+	PricePerKM     int64     `json:"price_per_km" example:"1800"`
+	PricePerMinute int64     `json:"price_per_minute" example:"600"`
+	MinimumPrice   int64     `json:"minimum_price" example:"18000"`
+	Currency       string    `json:"currency" example:"RUB"`
+	SortOrder      int       `json:"sort_order" example:"10"`
+}
+
+type PassengerCarClassesResponse struct {
+	Items []PassengerCarClassResponse `json:"items"`
 }
 
 type DriverOrderResponse struct {
@@ -171,6 +201,7 @@ type CarDTO struct {
 	Model       string    `json:"model" example:"Vesta"`
 	Color       string    `json:"color" example:"White"`
 	PlateNumber string    `json:"plate_number" example:"A001AA196"`
+	CarClass    string    `json:"car_class,omitempty" example:"economy"`
 }
 
 type OrderTimelineItem struct {

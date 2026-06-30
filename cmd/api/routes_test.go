@@ -21,12 +21,14 @@ func TestMobileAndFinanceRoutesAreRegistered(t *testing.T) {
 
 	unavailableUseCase := service.NewUnavailableUseCase()
 	routes := applicationRoutes{
-		auth:             handler.NewAuthHandler(unavailableUseCase),
-		mobileAuth:       handler.NewMobileAuthHandler(unavailableUseCase),
-		passengerAuth:    handler.NewPassengerAuthHandler(fakePassengerAuthUseCase{}),
-		passengerMe:      handler.NewPassengerMeHandler(fakePassengerMeUseCase{}),
-		passengerAddress: handler.NewPassengerAddressHandler(fakePassengerAddressUseCase{}),
-		passengerPush:    handler.NewPassengerPushHandler(fakePassengerPushUseCase{}),
+		auth:                handler.NewAuthHandler(unavailableUseCase),
+		mobileAuth:          handler.NewMobileAuthHandler(unavailableUseCase),
+		passengerAuth:       handler.NewPassengerAuthHandler(fakePassengerAuthUseCase{}),
+		passengerMe:         handler.NewPassengerMeHandler(fakePassengerMeUseCase{}),
+		passengerAddress:    handler.NewPassengerAddressHandler(fakePassengerAddressUseCase{}),
+		passengerCarClasses: handler.NewPassengerCarClassHandler(fakePassengerCarClassUseCase{}),
+		passengerOrders:     handler.NewPassengerOrdersHandler(unavailableUseCase),
+		passengerPush:       handler.NewPassengerPushHandler(fakePassengerPushUseCase{}),
 		passengerAuthMiddleware: func(context *gin.Context) {
 			context.Next()
 		},
@@ -68,6 +70,7 @@ func TestMobileAndFinanceRoutesAreRegistered(t *testing.T) {
 		http.MethodPatch + " /api/v1/passenger/profile",
 		http.MethodPost + " /api/v1/passenger/profile/photo",
 		http.MethodGet + " /api/v1/passenger/address/search",
+		http.MethodGet + " /api/v1/passenger/car-classes",
 		http.MethodPost + " /api/v1/passenger/orders/estimate",
 		http.MethodPost + " /api/v1/passenger/orders",
 		http.MethodGet + " /api/v1/passenger/orders/current",
@@ -216,4 +219,10 @@ type fakePassengerAddressUseCase struct{}
 
 func (fakePassengerAddressUseCase) SearchPassengerAddresses(context.Context, uuid.UUID, string, *uuid.UUID, *float64, *float64, int) ([]geodomain.SearchResult, error) {
 	return nil, nil
+}
+
+type fakePassengerCarClassUseCase struct{}
+
+func (fakePassengerCarClassUseCase) ListPassengerCarClasses(context.Context, uuid.UUID) (dto.PassengerCarClassesResponse, error) {
+	return dto.PassengerCarClassesResponse{}, nil
 }

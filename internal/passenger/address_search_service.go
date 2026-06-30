@@ -52,6 +52,7 @@ func (service *AddressSearchService) SearchPassengerAddresses(
 		ActorRole:   string(domain.UserRolePassenger),
 		Limit:       limit,
 	}
+	resolvedCityFromCoordinates := false
 
 	if focusLatitude != nil || focusLongitude != nil {
 		if focusLatitude == nil || focusLongitude == nil {
@@ -69,6 +70,7 @@ func (service *AddressSearchService) SearchPassengerAddresses(
 			}
 			if found {
 				request.CityID = &cityContext.CityID
+				resolvedCityFromCoordinates = true
 			}
 		}
 	}
@@ -76,6 +78,15 @@ func (service *AddressSearchService) SearchPassengerAddresses(
 	results, err := service.searcher.Search(ctx, request)
 	if err != nil {
 		return nil, fmt.Errorf("search passenger addresses: %w", err)
+	}
+	if len(results) == 0 && resolvedCityFromCoordinates {
+		fallbackRequest := request
+		fallbackRequest.CityID = nil
+
+		results, err = service.searcher.Search(ctx, fallbackRequest)
+		if err != nil {
+			return nil, fmt.Errorf("search passenger addresses without resolved city: %w", err)
+		}
 	}
 	return results, nil
 }

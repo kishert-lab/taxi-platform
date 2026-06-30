@@ -36,10 +36,10 @@ func (handler *PassengerPushHandler) RegisterRoutes(router gin.IRouter, passenge
 // @Produce json
 // @Param Authorization header string true "Bearer access token"
 // @Param request body dto.PassengerPushTokenRequest true "Passenger push token registration payload"
-// @Success 200 {object} response.Envelope{data=dto.PassengerPushTokenResponse}
-// @Failure 400 {object} response.Envelope
-// @Failure 401 {object} response.Envelope
-// @Failure 500 {object} response.Envelope
+// @Success 200 {object} PassengerPushTokenSuccessResponse
+// @Failure 400 {object} response.Error
+// @Failure 401 {object} response.Error
+// @Failure 500 {object} response.Error
 // @Router /passenger/push-tokens [post]
 func (handler *PassengerPushHandler) RegisterToken(context *gin.Context) {
 	passengerID, ok := middleware.PassengerIDFromContext(context)

@@ -89,6 +89,22 @@ func (repository *PostgresDispatchOrderRepository) AssignDriver(ctx context.Cont
 	const query = `
 		UPDATE orders
 		SET driver_id = $2,
+		    car_id = (
+		    	SELECT c.id
+		    	FROM drivers d
+		    	JOIN cars c ON c.taxi_park_id = d.taxi_park_id
+		    	LEFT JOIN car_driver_assignments cda ON cda.car_id = c.id
+		    	WHERE d.id = $2
+		    	  AND (c.driver_id = d.id OR cda.driver_id = d.id)
+		    	  AND c.deleted_at IS NULL
+		    	ORDER BY (c.driver_id = d.id) DESC, c.created_at DESC
+		    	LIMIT 1
+		    ),
+		    park_id = (
+		    	SELECT d.taxi_park_id
+		    	FROM drivers d
+		    	WHERE d.id = $2
+		    ),
 		    status = 'driver_assigned',
 		    accepted_at = $3,
 		    version = version + 1
@@ -238,13 +254,18 @@ const dispatchOrderSelectColumns = `
 	id,
 	passenger_id,
 	driver_id,
+	car_id,
+	park_id,
 	preassigned_driver_id,
 	city_id,
 	tariff_id,
+	car_class_id,
 	status,
 	order_type,
 	scheduled_status,
 	pickup_address,
+	COALESCE(pickup_entrance, '') AS pickup_entrance,
+	COALESCE(pickup_comment, '') AS pickup_comment,
 	ST_Y(pickup_location::geometry) AS pickup_latitude,
 	ST_X(pickup_location::geometry) AS pickup_longitude,
 	COALESCE(destination_address, '') AS destination_address,
@@ -265,6 +286,7 @@ const dispatchOrderSelectColumns = `
 	COALESCE(scheduled_cancel_reason, '') AS scheduled_cancel_reason,
 	payment_method,
 	COALESCE(passenger_comment, '') AS passenger_comment,
+	passenger_location_sharing_enabled,
 	dispatch_attempt,
 	scheduled_created_by,
 	version,
@@ -275,8 +297,11 @@ const dispatchOrderSelectColumns = `
 func scanDispatchOrder(row pgx.Row) (domain.Order, error) {
 	var order domain.Order
 	var driverID pgtype.UUID
+	var carID pgtype.UUID
+	var parkID pgtype.UUID
 	var preassignedDriverID pgtype.UUID
 	var tariffID pgtype.UUID
+	var carClassID pgtype.UUID
 	var scheduledCreatedBy pgtype.UUID
 	var destinationLatitude pgtype.Float8
 	var destinationLongitude pgtype.Float8
@@ -298,13 +323,18 @@ func scanDispatchOrder(row pgx.Row) (domain.Order, error) {
 		&order.ID,
 		&order.PassengerID,
 		&driverID,
+		&carID,
+		&parkID,
 		&preassignedDriverID,
 		&order.CityID,
 		&tariffID,
+		&carClassID,
 		&order.Status,
 		&order.OrderType,
 		&scheduledStatus,
 		&order.PickupAddress,
+		&order.PickupEntrance,
+		&order.PickupComment,
 		&pickupLatitude,
 		&pickupLongitude,
 		&order.DestinationAddress,
@@ -325,6 +355,7 @@ func scanDispatchOrder(row pgx.Row) (domain.Order, error) {
 		&order.ScheduledCancelReason,
 		&order.PaymentMethod,
 		&order.PassengerComment,
+		&order.PassengerLocationSharingEnabled,
 		&order.DispatchAttempt,
 		&scheduledCreatedBy,
 		&order.Version,
@@ -345,6 +376,14 @@ func scanDispatchOrder(row pgx.Row) (domain.Order, error) {
 		value := uuid.UUID(driverID.Bytes)
 		order.DriverID = &value
 	}
+	if carID.Valid {
+		value := uuid.UUID(carID.Bytes)
+		order.CarID = &value
+	}
+	if parkID.Valid {
+		value := uuid.UUID(parkID.Bytes)
+		order.ParkID = &value
+	}
 	if preassignedDriverID.Valid {
 		value := uuid.UUID(preassignedDriverID.Bytes)
 		order.PreassignedDriverID = &value
@@ -352,6 +391,10 @@ func scanDispatchOrder(row pgx.Row) (domain.Order, error) {
 	if tariffID.Valid {
 		value := uuid.UUID(tariffID.Bytes)
 		order.TariffID = &value
+	}
+	if carClassID.Valid {
+		value := uuid.UUID(carClassID.Bytes)
+		order.CarClassID = &value
 	}
 	if scheduledStatus.Valid {
 		value := domain.ScheduledOrderStatus(scheduledStatus.String)

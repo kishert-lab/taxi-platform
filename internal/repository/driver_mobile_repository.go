@@ -135,11 +135,11 @@ func (repository *PostgresDriverMobileRepository) GetCurrentOrderByUserID(ctx co
 		SELECT o.id,
 		       d.id,
 		       p.id,
-		       trim(concat_ws(' ', COALESCE(p.first_name, ''), COALESCE(p.last_name, ''))) AS passenger_name,
+		       COALESCE(p.name, '') AS passenger_name,
 		       p.phone,
-		       COALESCE(p.profile_photo_url, '') AS passenger_photo_url,
-		       p.rating::float8,
-		       p.ratings_count,
+		       COALESCE(p.avatar_url, '') AS passenger_photo_url,
+		       0::float8,
+		       0,
 		       o.pickup_address,
 		       ST_Y(o.pickup_location::geometry) AS pickup_latitude,
 		       ST_X(o.pickup_location::geometry) AS pickup_longitude,
@@ -157,7 +157,7 @@ func (repository *PostgresDriverMobileRepository) GetCurrentOrderByUserID(ctx co
 		       o.created_at
 		FROM orders o
 		JOIN drivers d ON d.id = o.driver_id
-		JOIN users p ON p.id = o.passenger_id
+		JOIN passengers p ON p.id = o.passenger_id
 		WHERE d.user_id = $1
 		  AND d.deleted_at IS NULL
 		  AND o.deleted_at IS NULL
@@ -178,11 +178,11 @@ func (repository *PostgresDriverMobileRepository) GetOrderByUserID(ctx context.C
 		SELECT o.id,
 		       d.id,
 		       p.id,
-		       trim(concat_ws(' ', COALESCE(p.first_name, ''), COALESCE(p.last_name, ''))) AS passenger_name,
+		       COALESCE(p.name, '') AS passenger_name,
 		       p.phone,
-		       COALESCE(p.profile_photo_url, '') AS passenger_photo_url,
-		       p.rating::float8,
-		       p.ratings_count,
+		       COALESCE(p.avatar_url, '') AS passenger_photo_url,
+		       0::float8,
+		       0,
 		       o.pickup_address,
 		       ST_Y(o.pickup_location::geometry) AS pickup_latitude,
 		       ST_X(o.pickup_location::geometry) AS pickup_longitude,
@@ -200,7 +200,7 @@ func (repository *PostgresDriverMobileRepository) GetOrderByUserID(ctx context.C
 		       o.created_at
 		FROM orders o
 		JOIN drivers d ON d.id = o.driver_id
-		JOIN users p ON p.id = o.passenger_id
+		JOIN passengers p ON p.id = o.passenger_id
 		WHERE o.id = $1
 		  AND d.user_id = $2
 		  AND d.deleted_at IS NULL
@@ -222,11 +222,11 @@ func (repository *PostgresDriverMobileRepository) ListOrderHistoryByUserID(ctx c
 		SELECT o.id,
 		       d.id,
 		       p.id,
-		       trim(concat_ws(' ', COALESCE(p.first_name, ''), COALESCE(p.last_name, ''))) AS passenger_name,
+		       COALESCE(p.name, '') AS passenger_name,
 		       p.phone,
-		       COALESCE(p.profile_photo_url, '') AS passenger_photo_url,
-		       p.rating::float8,
-		       p.ratings_count,
+		       COALESCE(p.avatar_url, '') AS passenger_photo_url,
+		       0::float8,
+		       0,
 		       o.pickup_address,
 		       ST_Y(o.pickup_location::geometry) AS pickup_latitude,
 		       ST_X(o.pickup_location::geometry) AS pickup_longitude,
@@ -244,7 +244,7 @@ func (repository *PostgresDriverMobileRepository) ListOrderHistoryByUserID(ctx c
 		       o.created_at
 		FROM orders o
 		JOIN drivers d ON d.id = o.driver_id
-		JOIN users p ON p.id = o.passenger_id
+		JOIN passengers p ON p.id = o.passenger_id
 		WHERE d.user_id = $1
 		  AND d.deleted_at IS NULL
 		  AND o.deleted_at IS NULL
@@ -275,11 +275,11 @@ func selectDriverCurrentOrderByID(ctx context.Context, transaction pgx.Tx, userI
 		SELECT o.id,
 		       d.id,
 		       p.id,
-		       trim(concat_ws(' ', COALESCE(p.first_name, ''), COALESCE(p.last_name, ''))) AS passenger_name,
+		       COALESCE(p.name, '') AS passenger_name,
 		       p.phone,
-		       COALESCE(p.profile_photo_url, '') AS passenger_photo_url,
-		       p.rating::float8,
-		       p.ratings_count,
+		       COALESCE(p.avatar_url, '') AS passenger_photo_url,
+		       0::float8,
+		       0,
 		       o.pickup_address,
 		       ST_Y(o.pickup_location::geometry) AS pickup_latitude,
 		       ST_X(o.pickup_location::geometry) AS pickup_longitude,
@@ -297,7 +297,7 @@ func selectDriverCurrentOrderByID(ctx context.Context, transaction pgx.Tx, userI
 		       o.created_at
 		FROM orders o
 		JOIN drivers d ON d.id = o.driver_id
-		JOIN users p ON p.id = o.passenger_id
+		JOIN passengers p ON p.id = o.passenger_id
 		WHERE o.id = $1
 		  AND d.user_id = $2
 		  AND d.deleted_at IS NULL

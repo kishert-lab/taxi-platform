@@ -125,36 +125,22 @@ func (service *Service) Search(ctx context.Context, request geodomain.SearchRequ
 	if cityName != "" && !strings.Contains(strings.ToLower(externalRequest.Query), strings.ToLower(cityName)) {
 		externalRequest.Query = strings.TrimSpace(cityName + ", " + externalRequest.Query)
 	}
-
-	peliasResults, err := service.peliasClient.Search(ctx, externalRequest)
-	if err != nil {
-		service.logger.Warn("pelias geocoder failed", zap.Error(err), zap.String("query", normalizedQuery))
-	}
-	if bestConfidence(peliasResults) >= service.config.PeliasConfidenceThreshold {
-		service.logger.Info("geocoder pelias hit", zap.String("query", normalizedQuery), zap.Float64("confidence", bestConfidence(peliasResults)))
-		return limitResults(peliasResults, request.Limit), nil
+	results, externalUnavailable := service.searchExternalProviders(ctx, normalizedQuery, request, externalRequest)
+	if len(results) > 0 {
+		return limitResults(results, request.Limit), nil
 	}
 
-	dadataResults, dadataErr := service.searchExternalProvider(ctx, geodomain.ProviderDaData, normalizedQuery, request, externalRequest, request.RequestedAt)
-	if dadataErr != nil {
-		service.logger.Warn("dadata geocoder failed", zap.Error(dadataErr), zap.String("query", normalizedQuery))
-	}
-	if len(dadataResults) > 0 {
-		return limitResults(dadataResults, request.Limit), nil
-	}
-
-	yandexResults, yandexErr := service.searchExternalProvider(ctx, geodomain.ProviderYandex, normalizedQuery, request, externalRequest, request.RequestedAt)
-	if yandexErr != nil {
-		service.logger.Warn("yandex geocoder failed", zap.Error(yandexErr), zap.String("query", normalizedQuery))
-	}
-	if len(yandexResults) > 0 {
-		return limitResults(yandexResults, request.Limit), nil
+	if externalRequest.Query != request.Query {
+		fallbackExternalRequest := request
+		results, fallbackExternalUnavailable := service.searchExternalProviders(ctx, normalizedQuery, request, fallbackExternalRequest)
+		if len(results) > 0 {
+			service.logger.Info("geocoder external fallback retried without city prefix", zap.String("query", normalizedQuery))
+			return limitResults(results, request.Limit), nil
+		}
+		externalUnavailable = externalUnavailable || fallbackExternalUnavailable
 	}
 
-	if len(peliasResults) > 0 {
-		return limitResults(peliasResults, request.Limit), nil
-	}
-	if yandexErr != nil || dadataErr != nil {
+	if externalUnavailable {
 		return nil, geodomain.ErrExternalUnavailable
 	}
 	return []geodomain.SearchResult{}, nil
@@ -224,6 +210,39 @@ func (service *Service) searchExternalProvider(ctx context.Context, provider geo
 	}
 	service.logger.Info("geocoder external fallback hit", zap.String("provider", string(provider)), zap.String("query", normalizedQuery), zap.Int("results", len(results)))
 	return results, nil
+}
+
+func (service *Service) searchExternalProviders(ctx context.Context, normalizedQuery string, request geodomain.SearchRequest, externalRequest geodomain.SearchRequest) ([]geodomain.SearchResult, bool) {
+	peliasResults, err := service.peliasClient.Search(ctx, externalRequest)
+	if err != nil {
+		service.logger.Warn("pelias geocoder failed", zap.Error(err), zap.String("query", normalizedQuery))
+	}
+	if bestConfidence(peliasResults) >= service.config.PeliasConfidenceThreshold {
+		service.logger.Info("geocoder pelias hit", zap.String("query", normalizedQuery), zap.Float64("confidence", bestConfidence(peliasResults)))
+		return peliasResults, false
+	}
+
+	dadataResults, dadataErr := service.searchExternalProvider(ctx, geodomain.ProviderDaData, normalizedQuery, request, externalRequest, request.RequestedAt)
+	if dadataErr != nil {
+		service.logger.Warn("dadata geocoder failed", zap.Error(dadataErr), zap.String("query", normalizedQuery))
+	}
+	if len(dadataResults) > 0 {
+		return dadataResults, false
+	}
+
+	yandexResults, yandexErr := service.searchExternalProvider(ctx, geodomain.ProviderYandex, normalizedQuery, request, externalRequest, request.RequestedAt)
+	if yandexErr != nil {
+		service.logger.Warn("yandex geocoder failed", zap.Error(yandexErr), zap.String("query", normalizedQuery))
+	}
+	if len(yandexResults) > 0 {
+		return yandexResults, false
+	}
+
+	if len(peliasResults) > 0 {
+		return peliasResults, false
+	}
+
+	return nil, yandexErr != nil || dadataErr != nil
 }
 
 func (service *Service) ConfirmPoint(ctx context.Context, request ConfirmPointRequest) (geodomain.LocalGeoPoint, error) {
