@@ -88,23 +88,33 @@ func (service *OrderService) EstimatePassengerOrder(ctx context.Context, passeng
 		return dto.OrderEstimateResponse{}, err
 	}
 
-	distanceKM, durationMinutes, priceAmount, err := service.estimateOrder(ctx, carClass, pickup, destination)
+	cityID, err := service.resolveCityID(ctx, request.CityID, pickup)
 	if err != nil {
 		return dto.OrderEstimateResponse{}, err
 	}
 
-	return dto.OrderEstimateResponse{
+	estimate, err := service.buildPassengerEstimate(ctx, carClass, cityID, pickup, destination)
+	if err != nil {
+		return dto.OrderEstimateResponse{}, err
+	}
+
+	responseBody := dto.OrderEstimateResponse{
 		TariffID:     carClass.ID,
 		TariffName:   carClass.Name,
 		CarClassID:   &carClass.ID,
 		CarClassName: carClass.Name,
 		CarClass:     carClass.Code,
-		DistanceKM:   distanceKM,
-		DurationMin:  durationMinutes,
-		Price:        priceAmount / 100,
+		DistanceKM:   estimate.DistanceKM,
+		DurationMin:  estimate.DurationMinutes,
 		Currency:     carClass.BasePrice.Currency,
 		PriceType:    "estimated",
-	}, nil
+		Pricing:      pricingResponse(&estimate.Pricing, nil, nil),
+	}
+	if estimate.PriceAmount != nil {
+		responseBody.Price = *estimate.PriceAmount / 100
+	}
+
+	return responseBody, nil
 }
 
 func (service *OrderService) CreatePassengerOrder(ctx context.Context, passengerID uuid.UUID, request dto.PassengerCreateOrderRequest) (dto.PassengerOrderResponse, error) {
@@ -132,7 +142,7 @@ func (service *OrderService) CreatePassengerOrder(ctx context.Context, passenger
 		return dto.PassengerOrderResponse{}, err
 	}
 
-	_, _, priceAmount, err := service.estimateOrder(ctx, carClass, pickup, destination)
+	estimate, err := service.buildPassengerEstimate(ctx, carClass, cityID, pickup, destination)
 	if err != nil {
 		return dto.PassengerOrderResponse{}, err
 	}
@@ -147,7 +157,8 @@ func (service *OrderService) CreatePassengerOrder(ctx context.Context, passenger
 		PickupLocation:                  pickup,
 		DestinationAddress:              strings.TrimSpace(request.DestinationAddress),
 		DestinationLocation:             destination,
-		EstimatedPrice:                  domain.Money{Amount: priceAmount, Currency: carClass.BasePrice.Currency},
+		EstimatedPrice:                  estimate.estimatedMoney(carClass.BasePrice.Currency),
+		PricingSnapshot:                 &estimate.Pricing,
 		PaymentMethod:                   request.PaymentType,
 		PassengerComment:                strings.TrimSpace(request.Comment),
 		PassengerLocationSharingEnabled: request.PassengerLocationSharingEnabled,
@@ -268,19 +279,27 @@ func (service *OrderService) estimateOrder(ctx context.Context, carClass domain.
 		return 0, 0, 0, fmt.Errorf("estimate passenger route distance: %w", err)
 	}
 
+	durationMinutes := estimateDurationMinutes(distanceKM)
+	priceAmount := calculateCarClassEstimate(carClass, distanceKM, durationMinutes)
+	return distanceKM, durationMinutes, priceAmount, nil
+}
+
+func estimateDurationMinutes(distanceKM float64) int64 {
 	durationMinutes := int64(math.Ceil(distanceKM / 0.5))
 	if durationMinutes < 1 {
 		durationMinutes = 1
 	}
+	return durationMinutes
+}
 
+func calculateCarClassEstimate(carClass domain.CarClass, distanceKM float64, durationMinutes int64) int64 {
 	priceAmount := carClass.BasePrice.Amount +
 		int64(math.Round(distanceKM*float64(carClass.PricePerKM.Amount))) +
 		durationMinutes*carClass.PricePerMinute.Amount
 	if priceAmount < carClass.MinimumPrice.Amount {
 		priceAmount = carClass.MinimumPrice.Amount
 	}
-
-	return distanceKM, durationMinutes, priceAmount, nil
+	return priceAmount
 }
 
 func orderEstimateCoordinates(request dto.OrderEstimateRequest) (geodomain.Coordinates, geodomain.Coordinates, error) {
@@ -322,7 +341,7 @@ func passengerCarClassDTO(carClass domain.CarClass) dto.PassengerCarClassRespons
 	}
 }
 
-func passengerOrderResponse(details PassengerOrderDetails) dto.PassengerOrderResponse {
+func passengerOrderResponse(details OrderDetails) dto.PassengerOrderResponse {
 	responseBody := dto.PassengerOrderResponse{
 		OrderID:  details.Order.ID,
 		CarClass: "",
@@ -342,6 +361,7 @@ func passengerOrderResponse(details PassengerOrderDetails) dto.PassengerOrderRes
 		AllowedActions: passengerAllowedActions(details.Order.Status),
 		Timeline:       []dto.OrderTimelineItem{{Status: details.Order.Status, OccurredAt: details.Order.CreatedAt}},
 		Version:        details.Order.Version,
+		Pricing:        pricingResponse(details.Pricing, details.Order.AssignedTariffID, details.Order.ParkID),
 	}
 
 	if details.Order.DestinationLocation != nil {
@@ -355,12 +375,27 @@ func passengerOrderResponse(details PassengerOrderDetails) dto.PassengerOrderRes
 			Amount:   details.Order.EstimatedPrice.Amount,
 			Currency: details.Order.EstimatedPrice.Currency,
 		}
+		if responseBody.Pricing.EstimatedPrice == nil {
+			responseBody.Pricing.EstimatedPrice = &dto.MoneyResponse{
+				Amount:   details.Order.EstimatedPrice.Amount,
+				Currency: details.Order.EstimatedPrice.Currency,
+			}
+			responseBody.Pricing.EstimatedPriceMin = responseBody.Pricing.EstimatedPrice
+			responseBody.Pricing.EstimatedPriceMax = responseBody.Pricing.EstimatedPrice
+			responseBody.Pricing.PriceAvailable = true
+		}
 	}
 	if details.Order.FinalPrice != nil {
 		responseBody.Price = &dto.MoneyResponse{
 			Amount:   details.Order.FinalPrice.Amount,
 			Currency: details.Order.FinalPrice.Currency,
 		}
+		responseBody.Pricing.FinalPrice = &dto.MoneyResponse{
+			Amount:   details.Order.FinalPrice.Amount,
+			Currency: details.Order.FinalPrice.Currency,
+		}
+		responseBody.Pricing.IsFinal = true
+		responseBody.Pricing.PriceAvailable = true
 	}
 	if details.CarClass != nil {
 		responseBody.CarClassID = &details.CarClass.ID
@@ -388,6 +423,118 @@ func passengerOrderResponse(details PassengerOrderDetails) dto.PassengerOrderRes
 		}
 	}
 
+	return responseBody
+}
+
+type passengerEstimateDetails struct {
+	DistanceKM      float64
+	DurationMinutes int64
+	PriceAmount     *int64
+	Pricing         domain.OrderPricingSnapshot
+}
+
+func (details passengerEstimateDetails) estimatedMoney(currency string) *domain.Money {
+	if details.PriceAmount == nil {
+		return nil
+	}
+	return &domain.Money{Amount: *details.PriceAmount, Currency: currency}
+}
+
+func (service *OrderService) buildPassengerEstimate(ctx context.Context, carClass domain.CarClass, cityID uuid.UUID, pickup geodomain.Coordinates, destination geodomain.Coordinates) (passengerEstimateDetails, error) {
+	distanceKM, durationMinutes, priceAmount, err := service.estimateOrder(ctx, carClass, pickup, destination)
+	if err != nil {
+		return passengerEstimateDetails{}, err
+	}
+
+	searchRadiusMeters, priceAvailable, err := service.resolvePassengerEstimateAvailability(ctx, pickup, cityID, carClass.ID)
+	if err != nil {
+		return passengerEstimateDetails{}, err
+	}
+
+	mode := pricingModeForCarClass(carClass)
+	snapshot := domain.OrderPricingSnapshot{
+		EstimatedPriceSource: domain.EstimatedPriceSourceCarClassCatalog,
+		PricingMode:          mode,
+		PriceAvailable:       priceAvailable,
+		IsFinal:              false,
+		CalculatedAt:         time.Now().UTC(),
+		SearchRadiusMeters:   searchRadiusMeters,
+	}
+	if !priceAvailable {
+		snapshot.EstimatedPriceSource = domain.EstimatedPriceSourceUnavailable
+		snapshot.Message = "Цена будет рассчитана после назначения водителя"
+		return passengerEstimateDetails{
+			DistanceKM:      distanceKM,
+			DurationMinutes: durationMinutes,
+			Pricing:         snapshot,
+		}, nil
+	}
+
+	snapshot.EstimatedPrice = &domain.Money{Amount: priceAmount, Currency: carClass.BasePrice.Currency}
+	snapshot.EstimatedPriceMin = &domain.Money{Amount: priceAmount, Currency: carClass.BasePrice.Currency}
+	snapshot.EstimatedPriceMax = &domain.Money{Amount: priceAmount, Currency: carClass.BasePrice.Currency}
+
+	return passengerEstimateDetails{
+		DistanceKM:      distanceKM,
+		DurationMinutes: durationMinutes,
+		PriceAmount:     &priceAmount,
+		Pricing:         snapshot,
+	}, nil
+}
+
+func (service *OrderService) resolvePassengerEstimateAvailability(ctx context.Context, pickup geodomain.Coordinates, cityID uuid.UUID, carClassID uuid.UUID) (*int, bool, error) {
+	for _, radius := range []int{5000, 10000} {
+		exists, err := service.orderRepository.HasNearbyAvailableDrivers(ctx, pickup, cityID, carClassID, radius, 2*time.Minute)
+		if err != nil {
+			return nil, false, fmt.Errorf("check nearby drivers for estimate: %w", err)
+		}
+		if exists {
+			return &radius, true, nil
+		}
+	}
+	return nil, false, nil
+}
+
+func pricingModeForCarClass(carClass domain.CarClass) domain.PricingMode {
+	hasDistance := carClass.PricePerKM.Amount > 0
+	hasTime := carClass.PricePerMinute.Amount > 0
+	switch {
+	case !hasDistance && !hasTime:
+		return domain.PricingModeFixed
+	case hasDistance && hasTime:
+		return domain.PricingModeDistanceTime
+	case hasDistance:
+		return domain.PricingModeDistance
+	case hasTime:
+		return domain.PricingModeTime
+	default:
+		return domain.PricingModeUnknown
+	}
+}
+
+func pricingResponse(snapshot *domain.OrderPricingSnapshot, assignedTariffID *uuid.UUID, assignedTaxiParkID *uuid.UUID) dto.OrderPricingResponse {
+	responseBody := dto.OrderPricingResponse{
+		PriceAvailable:     snapshot != nil && snapshot.PriceAvailable,
+		AssignedTariffID:   assignedTariffID,
+		AssignedTaxiParkID: assignedTaxiParkID,
+	}
+	if snapshot == nil {
+		return responseBody
+	}
+	responseBody.EstimatedPriceSource = string(snapshot.EstimatedPriceSource)
+	responseBody.PricingMode = string(snapshot.PricingMode)
+	responseBody.IsFinal = snapshot.IsFinal
+	responseBody.Message = snapshot.Message
+	responseBody.SearchRadiusMeters = snapshot.SearchRadiusMeters
+	if snapshot.EstimatedPrice != nil {
+		responseBody.EstimatedPrice = &dto.MoneyResponse{Amount: snapshot.EstimatedPrice.Amount, Currency: snapshot.EstimatedPrice.Currency}
+	}
+	if snapshot.EstimatedPriceMin != nil {
+		responseBody.EstimatedPriceMin = &dto.MoneyResponse{Amount: snapshot.EstimatedPriceMin.Amount, Currency: snapshot.EstimatedPriceMin.Currency}
+	}
+	if snapshot.EstimatedPriceMax != nil {
+		responseBody.EstimatedPriceMax = &dto.MoneyResponse{Amount: snapshot.EstimatedPriceMax.Amount, Currency: snapshot.EstimatedPriceMax.Currency}
+	}
 	return responseBody
 }
 

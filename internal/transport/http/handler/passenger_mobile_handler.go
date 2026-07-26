@@ -46,7 +46,7 @@ type PassengerMobileHandler struct {
 	profileUseCase PassengerProfileUseCase
 }
 
-func NewPassengerMobileHandler(profileUseCase PassengerProfileUseCase, orderUseCase PassengerOrderUseCase) *PassengerMobileHandler {
+func NewPassengerMobileHandler(profileUseCase PassengerProfileUseCase, _ PassengerOrderUseCase) *PassengerMobileHandler {
 	return &PassengerMobileHandler{profileUseCase: profileUseCase}
 }
 

@@ -14,16 +14,16 @@ var (
 )
 
 type PassengerPushToken struct {
-	ID         uuid.UUID
+	ID          uuid.UUID
 	PassengerID uuid.UUID
-	Token      string
-	Platform   string
-	DeviceID   string
-	IsActive   bool
-	LastSeenAt time.Time
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
-	DeletedAt  *time.Time
+	Token       string
+	Platform    string
+	DeviceID    string
+	IsActive    bool
+	LastSeenAt  time.Time
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	DeletedAt   *time.Time
 }
 
 func NormalizePushPlatform(value string) string {

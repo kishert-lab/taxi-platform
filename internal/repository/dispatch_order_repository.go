@@ -105,13 +105,31 @@ func (repository *PostgresDispatchOrderRepository) AssignDriver(ctx context.Cont
 		    	FROM drivers d
 		    	WHERE d.id = $2
 		    ),
+		    assigned_tariff_id = (
+		    	SELECT tariff.id
+		    	FROM drivers d
+		    	JOIN taxi_park_tariffs tariff ON tariff.taxi_park_id = d.taxi_park_id
+		    	WHERE d.id = $2
+		    	  AND tariff.car_class_id = orders.car_class_id
+		    	  AND tariff.is_active = true
+		    	ORDER BY tariff.created_at DESC
+		    	LIMIT 1
+		    ),
 		    status = 'driver_assigned',
 		    accepted_at = $3,
 		    version = version + 1
 		WHERE id = $1
 		  AND status = 'searching'
 		  AND driver_id IS NULL
-		  AND deleted_at IS NULL`
+		  AND deleted_at IS NULL
+		  AND EXISTS (
+		  	SELECT 1
+		  	FROM drivers d
+		  	JOIN taxi_park_tariffs tariff ON tariff.taxi_park_id = d.taxi_park_id
+		  	WHERE d.id = $2
+		  	  AND tariff.car_class_id = orders.car_class_id
+		  	  AND tariff.is_active = true
+		  )`
 
 	commandTag, err := repository.pool.Exec(ctx, query, orderID, driverID, acceptedAt)
 	if err != nil {
@@ -259,6 +277,7 @@ const dispatchOrderSelectColumns = `
 	preassigned_driver_id,
 	city_id,
 	tariff_id,
+	assigned_tariff_id,
 	car_class_id,
 	status,
 	order_type,
@@ -301,6 +320,7 @@ func scanDispatchOrder(row pgx.Row) (domain.Order, error) {
 	var parkID pgtype.UUID
 	var preassignedDriverID pgtype.UUID
 	var tariffID pgtype.UUID
+	var assignedTariffID pgtype.UUID
 	var carClassID pgtype.UUID
 	var scheduledCreatedBy pgtype.UUID
 	var destinationLatitude pgtype.Float8
@@ -328,6 +348,7 @@ func scanDispatchOrder(row pgx.Row) (domain.Order, error) {
 		&preassignedDriverID,
 		&order.CityID,
 		&tariffID,
+		&assignedTariffID,
 		&carClassID,
 		&order.Status,
 		&order.OrderType,
@@ -391,6 +412,10 @@ func scanDispatchOrder(row pgx.Row) (domain.Order, error) {
 	if tariffID.Valid {
 		value := uuid.UUID(tariffID.Bytes)
 		order.TariffID = &value
+	}
+	if assignedTariffID.Valid {
+		value := uuid.UUID(assignedTariffID.Bytes)
+		order.AssignedTariffID = &value
 	}
 	if carClassID.Valid {
 		value := uuid.UUID(carClassID.Bytes)

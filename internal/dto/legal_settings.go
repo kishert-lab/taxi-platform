@@ -119,8 +119,11 @@ type TaxiParkScheduledSettingsPatchRequest struct {
 
 type TaxiParkTariffRequest struct {
 	Name                string          `json:"name" binding:"required" example:"Park Economy"`
+	CarClassID          *uuid.UUID      `json:"car_class_id,omitempty" example:"33333333-3333-3333-3333-333333333333"`
 	Description         string          `json:"description,omitempty" example:"Local economy tariff"`
+	PricingMode         string          `json:"pricing_mode" binding:"omitempty,oneof=fixed distance time distance_time" example:"distance_time"`
 	BasePriceCents      int64           `json:"base_price_cents" binding:"min=0" example:"10000"`
+	FixedPriceCents     int64           `json:"fixed_price_cents" binding:"min=0" example:"25000"`
 	PricePerKMCents     int64           `json:"price_per_km_cents" binding:"min=0" example:"2500"`
 	PricePerMinuteCents int64           `json:"price_per_minute_cents" binding:"min=0" example:"500"`
 	MinimumPriceCents   int64           `json:"minimum_price_cents" binding:"min=0" example:"18000"`
@@ -130,8 +133,11 @@ type TaxiParkTariffRequest struct {
 
 type TaxiParkTariffPatchRequest struct {
 	Name                *string         `json:"name,omitempty" example:"Park Economy"`
+	CarClassID          *uuid.UUID      `json:"car_class_id,omitempty" example:"33333333-3333-3333-3333-333333333333"`
 	Description         *string         `json:"description,omitempty" example:"Local economy tariff"`
+	PricingMode         *string         `json:"pricing_mode,omitempty" binding:"omitempty,oneof=fixed distance time distance_time" example:"distance_time"`
 	BasePriceCents      *int64          `json:"base_price_cents,omitempty" binding:"omitempty,min=0" example:"10000"`
+	FixedPriceCents     *int64          `json:"fixed_price_cents,omitempty" binding:"omitempty,min=0" example:"25000"`
 	PricePerKMCents     *int64          `json:"price_per_km_cents,omitempty" binding:"omitempty,min=0" example:"2500"`
 	PricePerMinuteCents *int64          `json:"price_per_minute_cents,omitempty" binding:"omitempty,min=0" example:"500"`
 	MinimumPriceCents   *int64          `json:"minimum_price_cents,omitempty" binding:"omitempty,min=0" example:"18000"`
@@ -142,9 +148,12 @@ type TaxiParkTariffPatchRequest struct {
 type TaxiParkTariffResponse struct {
 	ID             uuid.UUID          `json:"id" example:"33333333-3333-3333-3333-333333333333"`
 	TaxiParkID     uuid.UUID          `json:"taxi_park_id" example:"22222222-2222-2222-2222-222222222222"`
+	CarClassID     *uuid.UUID         `json:"car_class_id,omitempty" example:"33333333-3333-3333-3333-333333333333"`
 	Name           string             `json:"name" example:"Park Economy"`
 	Description    string             `json:"description,omitempty" example:"Local economy tariff"`
+	PricingMode    string             `json:"pricing_mode" example:"distance_time"`
 	BasePrice      MoneyCentsResponse `json:"base_price"`
+	FixedPrice     MoneyCentsResponse `json:"fixed_price"`
 	PricePerKM     MoneyCentsResponse `json:"price_per_km"`
 	PricePerMinute MoneyCentsResponse `json:"price_per_minute"`
 	MinimumPrice   MoneyCentsResponse `json:"minimum_price"`
@@ -250,9 +259,12 @@ func TaxiParkTariffFromDomain(tariff domain.TaxiParkTariff) TaxiParkTariffRespon
 	return TaxiParkTariffResponse{
 		ID:             tariff.ID,
 		TaxiParkID:     tariff.TaxiParkID,
+		CarClassID:     tariff.CarClassID,
 		Name:           tariff.Name,
 		Description:    tariff.Description,
+		PricingMode:    string(tariff.PricingMode),
 		BasePrice:      MoneyCentsFromDomain(tariff.BasePrice),
+		FixedPrice:     MoneyCentsFromDomain(tariff.FixedPrice),
 		PricePerKM:     MoneyCentsFromDomain(tariff.PricePerKM),
 		PricePerMinute: MoneyCentsFromDomain(tariff.PricePerMinute),
 		MinimumPrice:   MoneyCentsFromDomain(tariff.MinimumPrice),

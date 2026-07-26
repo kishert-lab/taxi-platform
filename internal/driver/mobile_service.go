@@ -155,6 +155,9 @@ type CurrentOrder struct {
 	DestinationLocation   *domain.Coordinates
 	Status                domain.OrderStatus
 	Price                 *domain.Money
+	AssignedTariffID      *uuid.UUID
+	AssignedTaxiParkID    *uuid.UUID
+	PricingMode           domain.PricingMode
 	Comment               string
 	Version               int
 	CreatedAt             time.Time
@@ -969,7 +972,7 @@ func canAppendOrderRoutePoints(status domain.OrderStatus) bool {
 }
 
 func requestIDFromContext(ctx context.Context) string {
-	requestID, _ := ctx.Value(response.RequestIDContextKey).(string)
+	requestID, _ := ctx.Value(response.RequestIDValueContextKey).(string)
 	return requestID
 }
 

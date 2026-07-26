@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -35,7 +36,12 @@ func (repository *PostgresPassengerRefreshTokenRepository) Rotate(ctx context.Co
 	if err != nil {
 		return fmt.Errorf("begin passenger refresh rotation: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() {
+		rollbackErr := tx.Rollback(ctx)
+		if rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) {
+			err = fmt.Errorf("rollback passenger refresh rotation: %w", rollbackErr)
+		}
+	}()
 
 	tag, err := tx.Exec(ctx, `
 		UPDATE passenger_refresh_tokens

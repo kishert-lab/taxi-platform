@@ -36,6 +36,7 @@
       retries: 5
     networks:
       - network-taxi-api 
+      
   pelias-elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:7.17.23
     container_name: taxi_pelias_elasticsearch
@@ -141,18 +142,18 @@
       TAXI_SERVER_HOST: 0.0.0.0
       TAXI_SERVER_PORT: 8080
       TAXI_SERVER_MODE: release
-      TAXI_DATABASE_HOST: 172.22.0.5
+      TAXI_DATABASE_HOST: postgres
       TAXI_DATABASE_PORT: 5432
       TAXI_DATABASE_USER: taxi
       TAXI_DATABASE_PASSWORD: taxi_password
       TAXI_DATABASE_NAME: taxi
       TAXI_DATABASE_SSL_MODE: disable
-      TAXI_REDIS_HOST: 172.22.0.3
+      TAXI_REDIS_HOST: redis
       TAXI_REDIS_PORT: 6379
       TAXI_JWT_ACCESS_SECRET: docker_access_secret_change_in_production_32_bytes
       TAXI_JWT_REFRESH_SECRET: docker_refresh_secret_change_in_production_32_bytes
       TAXI_LOGGER_LEVEL: debug
-      TAXI_GEOCODER_PELIAS_URL: ${GEOCODER_PELIAS_URL:-http://172.22.0.7:4000}
+      TAXI_GEOCODER_PELIAS_URL: ${GEOCODER_PELIAS_URL:-http://pelias:4000}
       TAXI_GEOCODER_YANDEX_API_KEY: ${GEOCODER_YANDEX_API_KEY:-}
       TAXI_GEOCODER_YANDEX_ENABLED: false
       TAXI_GEOCODER_DADATA_API_KEY: ${GEOCODER_DADATA_API_KEY:-}

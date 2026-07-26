@@ -57,9 +57,12 @@ type TaxiParkSettings struct {
 type TaxiParkTariff struct {
 	ID             uuid.UUID
 	TaxiParkID     uuid.UUID
+	CarClassID     *uuid.UUID
 	Name           string
 	Description    string
+	PricingMode    PricingMode
 	BasePrice      Money
+	FixedPrice     Money
 	PricePerKM     Money
 	PricePerMinute Money
 	MinimumPrice   Money

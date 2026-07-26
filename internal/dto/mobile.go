@@ -95,16 +95,17 @@ type OrderEstimateRequest struct {
 }
 
 type OrderEstimateResponse struct {
-	TariffID     uuid.UUID  `json:"tariff_id" example:"22222222-2222-2222-2222-222222222222"`
-	TariffName   string     `json:"tariff_name" example:"Economy"`
-	CarClassID   *uuid.UUID `json:"car_class_id,omitempty" example:"33333333-3333-3333-3333-333333333333"`
-	CarClassName string     `json:"car_class_name,omitempty" example:"Эконом"`
-	CarClass     string     `json:"car_class,omitempty" example:"economy"`
-	DistanceKM   float64    `json:"distance_km" example:"4.2"`
-	DurationMin  int64      `json:"duration_min" example:"11"`
-	Price        int64      `json:"price" example:"250"`
-	Currency     string     `json:"currency" example:"RUB"`
-	PriceType    string     `json:"price_type" example:"estimated"`
+	TariffID     uuid.UUID            `json:"tariff_id" example:"22222222-2222-2222-2222-222222222222"`
+	TariffName   string               `json:"tariff_name" example:"Economy"`
+	CarClassID   *uuid.UUID           `json:"car_class_id,omitempty" example:"33333333-3333-3333-3333-333333333333"`
+	CarClassName string               `json:"car_class_name,omitempty" example:"Эконом"`
+	CarClass     string               `json:"car_class,omitempty" example:"economy"`
+	DistanceKM   float64              `json:"distance_km" example:"4.2"`
+	DurationMin  int64                `json:"duration_min" example:"11"`
+	Price        int64                `json:"price" example:"250"`
+	Currency     string               `json:"currency" example:"RUB"`
+	PriceType    string               `json:"price_type" example:"estimated"`
+	Pricing      OrderPricingResponse `json:"pricing"`
 }
 
 type PassengerCreateOrderRequest struct {
@@ -124,22 +125,38 @@ type PassengerCreateOrderRequest struct {
 }
 
 type PassengerOrderResponse struct {
-	OrderID          uuid.UUID           `json:"order_id" example:"44444444-4444-4444-4444-444444444444"`
-	Driver           *AssignedDriverDTO  `json:"driver,omitempty"`
-	Car              *CarDTO             `json:"car,omitempty"`
-	CarClassID       *uuid.UUID          `json:"car_class_id,omitempty" example:"33333333-3333-3333-3333-333333333333"`
-	CarClassName     string              `json:"car_class_name,omitempty" example:"Эконом"`
-	CarClass         string              `json:"car_class,omitempty" example:"economy"`
-	PickupPoint      PointDTO            `json:"pickup_point"`
-	PickupEntrance   string              `json:"pickup_entrance,omitempty" example:"2"`
-	PickupComment    string              `json:"pickup_comment,omitempty" example:"Вход со двора"`
-	DestinationPoint PointDTO            `json:"destination_point"`
-	Status           domain.OrderStatus  `json:"status" example:"driver_arriving"`
-	Price            *MoneyResponse      `json:"price,omitempty"`
-	ETASeconds       *int64              `json:"eta_seconds,omitempty" example:"420"`
-	AllowedActions   []string            `json:"allowed_actions" example:"cancel,call_driver"`
-	Timeline         []OrderTimelineItem `json:"timeline,omitempty"`
-	Version          int                 `json:"version" example:"3"`
+	OrderID          uuid.UUID            `json:"order_id" example:"44444444-4444-4444-4444-444444444444"`
+	Driver           *AssignedDriverDTO   `json:"driver,omitempty"`
+	Car              *CarDTO              `json:"car,omitempty"`
+	CarClassID       *uuid.UUID           `json:"car_class_id,omitempty" example:"33333333-3333-3333-3333-333333333333"`
+	CarClassName     string               `json:"car_class_name,omitempty" example:"Эконом"`
+	CarClass         string               `json:"car_class,omitempty" example:"economy"`
+	PickupPoint      PointDTO             `json:"pickup_point"`
+	PickupEntrance   string               `json:"pickup_entrance,omitempty" example:"2"`
+	PickupComment    string               `json:"pickup_comment,omitempty" example:"Вход со двора"`
+	DestinationPoint PointDTO             `json:"destination_point"`
+	Status           domain.OrderStatus   `json:"status" example:"driver_arriving"`
+	Price            *MoneyResponse       `json:"price,omitempty"`
+	Pricing          OrderPricingResponse `json:"pricing"`
+	ETASeconds       *int64               `json:"eta_seconds,omitempty" example:"420"`
+	AllowedActions   []string             `json:"allowed_actions" example:"cancel,call_driver"`
+	Timeline         []OrderTimelineItem  `json:"timeline,omitempty"`
+	Version          int                  `json:"version" example:"3"`
+}
+
+type OrderPricingResponse struct {
+	EstimatedPrice       *MoneyResponse `json:"estimated_price,omitempty"`
+	EstimatedPriceMin    *MoneyResponse `json:"estimated_price_min,omitempty"`
+	EstimatedPriceMax    *MoneyResponse `json:"estimated_price_max,omitempty"`
+	EstimatedPriceSource string         `json:"estimated_price_source,omitempty" example:"car_class_catalog"`
+	PricingMode          string         `json:"pricing_mode,omitempty" example:"distance_time"`
+	FinalPrice           *MoneyResponse `json:"final_price,omitempty"`
+	PriceAvailable       bool           `json:"price_available"`
+	IsFinal              bool           `json:"is_final"`
+	Message              string         `json:"message,omitempty" example:"Цена будет рассчитана после назначения водителя"`
+	SearchRadiusMeters   *int           `json:"search_radius_meters,omitempty" example:"5000"`
+	AssignedTariffID     *uuid.UUID     `json:"assigned_tariff_id,omitempty" example:"22222222-2222-2222-2222-222222222222"`
+	AssignedTaxiParkID   *uuid.UUID     `json:"assigned_taxi_park_id,omitempty" example:"55555555-5555-5555-5555-555555555555"`
 }
 
 type PassengerCarClassResponse struct {

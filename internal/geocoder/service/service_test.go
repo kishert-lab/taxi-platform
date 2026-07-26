@@ -411,12 +411,12 @@ func testResult(provider geodomain.Provider, confidence float64) geodomain.Searc
 }
 
 type fakeClient struct {
-	results             []geodomain.SearchResult
-	searchResultsQueue  [][]geodomain.SearchResult
-	err                 error
-	calls               int
-	lastRequest         geodomain.SearchRequest
-	requests            []geodomain.SearchRequest
+	results            []geodomain.SearchResult
+	searchResultsQueue [][]geodomain.SearchResult
+	err                error
+	calls              int
+	lastRequest        geodomain.SearchRequest
+	requests           []geodomain.SearchRequest
 }
 
 func (client *fakeClient) Search(_ context.Context, request geodomain.SearchRequest) ([]geodomain.SearchResult, error) {

@@ -152,12 +152,16 @@ func (repository *PostgresDriverMobileRepository) GetCurrentOrderByUserID(ctx co
 		           WHEN o.estimated_price IS NOT NULL THEN (o.estimated_price * 100)::bigint
 		           ELSE NULL
 		       END AS price_amount,
+		       o.assigned_tariff_id,
+		       o.park_id,
+		       COALESCE(assigned_tariff.pricing_mode, '') AS pricing_mode,
 		       COALESCE(o.passenger_comment, '') AS passenger_comment,
 		       o.version,
 		       o.created_at
 		FROM orders o
 		JOIN drivers d ON d.id = o.driver_id
 		JOIN passengers p ON p.id = o.passenger_id
+		LEFT JOIN taxi_park_tariffs assigned_tariff ON assigned_tariff.id = o.assigned_tariff_id
 		WHERE d.user_id = $1
 		  AND d.deleted_at IS NULL
 		  AND o.deleted_at IS NULL
@@ -195,12 +199,16 @@ func (repository *PostgresDriverMobileRepository) GetOrderByUserID(ctx context.C
 		           WHEN o.estimated_price IS NOT NULL THEN (o.estimated_price * 100)::bigint
 		           ELSE NULL
 		       END AS price_amount,
+		       o.assigned_tariff_id,
+		       o.park_id,
+		       COALESCE(assigned_tariff.pricing_mode, '') AS pricing_mode,
 		       COALESCE(o.passenger_comment, '') AS passenger_comment,
 		       o.version,
 		       o.created_at
 		FROM orders o
 		JOIN drivers d ON d.id = o.driver_id
 		JOIN passengers p ON p.id = o.passenger_id
+		LEFT JOIN taxi_park_tariffs assigned_tariff ON assigned_tariff.id = o.assigned_tariff_id
 		WHERE o.id = $1
 		  AND d.user_id = $2
 		  AND d.deleted_at IS NULL
@@ -239,12 +247,16 @@ func (repository *PostgresDriverMobileRepository) ListOrderHistoryByUserID(ctx c
 		           WHEN o.estimated_price IS NOT NULL THEN (o.estimated_price * 100)::bigint
 		           ELSE NULL
 		       END AS price_amount,
+		       o.assigned_tariff_id,
+		       o.park_id,
+		       COALESCE(assigned_tariff.pricing_mode, '') AS pricing_mode,
 		       COALESCE(o.passenger_comment, '') AS passenger_comment,
 		       o.version,
 		       o.created_at
 		FROM orders o
 		JOIN drivers d ON d.id = o.driver_id
 		JOIN passengers p ON p.id = o.passenger_id
+		LEFT JOIN taxi_park_tariffs assigned_tariff ON assigned_tariff.id = o.assigned_tariff_id
 		WHERE d.user_id = $1
 		  AND d.deleted_at IS NULL
 		  AND o.deleted_at IS NULL
@@ -292,12 +304,16 @@ func selectDriverCurrentOrderByID(ctx context.Context, transaction pgx.Tx, userI
 		           WHEN o.estimated_price IS NOT NULL THEN (o.estimated_price * 100)::bigint
 		           ELSE NULL
 		       END AS price_amount,
+		       o.assigned_tariff_id,
+		       o.park_id,
+		       COALESCE(assigned_tariff.pricing_mode, '') AS pricing_mode,
 		       COALESCE(o.passenger_comment, '') AS passenger_comment,
 		       o.version,
 		       o.created_at
 		FROM orders o
 		JOIN drivers d ON d.id = o.driver_id
 		JOIN passengers p ON p.id = o.passenger_id
+		LEFT JOIN taxi_park_tariffs assigned_tariff ON assigned_tariff.id = o.assigned_tariff_id
 		WHERE o.id = $1
 		  AND d.user_id = $2
 		  AND d.deleted_at IS NULL

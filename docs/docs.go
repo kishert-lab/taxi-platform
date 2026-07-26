@@ -8873,6 +8873,9 @@ const docTemplate = `{
                     "type": "string",
                     "example": "estimated"
                 },
+                "pricing": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.OrderPricingResponse"
+                },
                 "tariff_id": {
                     "type": "string",
                     "example": "22222222-2222-2222-2222-222222222222"
@@ -8968,6 +8971,53 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.PassengerOrderResponse"
                     }
+                }
+            }
+        },
+        "github_com_kishert-lab_taxi-platform_internal_dto.OrderPricingResponse": {
+            "type": "object",
+            "properties": {
+                "assigned_tariff_id": {
+                    "type": "string",
+                    "example": "22222222-2222-2222-2222-222222222222"
+                },
+                "assigned_taxi_park_id": {
+                    "type": "string",
+                    "example": "55555555-5555-5555-5555-555555555555"
+                },
+                "estimated_price": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.MoneyResponse"
+                },
+                "estimated_price_max": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.MoneyResponse"
+                },
+                "estimated_price_min": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.MoneyResponse"
+                },
+                "estimated_price_source": {
+                    "type": "string",
+                    "example": "car_class_catalog"
+                },
+                "final_price": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.MoneyResponse"
+                },
+                "is_final": {
+                    "type": "boolean"
+                },
+                "message": {
+                    "type": "string",
+                    "example": "Цена будет рассчитана после назначения водителя"
+                },
+                "price_available": {
+                    "type": "boolean"
+                },
+                "pricing_mode": {
+                    "type": "string",
+                    "example": "distance_time"
+                },
+                "search_radius_meters": {
+                    "type": "integer",
+                    "example": 5000
                 }
             }
         },
@@ -9297,6 +9347,9 @@ const docTemplate = `{
                 },
                 "price": {
                     "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.MoneyResponse"
+                },
+                "pricing": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.OrderPricingResponse"
                 },
                 "status": {
                     "allOf": [
@@ -11688,9 +11741,18 @@ const docTemplate = `{
                     "minimum": 0,
                     "example": 10000
                 },
+                "car_class_id": {
+                    "type": "string",
+                    "example": "33333333-3333-3333-3333-333333333333"
+                },
                 "description": {
                     "type": "string",
                     "example": "Local economy tariff"
+                },
+                "fixed_price_cents": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "example": 25000
                 },
                 "fixed_routes": {
                     "type": "array",
@@ -11720,6 +11782,16 @@ const docTemplate = `{
                     "type": "integer",
                     "minimum": 0,
                     "example": 500
+                },
+                "pricing_mode": {
+                    "type": "string",
+                    "enum": [
+                        "fixed",
+                        "distance",
+                        "time",
+                        "distance_time"
+                    ],
+                    "example": "distance_time"
                 }
             }
         },
@@ -11734,9 +11806,18 @@ const docTemplate = `{
                     "minimum": 0,
                     "example": 10000
                 },
+                "car_class_id": {
+                    "type": "string",
+                    "example": "33333333-3333-3333-3333-333333333333"
+                },
                 "description": {
                     "type": "string",
                     "example": "Local economy tariff"
+                },
+                "fixed_price_cents": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "example": 25000
                 },
                 "fixed_routes": {
                     "type": "array",
@@ -11766,6 +11847,16 @@ const docTemplate = `{
                     "type": "integer",
                     "minimum": 0,
                     "example": 500
+                },
+                "pricing_mode": {
+                    "type": "string",
+                    "enum": [
+                        "fixed",
+                        "distance",
+                        "time",
+                        "distance_time"
+                    ],
+                    "example": "distance_time"
                 }
             }
         },
@@ -11775,6 +11866,10 @@ const docTemplate = `{
                 "base_price": {
                     "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.MoneyCentsResponse"
                 },
+                "car_class_id": {
+                    "type": "string",
+                    "example": "33333333-3333-3333-3333-333333333333"
+                },
                 "created_at": {
                     "type": "string",
                     "example": "2026-05-12T12:00:00Z"
@@ -11782,6 +11877,9 @@ const docTemplate = `{
                 "description": {
                     "type": "string",
                     "example": "Local economy tariff"
+                },
+                "fixed_price": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.MoneyCentsResponse"
                 },
                 "fixed_routes": {
                     "type": "object",
@@ -11809,6 +11907,10 @@ const docTemplate = `{
                 },
                 "price_per_minute": {
                     "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.MoneyCentsResponse"
+                },
+                "pricing_mode": {
+                    "type": "string",
+                    "example": "distance_time"
                 },
                 "taxi_park_id": {
                     "type": "string",

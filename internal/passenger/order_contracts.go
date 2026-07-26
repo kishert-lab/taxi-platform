@@ -14,13 +14,15 @@ import (
 
 type OrderRepository interface {
 	ListActiveCarClasses(ctx context.Context) ([]domain.CarClass, error)
+	ListAvailableCarClasses(ctx context.Context, pickup geodomain.Coordinates, cityID uuid.UUID, radiusMeters int, locationMaxAge time.Duration) ([]domain.CarClass, error)
 	GetActiveCarClassByID(ctx context.Context, carClassID uuid.UUID) (domain.CarClass, error)
 	EstimateRoute(ctx context.Context, pickup geodomain.Coordinates, destination geodomain.Coordinates) (float64, error)
-	CreatePassengerOrder(ctx context.Context, record CreateOrderRecord) (PassengerOrderDetails, error)
-	GetCurrentPassengerOrder(ctx context.Context, passengerID uuid.UUID) (PassengerOrderDetails, error)
-	ListPassengerOrderHistory(ctx context.Context, passengerID uuid.UUID, limit int) ([]PassengerOrderDetails, error)
-	GetPassengerOrder(ctx context.Context, passengerID uuid.UUID, orderID uuid.UUID) (PassengerOrderDetails, error)
-	CancelPassengerOrder(ctx context.Context, passengerID uuid.UUID, orderID uuid.UUID, reason string, cancelledAt time.Time) (PassengerOrderDetails, error)
+	HasNearbyAvailableDrivers(ctx context.Context, pickup geodomain.Coordinates, cityID uuid.UUID, carClassID uuid.UUID, radiusMeters int, locationMaxAge time.Duration) (bool, error)
+	CreatePassengerOrder(ctx context.Context, record CreateOrderRecord) (OrderDetails, error)
+	GetCurrentPassengerOrder(ctx context.Context, passengerID uuid.UUID) (OrderDetails, error)
+	ListPassengerOrderHistory(ctx context.Context, passengerID uuid.UUID, limit int) ([]OrderDetails, error)
+	GetPassengerOrder(ctx context.Context, passengerID uuid.UUID, orderID uuid.UUID) (OrderDetails, error)
+	CancelPassengerOrder(ctx context.Context, passengerID uuid.UUID, orderID uuid.UUID, reason string, cancelledAt time.Time) (OrderDetails, error)
 }
 
 type DispatchQueue interface {
@@ -32,7 +34,7 @@ type CityResolver interface {
 }
 
 type OrdersUseCase interface {
-	ListPassengerCarClasses(ctx context.Context, passengerID uuid.UUID) (dto.PassengerCarClassesResponse, error)
+	ListPassengerCarClasses(ctx context.Context, passengerID uuid.UUID, pickup *geodomain.Coordinates) (dto.PassengerCarClassesResponse, error)
 	EstimatePassengerOrder(ctx context.Context, passengerID uuid.UUID, request dto.OrderEstimateRequest) (dto.OrderEstimateResponse, error)
 	CreatePassengerOrder(ctx context.Context, passengerID uuid.UUID, request dto.PassengerCreateOrderRequest) (dto.PassengerOrderResponse, error)
 	GetCurrentPassengerOrder(ctx context.Context, passengerID uuid.UUID) (dto.PassengerOrderResponse, error)
@@ -52,20 +54,22 @@ type CreateOrderRecord struct {
 	PickupLocation                  geodomain.Coordinates
 	DestinationAddress              string
 	DestinationLocation             geodomain.Coordinates
-	EstimatedPrice                  domain.Money
+	EstimatedPrice                  *domain.Money
+	PricingSnapshot                 *domain.OrderPricingSnapshot
 	PaymentMethod                   domain.PaymentMethod
 	PassengerComment                string
 	PassengerLocationSharingEnabled bool
 }
 
-type PassengerOrderDetails struct {
+type OrderDetails struct {
 	Order    domain.Order
 	CarClass *domain.CarClass
-	Driver   *PassengerAssignedDriver
-	Car      *PassengerAssignedCar
+	Driver   *AssignedDriver
+	Car      *AssignedCar
+	Pricing  *domain.OrderPricingSnapshot
 }
 
-type PassengerAssignedDriver struct {
+type AssignedDriver struct {
 	ID           uuid.UUID
 	Name         string
 	Phone        string
@@ -74,7 +78,7 @@ type PassengerAssignedDriver struct {
 	RatingsCount int
 }
 
-type PassengerAssignedCar struct {
+type AssignedCar struct {
 	ID          uuid.UUID
 	Brand       string
 	Model       string

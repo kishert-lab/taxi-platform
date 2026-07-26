@@ -749,5 +749,5 @@ func driverOrderIDs(context *gin.Context) (uuid.UUID, uuid.UUID, bool) {
 }
 
 func contextWithRequestID(ginContext *gin.Context) context.Context {
-	return context.WithValue(ginContext.Request.Context(), response.RequestIDContextKey, ginContext.GetString(response.RequestIDContextKey))
+	return context.WithValue(ginContext.Request.Context(), response.RequestIDValueContextKey, ginContext.GetString(response.RequestIDContextKey))
 }

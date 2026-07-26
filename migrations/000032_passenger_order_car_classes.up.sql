@@ -50,6 +50,99 @@ CREATE INDEX IF NOT EXISTS idx_orders_park_id
 ON orders (park_id)
 WHERE deleted_at IS NULL;
 
+CREATE TEMP TABLE tmp_legacy_passenger_map (
+    legacy_user_id UUID PRIMARY KEY,
+    target_passenger_id UUID NOT NULL
+) ON COMMIT DROP;
+
+INSERT INTO tmp_legacy_passenger_map (legacy_user_id, target_passenger_id)
+SELECT refs.legacy_user_id,
+       COALESCE(existing_passenger.id, refs.legacy_user_id) AS target_passenger_id
+FROM (
+    SELECT DISTINCT passenger_id AS legacy_user_id
+    FROM orders
+    WHERE passenger_id IS NOT NULL
+    UNION
+    SELECT DISTINCT passenger_id AS legacy_user_id
+    FROM order_ratings
+    WHERE passenger_id IS NOT NULL
+    UNION
+    SELECT DISTINCT passenger_id AS legacy_user_id
+    FROM passenger_ratings
+    WHERE passenger_id IS NOT NULL
+    UNION
+    SELECT DISTINCT passenger_id AS legacy_user_id
+    FROM chat_threads
+    WHERE passenger_id IS NOT NULL
+    UNION
+    SELECT DISTINCT passenger_id AS legacy_user_id
+    FROM order_financial_transactions
+    WHERE passenger_id IS NOT NULL
+) refs
+JOIN users legacy_user ON legacy_user.id = refs.legacy_user_id
+LEFT JOIN passengers existing_passenger
+    ON existing_passenger.phone = legacy_user.phone
+   AND existing_passenger.deleted_at IS NULL;
+
+INSERT INTO passengers (
+    id,
+    phone,
+    name,
+    email,
+    avatar_url,
+    is_active,
+    phone_verified_at,
+    last_login_at,
+    created_at,
+    updated_at
+)
+SELECT
+    legacy_user.id,
+    legacy_user.phone,
+    NULLIF(trim(concat_ws(' ', COALESCE(legacy_user.first_name, ''), COALESCE(legacy_user.last_name, ''))), '') AS name,
+    NULLIF(legacy_user.email, '') AS email,
+    NULLIF(legacy_user.profile_photo_url, '') AS avatar_url,
+    legacy_user.is_active,
+    legacy_user.phone_confirmed_at,
+    legacy_user.last_login_at,
+    legacy_user.created_at,
+    legacy_user.updated_at
+FROM tmp_legacy_passenger_map mapping
+JOIN users legacy_user ON legacy_user.id = mapping.legacy_user_id
+LEFT JOIN passengers existing_passenger ON existing_passenger.id = mapping.target_passenger_id
+WHERE mapping.target_passenger_id = mapping.legacy_user_id
+  AND existing_passenger.id IS NULL;
+
+UPDATE orders record
+SET passenger_id = mapping.target_passenger_id
+FROM tmp_legacy_passenger_map mapping
+WHERE record.passenger_id = mapping.legacy_user_id
+  AND record.passenger_id <> mapping.target_passenger_id;
+
+UPDATE order_ratings record
+SET passenger_id = mapping.target_passenger_id
+FROM tmp_legacy_passenger_map mapping
+WHERE record.passenger_id = mapping.legacy_user_id
+  AND record.passenger_id <> mapping.target_passenger_id;
+
+UPDATE passenger_ratings record
+SET passenger_id = mapping.target_passenger_id
+FROM tmp_legacy_passenger_map mapping
+WHERE record.passenger_id = mapping.legacy_user_id
+  AND record.passenger_id <> mapping.target_passenger_id;
+
+UPDATE chat_threads record
+SET passenger_id = mapping.target_passenger_id
+FROM tmp_legacy_passenger_map mapping
+WHERE record.passenger_id = mapping.legacy_user_id
+  AND record.passenger_id <> mapping.target_passenger_id;
+
+UPDATE order_financial_transactions record
+SET passenger_id = mapping.target_passenger_id
+FROM tmp_legacy_passenger_map mapping
+WHERE record.passenger_id = mapping.legacy_user_id
+  AND record.passenger_id <> mapping.target_passenger_id;
+
 ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_passenger_id_fkey;
 ALTER TABLE orders
     ADD CONSTRAINT orders_passenger_id_fkey

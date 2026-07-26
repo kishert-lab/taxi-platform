@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -203,17 +202,21 @@ func (repository *PostgresTaxiParkSettingsRepository) CreateTariffByOwnerUserID(
 
 	tariff, err := scanTaxiParkTariff(repository.pool.QueryRow(ctx, `
 		INSERT INTO taxi_park_tariffs (
-			taxi_park_id, name, description, base_price_cents, price_per_km_cents,
-			price_per_minute_cents, minimum_price_cents, fixed_routes, is_active
+			taxi_park_id, car_class_id, name, description, pricing_mode, base_price_cents,
+			fixed_price_cents, price_per_km_cents, price_per_minute_cents, minimum_price_cents,
+			fixed_routes, is_active
 		)
-		SELECT id, $2, $3, $4, $5, $6, $7, $8, $9
+		SELECT id, $2, $3, $4, COALESCE(NULLIF($5, ''), 'distance_time'), $6, $7, $8, $9, $10, $11, $12
 		FROM taxi_parks
 		WHERE owner_user_id = $1 AND deleted_at IS NULL
 		RETURNING `+taxiParkTariffReturnColumns,
 		ownerUserID,
+		request.CarClassID,
 		request.Name,
 		nullableString(request.Description),
+		request.PricingMode,
 		request.BasePriceCents,
+		request.FixedPriceCents,
 		request.PricePerKMCents,
 		request.PricePerMinuteCents,
 		request.MinimumPriceCents,
@@ -234,13 +237,16 @@ func (repository *PostgresTaxiParkSettingsRepository) UpdateTariffByOwnerUserID(
 	tariff, err := scanTaxiParkTariff(repository.pool.QueryRow(ctx, `
 		UPDATE taxi_park_tariffs t
 		SET name = COALESCE($3, name),
-		    description = COALESCE($4, description),
-		    base_price_cents = COALESCE($5, base_price_cents),
-		    price_per_km_cents = COALESCE($6, price_per_km_cents),
-		    price_per_minute_cents = COALESCE($7, price_per_minute_cents),
-		    minimum_price_cents = COALESCE($8, minimum_price_cents),
-		    fixed_routes = COALESCE($9, fixed_routes),
-		    is_active = COALESCE($10, is_active)
+		    car_class_id = COALESCE($4, car_class_id),
+		    description = COALESCE($5, description),
+		    pricing_mode = COALESCE($6, pricing_mode),
+		    base_price_cents = COALESCE($7, base_price_cents),
+		    fixed_price_cents = COALESCE($8, fixed_price_cents),
+		    price_per_km_cents = COALESCE($9, price_per_km_cents),
+		    price_per_minute_cents = COALESCE($10, price_per_minute_cents),
+		    minimum_price_cents = COALESCE($11, minimum_price_cents),
+		    fixed_routes = COALESCE($12, fixed_routes),
+		    is_active = COALESCE($13, is_active)
 		FROM taxi_parks p
 		WHERE p.id = t.taxi_park_id
 		  AND p.owner_user_id = $1
@@ -250,8 +256,11 @@ func (repository *PostgresTaxiParkSettingsRepository) UpdateTariffByOwnerUserID(
 		ownerUserID,
 		tariffID,
 		request.Name,
+		request.CarClassID,
 		request.Description,
+		request.PricingMode,
 		request.BasePriceCents,
+		request.FixedPriceCents,
 		request.PricePerKMCents,
 		request.PricePerMinuteCents,
 		request.MinimumPriceCents,
@@ -2129,13 +2138,13 @@ func scanTaxiParkSettings(row pgx.Row) (domain.TaxiParkSettings, error) {
 }
 
 const taxiParkTariffSelectColumns = `
-	t.id, t.taxi_park_id, t.name, COALESCE(t.description, ''),
-	t.base_price_cents, t.price_per_km_cents, t.price_per_minute_cents,
+	t.id, t.taxi_park_id, t.car_class_id, t.name, COALESCE(t.description, ''),
+	t.pricing_mode, t.base_price_cents, t.fixed_price_cents, t.price_per_km_cents, t.price_per_minute_cents,
 	t.minimum_price_cents, t.fixed_routes, t.is_active, t.created_at, t.updated_at`
 
 const taxiParkTariffReturnColumns = `
-	id, taxi_park_id, name, COALESCE(description, ''),
-	base_price_cents, price_per_km_cents, price_per_minute_cents,
+	id, taxi_park_id, car_class_id, name, COALESCE(description, ''),
+	pricing_mode, base_price_cents, fixed_price_cents, price_per_km_cents, price_per_minute_cents,
 	minimum_price_cents, fixed_routes, is_active, created_at, updated_at`
 
 func scanTaxiParkTariffs(rows pgx.Rows) ([]domain.TaxiParkTariff, error) {
@@ -2156,12 +2165,16 @@ func scanTaxiParkTariffs(rows pgx.Rows) ([]domain.TaxiParkTariff, error) {
 func scanTaxiParkTariff(row pgx.Row) (domain.TaxiParkTariff, error) {
 	var tariff domain.TaxiParkTariff
 	var fixedRoutes []byte
+	var carClassID pgtype.UUID
 	if err := row.Scan(
 		&tariff.ID,
 		&tariff.TaxiParkID,
+		&carClassID,
 		&tariff.Name,
 		&tariff.Description,
+		&tariff.PricingMode,
 		&tariff.BasePrice.Amount,
+		&tariff.FixedPrice.Amount,
 		&tariff.PricePerKM.Amount,
 		&tariff.PricePerMinute.Amount,
 		&tariff.MinimumPrice.Amount,
@@ -2175,8 +2188,13 @@ func scanTaxiParkTariff(row pgx.Row) (domain.TaxiParkTariff, error) {
 	if !json.Valid(fixedRoutes) {
 		fixedRoutes = []byte("[]")
 	}
+	if carClassID.Valid {
+		value := uuid.UUID(carClassID.Bytes)
+		tariff.CarClassID = &value
+	}
 	tariff.FixedRoutes = fixedRoutes
 	tariff.BasePrice.Currency = "RUB"
+	tariff.FixedPrice.Currency = "RUB"
 	tariff.PricePerKM.Currency = "RUB"
 	tariff.PricePerMinute.Currency = "RUB"
 	tariff.MinimumPrice.Currency = "RUB"
@@ -2498,17 +2516,6 @@ func (repository *PostgresTaxiParkSettingsRepository) resolveOrderTariff(ctx con
 		return nil, nil, 0, 0, 0, fmt.Errorf("%w: tariff_id %s", taxiparkapp.ErrOrderTariffNotFound, tariffID)
 	}
 	return nil, nil, 0, 0, 0, fmt.Errorf("select global order tariff: %w", err)
-}
-
-func splitPassengerName(name string) (string, string) {
-	parts := strings.Fields(name)
-	if len(parts) == 0 {
-		return "", ""
-	}
-	if len(parts) == 1 {
-		return parts[0], ""
-	}
-	return parts[0], strings.Join(parts[1:], " ")
 }
 
 func taxiParkIDByOwner(ctx context.Context, transaction pgx.Tx, ownerUserID uuid.UUID) (uuid.UUID, error) {

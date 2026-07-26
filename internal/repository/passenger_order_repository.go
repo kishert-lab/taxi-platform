@@ -53,6 +53,72 @@ func (repository *PostgresPassengerOrderRepository) ListActiveCarClasses(ctx con
 	return items, nil
 }
 
+func (repository *PostgresPassengerOrderRepository) ListAvailableCarClasses(ctx context.Context, pickup geodomain.Coordinates, cityID uuid.UUID, radiusMeters int, locationMaxAge time.Duration) ([]domain.CarClass, error) {
+	rows, err := repository.pool.Query(ctx, `
+		WITH pickup AS (
+			SELECT ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography AS location
+		)
+		SELECT DISTINCT `+carClassSelectColumnsWithAlias("cc")+`
+		FROM car_classes cc
+		INNER JOIN cars c ON c.car_class = cc.code
+		INNER JOIN drivers d ON d.taxi_park_id = c.taxi_park_id
+		INNER JOIN driver_locations dl ON dl.driver_id = d.id
+		CROSS JOIN pickup
+		WHERE cc.is_active = true
+		  AND cc.deleted_at IS NULL
+		  AND d.city_id = $3
+		  AND d.status = 'online'
+		  AND d.is_verified = true
+		  AND d.verification_status = 'verified'
+		  AND d.taxi_park_id IS NOT NULL
+		  AND d.deleted_at IS NULL
+		  AND c.deleted_at IS NULL
+		  AND c.is_active = true
+		  AND c.verification_status = 'verified'
+		  AND (c.driver_id = d.id OR EXISTS (
+		  	SELECT 1
+		  	FROM car_driver_assignments cda
+		  	WHERE cda.car_id = c.id
+		  	  AND cda.driver_id = d.id
+		  ))
+		  AND EXISTS (
+		  	SELECT 1
+		  	FROM taxi_parks tp
+		  	LEFT JOIN taxi_park_settings tps ON tps.taxi_park_id = tp.id
+		  	WHERE tp.id = d.taxi_park_id
+		  	  AND tp.deleted_at IS NULL
+		  	  AND COALESCE(tps.is_active, true) = true
+		  )
+		  AND COALESCE(c.permit_expires_at, current_date + interval '1 day') >= current_date
+		  AND COALESCE(c.osago_expires_at, current_date + interval '1 day') >= current_date
+		  AND dl.updated_at >= now() - make_interval(secs => $5)
+		  AND ST_DWithin(dl.location, pickup.location, $4)
+		ORDER BY cc.sort_order ASC, cc.created_at ASC`,
+		pickup.Longitude,
+		pickup.Latitude,
+		cityID,
+		radiusMeters,
+		int(locationMaxAge.Seconds()),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("select available car classes: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]domain.CarClass, 0)
+	for rows.Next() {
+		item, err := scanCarClass(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan available car class: %w", err)
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate available car classes: %w", err)
+	}
+	return items, nil
+}
+
 func (repository *PostgresPassengerOrderRepository) GetActiveCarClassByID(ctx context.Context, carClassID uuid.UUID) (domain.CarClass, error) {
 	item, err := scanCarClass(repository.pool.QueryRow(ctx, `
 		SELECT `+carClassSelectColumns+`
@@ -78,18 +144,82 @@ func (repository *PostgresPassengerOrderRepository) EstimateRoute(ctx context.Co
 	return distanceMeters / 1000.0, nil
 }
 
-func (repository *PostgresPassengerOrderRepository) CreatePassengerOrder(ctx context.Context, record passengerapp.CreateOrderRecord) (passengerapp.PassengerOrderDetails, error) {
+func (repository *PostgresPassengerOrderRepository) HasNearbyAvailableDrivers(ctx context.Context, pickup geodomain.Coordinates, cityID uuid.UUID, carClassID uuid.UUID, radiusMeters int, locationMaxAge time.Duration) (bool, error) {
+	var exists bool
+	err := repository.pool.QueryRow(ctx, `
+		WITH pickup AS (
+			SELECT ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography AS location
+		)
+		SELECT EXISTS (
+			SELECT 1
+			FROM drivers d
+			INNER JOIN driver_locations dl ON dl.driver_id = d.id
+			CROSS JOIN pickup
+			WHERE d.city_id = $3
+			  AND d.status = 'online'
+			  AND d.is_verified = true
+			  AND d.verification_status = 'verified'
+			  AND d.taxi_park_id IS NOT NULL
+			  AND d.deleted_at IS NULL
+			  AND EXISTS (
+			  	SELECT 1
+			  	FROM taxi_parks tp
+			  	LEFT JOIN taxi_park_settings tps ON tps.taxi_park_id = tp.id
+			  	WHERE tp.id = d.taxi_park_id
+			  	  AND tp.deleted_at IS NULL
+			  	  AND COALESCE(tps.is_active, true) = true
+			  )
+			  AND EXISTS (
+			  	SELECT 1
+			  	FROM cars c
+			  	LEFT JOIN car_driver_assignments cda ON cda.car_id = c.id
+			  	WHERE c.taxi_park_id = d.taxi_park_id
+			  	  AND (c.driver_id = d.id OR cda.driver_id = d.id)
+			  	  AND c.car_class = (
+			  	  		SELECT cc.code
+			  	  		FROM car_classes cc
+			  	  		WHERE cc.id = $6
+			  	  		  AND cc.deleted_at IS NULL
+			  	  		  AND cc.is_active = true
+			  	  )
+			  	  AND c.verification_status = 'verified'
+			  	  AND c.is_active = true
+			  	  AND c.deleted_at IS NULL
+			  	  AND COALESCE(c.permit_expires_at, current_date + interval '1 day') >= current_date
+			  	  AND COALESCE(c.osago_expires_at, current_date + interval '1 day') >= current_date
+			  )
+			  AND dl.updated_at >= now() - make_interval(secs => $5)
+			  AND ST_DWithin(dl.location, pickup.location, $4)
+		)`,
+		pickup.Longitude,
+		pickup.Latitude,
+		cityID,
+		radiusMeters,
+		int(locationMaxAge.Seconds()),
+		carClassID,
+	).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("check nearby available drivers: %w", err)
+	}
+	return exists, nil
+}
+
+func (repository *PostgresPassengerOrderRepository) CreatePassengerOrder(ctx context.Context, record passengerapp.CreateOrderRecord) (passengerapp.OrderDetails, error) {
 	transaction, err := repository.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		return passengerapp.PassengerOrderDetails{}, fmt.Errorf("begin passenger order create transaction: %w", err)
+		return passengerapp.OrderDetails{}, fmt.Errorf("begin passenger order create transaction: %w", err)
 	}
 	defer rollbackTx(ctx, transaction)
 
-	metadataBytes, err := json.Marshal(map[string]any{
+	metadata := map[string]any{
 		"created_by_role": "passenger",
-	})
+	}
+	if record.PricingSnapshot != nil {
+		metadata["pricing_snapshot"] = record.PricingSnapshot
+	}
+	metadataBytes, err := json.Marshal(metadata)
 	if err != nil {
-		return passengerapp.PassengerOrderDetails{}, fmt.Errorf("marshal passenger order metadata: %w", err)
+		return passengerapp.OrderDetails{}, fmt.Errorf("marshal passenger order metadata: %w", err)
 	}
 
 	var insertedOrderID uuid.UUID
@@ -123,7 +253,7 @@ func (repository *PostgresPassengerOrderRepository) CreatePassengerOrder(ctx con
 			ST_SetSRID(ST_MakePoint($7, $6), 4326)::geography,
 			$8,
 			ST_SetSRID(ST_MakePoint($10, $9), 4326)::geography,
-			$11::bigint::numeric / 100,
+			CASE WHEN $11::bigint IS NULL THEN NULL ELSE $11::bigint::numeric / 100 END,
 			$12,
 			NULLIF($13, ''),
 			$14,
@@ -143,7 +273,7 @@ func (repository *PostgresPassengerOrderRepository) CreatePassengerOrder(ctx con
 		record.DestinationAddress,
 		record.DestinationLocation.Latitude,
 		record.DestinationLocation.Longitude,
-		record.EstimatedPrice.Amount,
+		nullableMoneyAmount(record.EstimatedPrice),
 		record.PaymentMethod,
 		record.PassengerComment,
 		record.PassengerLocationSharingEnabled,
@@ -153,32 +283,32 @@ func (repository *PostgresPassengerOrderRepository) CreatePassengerOrder(ctx con
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return passengerapp.PassengerOrderDetails{}, pgx.ErrNoRows
+			return passengerapp.OrderDetails{}, pgx.ErrNoRows
 		}
-		return passengerapp.PassengerOrderDetails{}, fmt.Errorf("insert passenger order: %w", err)
+		return passengerapp.OrderDetails{}, fmt.Errorf("insert passenger order: %w", err)
 	}
 
 	if err := insertPassengerOrderEvents(ctx, transaction, insertedOrderID, record.PassengerID); err != nil {
-		return passengerapp.PassengerOrderDetails{}, err
+		return passengerapp.OrderDetails{}, err
 	}
 
 	orderDetails, err := repository.getPassengerOrderByID(ctx, transaction, record.PassengerID, insertedOrderID)
 	if err != nil {
-		return passengerapp.PassengerOrderDetails{}, err
+		return passengerapp.OrderDetails{}, err
 	}
 
 	if err := transaction.Commit(ctx); err != nil {
-		return passengerapp.PassengerOrderDetails{}, fmt.Errorf("commit passenger order create transaction: %w", err)
+		return passengerapp.OrderDetails{}, fmt.Errorf("commit passenger order create transaction: %w", err)
 	}
 
 	return orderDetails, nil
 }
 
-func (repository *PostgresPassengerOrderRepository) GetCurrentPassengerOrder(ctx context.Context, passengerID uuid.UUID) (passengerapp.PassengerOrderDetails, error) {
+func (repository *PostgresPassengerOrderRepository) GetCurrentPassengerOrder(ctx context.Context, passengerID uuid.UUID) (passengerapp.OrderDetails, error) {
 	return repository.getPassengerOrderByID(ctx, repository.pool, passengerID, uuid.Nil)
 }
 
-func (repository *PostgresPassengerOrderRepository) ListPassengerOrderHistory(ctx context.Context, passengerID uuid.UUID, limit int) ([]passengerapp.PassengerOrderDetails, error) {
+func (repository *PostgresPassengerOrderRepository) ListPassengerOrderHistory(ctx context.Context, passengerID uuid.UUID, limit int) ([]passengerapp.OrderDetails, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
@@ -193,7 +323,7 @@ func (repository *PostgresPassengerOrderRepository) ListPassengerOrderHistory(ct
 	}
 	defer rows.Close()
 
-	items := make([]passengerapp.PassengerOrderDetails, 0, limit)
+	items := make([]passengerapp.OrderDetails, 0, limit)
 	for rows.Next() {
 		item, err := scanPassengerOrderDetails(rows)
 		if err != nil {
@@ -207,14 +337,14 @@ func (repository *PostgresPassengerOrderRepository) ListPassengerOrderHistory(ct
 	return items, nil
 }
 
-func (repository *PostgresPassengerOrderRepository) GetPassengerOrder(ctx context.Context, passengerID uuid.UUID, orderID uuid.UUID) (passengerapp.PassengerOrderDetails, error) {
+func (repository *PostgresPassengerOrderRepository) GetPassengerOrder(ctx context.Context, passengerID uuid.UUID, orderID uuid.UUID) (passengerapp.OrderDetails, error) {
 	return repository.getPassengerOrderByID(ctx, repository.pool, passengerID, orderID)
 }
 
-func (repository *PostgresPassengerOrderRepository) CancelPassengerOrder(ctx context.Context, passengerID uuid.UUID, orderID uuid.UUID, reason string, cancelledAt time.Time) (passengerapp.PassengerOrderDetails, error) {
+func (repository *PostgresPassengerOrderRepository) CancelPassengerOrder(ctx context.Context, passengerID uuid.UUID, orderID uuid.UUID, reason string, cancelledAt time.Time) (passengerapp.OrderDetails, error) {
 	transaction, err := repository.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		return passengerapp.PassengerOrderDetails{}, fmt.Errorf("begin passenger order cancel transaction: %w", err)
+		return passengerapp.OrderDetails{}, fmt.Errorf("begin passenger order cancel transaction: %w", err)
 	}
 	defer rollbackTx(ctx, transaction)
 
@@ -236,7 +366,7 @@ func (repository *PostgresPassengerOrderRepository) CancelPassengerOrder(ctx con
 		cancelledAt,
 	).Scan(&updatedOrderID)
 	if err != nil {
-		return passengerapp.PassengerOrderDetails{}, fmt.Errorf("update passenger order cancelled: %w", err)
+		return passengerapp.OrderDetails{}, fmt.Errorf("update passenger order cancelled: %w", err)
 	}
 
 	payloadBytes, marshalErr := json.Marshal(map[string]any{
@@ -247,7 +377,7 @@ func (repository *PostgresPassengerOrderRepository) CancelPassengerOrder(ctx con
 		"occurred_at":         cancelledAt,
 	})
 	if marshalErr != nil {
-		return passengerapp.PassengerOrderDetails{}, fmt.Errorf("marshal passenger cancel order event: %w", marshalErr)
+		return passengerapp.OrderDetails{}, fmt.Errorf("marshal passenger cancel order event: %w", marshalErr)
 	}
 	if _, err := transaction.Exec(ctx, `
 		INSERT INTO order_events (order_id, actor_user_id, event_type, payload, created_at)
@@ -257,20 +387,20 @@ func (repository *PostgresPassengerOrderRepository) CancelPassengerOrder(ctx con
 		string(payloadBytes),
 		cancelledAt,
 	); err != nil {
-		return passengerapp.PassengerOrderDetails{}, fmt.Errorf("insert passenger cancel order event: %w", err)
+		return passengerapp.OrderDetails{}, fmt.Errorf("insert passenger cancel order event: %w", err)
 	}
 
 	orderDetails, err := repository.getPassengerOrderByID(ctx, transaction, passengerID, updatedOrderID)
 	if err != nil {
-		return passengerapp.PassengerOrderDetails{}, err
+		return passengerapp.OrderDetails{}, err
 	}
 	if err := transaction.Commit(ctx); err != nil {
-		return passengerapp.PassengerOrderDetails{}, fmt.Errorf("commit passenger order cancel transaction: %w", err)
+		return passengerapp.OrderDetails{}, fmt.Errorf("commit passenger order cancel transaction: %w", err)
 	}
 	return orderDetails, nil
 }
 
-func (repository *PostgresPassengerOrderRepository) getPassengerOrderByID(ctx context.Context, queryer queryRower, passengerID uuid.UUID, orderID uuid.UUID) (passengerapp.PassengerOrderDetails, error) {
+func (repository *PostgresPassengerOrderRepository) getPassengerOrderByID(ctx context.Context, queryer queryRower, passengerID uuid.UUID, orderID uuid.UUID) (passengerapp.OrderDetails, error) {
 	query := passengerOrderSelectQuery + `
 		WHERE o.passenger_id = $1
 		  AND o.deleted_at IS NULL`
@@ -289,7 +419,7 @@ func (repository *PostgresPassengerOrderRepository) getPassengerOrderByID(ctx co
 
 	item, err := scanPassengerOrderDetails(queryer.QueryRow(ctx, query, args...))
 	if err != nil {
-		return passengerapp.PassengerOrderDetails{}, fmt.Errorf("select passenger order details: %w", err)
+		return passengerapp.OrderDetails{}, fmt.Errorf("select passenger order details: %w", err)
 	}
 	return item, nil
 }
@@ -342,6 +472,22 @@ const carClassSelectColumns = `
 	created_at,
 	updated_at`
 
+func carClassSelectColumnsWithAlias(alias string) string {
+	return `
+	` + alias + `.id,
+	` + alias + `.code,
+	` + alias + `.name,
+	` + alias + `.description,
+	(` + alias + `.base_price * 100)::bigint,
+	(` + alias + `.price_per_km * 100)::bigint,
+	(` + alias + `.price_per_minute * 100)::bigint,
+	(` + alias + `.minimum_price * 100)::bigint,
+	` + alias + `.is_active,
+	` + alias + `.sort_order,
+	` + alias + `.created_at,
+	` + alias + `.updated_at`
+}
+
 func scanCarClass(row pgx.Row) (domain.CarClass, error) {
 	var item domain.CarClass
 	if err := row.Scan(
@@ -376,6 +522,7 @@ const passengerOrderSelectQuery = `
 		o.park_id,
 		o.city_id,
 		o.tariff_id,
+		o.assigned_tariff_id,
 		o.car_class_id,
 		o.status,
 		o.order_type,
@@ -402,6 +549,7 @@ const passengerOrderSelectQuery = `
 		o.version,
 		o.created_at,
 		o.updated_at,
+		o.metadata,
 		cc.id,
 		COALESCE(cc.code, ''),
 		COALESCE(cc.name, ''),
@@ -432,13 +580,14 @@ const passengerOrderSelectQuery = `
 	LEFT JOIN users d_user ON d_user.id = d.user_id AND d_user.deleted_at IS NULL
 	LEFT JOIN cars car ON car.id = o.car_id AND car.deleted_at IS NULL`
 
-func scanPassengerOrderDetails(row pgx.Row) (passengerapp.PassengerOrderDetails, error) {
-	var details passengerapp.PassengerOrderDetails
+func scanPassengerOrderDetails(row pgx.Row) (passengerapp.OrderDetails, error) {
+	var details passengerapp.OrderDetails
 	var order domain.Order
 	var driverID pgtype.UUID
 	var carID pgtype.UUID
 	var parkID pgtype.UUID
 	var tariffID pgtype.UUID
+	var assignedTariffID pgtype.UUID
 	var classID pgtype.UUID
 	var destinationLatitude pgtype.Float8
 	var destinationLongitude pgtype.Float8
@@ -457,6 +606,7 @@ func scanPassengerOrderDetails(row pgx.Row) (passengerapp.PassengerOrderDetails,
 	var carClassSortOrder int
 	var carClassCreatedAt pgtype.Timestamptz
 	var carClassUpdatedAt pgtype.Timestamptz
+	var metadataBytes []byte
 	var assignedDriverID pgtype.UUID
 	var assignedCarID pgtype.UUID
 	var pickupLatitude float64
@@ -483,6 +633,7 @@ func scanPassengerOrderDetails(row pgx.Row) (passengerapp.PassengerOrderDetails,
 		&parkID,
 		&order.CityID,
 		&tariffID,
+		&assignedTariffID,
 		&classID,
 		&order.Status,
 		&order.OrderType,
@@ -509,6 +660,7 @@ func scanPassengerOrderDetails(row pgx.Row) (passengerapp.PassengerOrderDetails,
 		&order.Version,
 		&order.CreatedAt,
 		&order.UpdatedAt,
+		&metadataBytes,
 		&carClassID,
 		&carClassCode,
 		&carClassName,
@@ -534,7 +686,7 @@ func scanPassengerOrderDetails(row pgx.Row) (passengerapp.PassengerOrderDetails,
 		&assignedCarPlateNumber,
 		&assignedCarClass,
 	); err != nil {
-		return passengerapp.PassengerOrderDetails{}, err
+		return passengerapp.OrderDetails{}, err
 	}
 
 	order.PickupLocation = domain.Coordinates{Latitude: pickupLatitude, Longitude: pickupLongitude}
@@ -560,6 +712,10 @@ func scanPassengerOrderDetails(row pgx.Row) (passengerapp.PassengerOrderDetails,
 		value := uuid.UUID(tariffID.Bytes)
 		order.TariffID = &value
 	}
+	if assignedTariffID.Valid {
+		value := uuid.UUID(assignedTariffID.Bytes)
+		order.AssignedTariffID = &value
+	}
 	if classID.Valid {
 		value := uuid.UUID(classID.Bytes)
 		order.CarClassID = &value
@@ -582,6 +738,7 @@ func scanPassengerOrderDetails(row pgx.Row) (passengerapp.PassengerOrderDetails,
 	if finalPriceAmount.Valid {
 		order.FinalPrice = &domain.Money{Amount: finalPriceAmount.Int64, Currency: "RUB"}
 	}
+	details.Pricing = parsePassengerOrderPricingSnapshot(metadataBytes)
 
 	if carClassID.Valid {
 		classUUID := uuid.UUID(carClassID.Bytes)
@@ -616,7 +773,7 @@ func scanPassengerOrderDetails(row pgx.Row) (passengerapp.PassengerOrderDetails,
 
 	if assignedDriverID.Valid {
 		driverUUID := uuid.UUID(assignedDriverID.Bytes)
-		details.Driver = &passengerapp.PassengerAssignedDriver{
+		details.Driver = &passengerapp.AssignedDriver{
 			ID:           driverUUID,
 			Name:         strings.TrimSpace(driverName),
 			Phone:        driverPhone,
@@ -628,7 +785,7 @@ func scanPassengerOrderDetails(row pgx.Row) (passengerapp.PassengerOrderDetails,
 
 	if assignedCarID.Valid {
 		carUUID := uuid.UUID(assignedCarID.Bytes)
-		details.Car = &passengerapp.PassengerAssignedCar{
+		details.Car = &passengerapp.AssignedCar{
 			ID:          carUUID,
 			Brand:       assignedCarBrand,
 			Model:       assignedCarModel,
@@ -640,4 +797,26 @@ func scanPassengerOrderDetails(row pgx.Row) (passengerapp.PassengerOrderDetails,
 
 	details.Order = order
 	return details, nil
+}
+
+func nullableMoneyAmount(money *domain.Money) any {
+	if money == nil {
+		return nil
+	}
+	return money.Amount
+}
+
+type passengerOrderMetadata struct {
+	PricingSnapshot *domain.OrderPricingSnapshot `json:"pricing_snapshot"`
+}
+
+func parsePassengerOrderPricingSnapshot(metadataBytes []byte) *domain.OrderPricingSnapshot {
+	if len(metadataBytes) == 0 || string(metadataBytes) == "null" {
+		return nil
+	}
+	var metadata passengerOrderMetadata
+	if err := json.Unmarshal(metadataBytes, &metadata); err != nil {
+		return nil
+	}
+	return metadata.PricingSnapshot
 }

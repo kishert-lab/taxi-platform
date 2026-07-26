@@ -32,6 +32,10 @@ const (
 
 const RequestIDContextKey = "request_id"
 
+type contextKey string
+
+const RequestIDValueContextKey contextKey = RequestIDContextKey
+
 type Meta struct {
 	RequestID string `json:"request_id" example:"11111111-1111-1111-1111-111111111111"`
 }

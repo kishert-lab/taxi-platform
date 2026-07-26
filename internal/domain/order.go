@@ -75,6 +75,7 @@ type Order struct {
 	PreassignedDriverID             *uuid.UUID
 	CityID                          uuid.UUID
 	TariffID                        *uuid.UUID
+	AssignedTariffID                *uuid.UUID
 	CarClassID                      *uuid.UUID
 	Status                          OrderStatus
 	OrderType                       OrderType
@@ -100,6 +101,8 @@ type Order struct {
 	ScheduledCancelReason           string
 	EstimatedPrice                  *Money
 	FinalPrice                      *Money
+	ActualDistanceMeters            *int64
+	ActualDurationSeconds           *int64
 	PaymentMethod                   PaymentMethod
 	PassengerComment                string
 	PassengerLocationSharingEnabled bool
