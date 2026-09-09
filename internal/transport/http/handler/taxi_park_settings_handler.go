@@ -115,7 +115,7 @@ func (handler *TaxiParkSettingsHandler) RegisterRoutes(router gin.IRouter) {
 
 // CreateOrder godoc
 // @Summary Create taxi park order
-// @Description Creates an order from taxi park or dispatcher workspace. If passenger_phone is omitted, the order is linked to the taxi park owner account as a fallback.
+// @Description Creates an order from taxi park or dispatcher workspace. The car class is taken from tariff_id; if the tariff has no class, active economy is assigned. If passenger_phone is omitted, the order is linked to the taxi park owner account as a fallback.
 // @Tags taxi-park-orders
 // @Accept json
 // @Produce json

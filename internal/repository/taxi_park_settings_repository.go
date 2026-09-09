@@ -334,13 +334,18 @@ func (repository *PostgresTaxiParkSettingsRepository) CreateOrderByOwnerUserID(c
 		),
 		inserted_order AS (
 			INSERT INTO orders (
-				passenger_id, city_id, tariff_id, status,
+				passenger_id, city_id, tariff_id, car_class_id, status,
 				pickup_address, pickup_location,
 				destination_address, destination_location,
 				estimated_price, payment_method, passenger_comment,
 				dispatch_attempt, version, metadata
 			)
-			SELECT $1, $2, $3::uuid, 'searching',
+			SELECT $1, $2, $3::uuid,
+			       COALESCE(
+			           (SELECT car_class_id FROM taxi_park_tariffs WHERE id = $13::uuid),
+			           (SELECT id FROM car_classes WHERE code = 'economy' AND is_active = true AND deleted_at IS NULL)
+			       ),
+			       'searching',
 			       $4,
 			       p.pickup_location,
 			       $7,
@@ -504,7 +509,7 @@ func (repository *PostgresTaxiParkSettingsRepository) CreateScheduledOrderByActo
 		),
 		inserted_order AS (
 			INSERT INTO orders (
-				passenger_id, driver_id, preassigned_driver_id, city_id, tariff_id, status, order_type, scheduled_status,
+				passenger_id, driver_id, preassigned_driver_id, city_id, tariff_id, car_class_id, status, order_type, scheduled_status,
 				scheduled_at, activation_at, scheduled_timezone, scheduled_created_by,
 				pickup_address, pickup_location, destination_address, destination_location,
 				estimated_price, payment_method, passenger_comment, dispatch_attempt, version, metadata
@@ -512,7 +517,12 @@ func (repository *PostgresTaxiParkSettingsRepository) CreateScheduledOrderByActo
 			SELECT $1,
 			       CASE WHEN $17::uuid IS NULL THEN NULL ELSE $17::uuid END,
 			       $17::uuid,
-			       $2, $3::uuid, 'created', 'scheduled', $18::varchar,
+			       $2, $3::uuid,
+			       COALESCE(
+			           (SELECT car_class_id FROM taxi_park_tariffs WHERE id = $13::uuid),
+			           (SELECT id FROM car_classes WHERE code = 'economy' AND is_active = true AND deleted_at IS NULL)
+			       ),
+			       'created', 'scheduled', $18::varchar,
 			       $19, $20, $21, $22,
 			       $4, p.pickup_location, $7, p.destination_location,
 			       CASE

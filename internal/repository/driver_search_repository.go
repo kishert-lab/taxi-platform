@@ -59,13 +59,17 @@ func (repository *PostgresDriverSearchRepository) FindNearestOnlineDrivers(ctx c
 		  	  AND (c.driver_id = d.id OR cda.driver_id = d.id)
 		  	  AND (
 		  	  	$8::uuid IS NULL
-		  	  	OR c.car_class = (
-		  	  		SELECT cc.code
-		  	  		FROM car_classes cc
-		  	  		WHERE cc.id = $8
-		  	  		  AND cc.deleted_at IS NULL
-		  	  		  AND cc.is_active = true
-		  	  	)
+        OR EXISTS (
+            SELECT 1
+            FROM car_classes requested_class
+            JOIN car_classes driver_class ON driver_class.code = c.car_class
+            WHERE requested_class.id = $8
+              AND requested_class.deleted_at IS NULL
+              AND requested_class.is_active = true
+              AND driver_class.deleted_at IS NULL
+              AND driver_class.is_active = true
+              AND driver_class.sort_order >= requested_class.sort_order
+        )
 		  	  )
 		  	  AND c.verification_status = 'verified'
 		  	  AND c.is_active = true
