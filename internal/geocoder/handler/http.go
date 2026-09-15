@@ -12,9 +12,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/kishert-lab/taxi-platform/internal/domain"
 	geodomain "github.com/kishert-lab/taxi-platform/internal/geocoder/domain"
 	"github.com/kishert-lab/taxi-platform/internal/geocoder/exporter"
 	geoservice "github.com/kishert-lab/taxi-platform/internal/geocoder/service"
+	"github.com/kishert-lab/taxi-platform/internal/middleware"
 	"github.com/kishert-lab/taxi-platform/pkg/response"
 )
 
@@ -40,7 +42,7 @@ func (handler *Handler) RegisterRoutes(router gin.IRouter) {
 	router.GET("/geocoder/search", handler.Search)
 	router.POST("/geocoder/points/confirm", handler.ConfirmPoint)
 
-	admin := router.Group("/admin/geocoder")
+	admin := router.Group("/admin/geocoder", middleware.RequireRole(domain.UserRoleAdmin))
 	admin.POST("/local-points", handler.CreateLocalPoint)
 	admin.GET("/local-points", handler.ListLocalPoints)
 	admin.POST("/local-points/:id/approve", handler.ApproveLocalPoint)
@@ -111,9 +113,12 @@ func (handler *Handler) ConfirmPoint(context *gin.Context) {
 // @Tags admin-geocoder
 // @Accept json
 // @Produce json
+// @Security BearerAuth
 // @Param request body AdminLocalPointRequest true "Local point"
 // @Success 201 {object} LocalPointSuccessResponse
 // @Failure 400 {object} response.Error
+// @Failure 401 {object} response.Error
+// @Failure 403 {object} response.Error
 // @Router /admin/geocoder/local-points [post]
 func (handler *Handler) CreateLocalPoint(context *gin.Context) {
 	var request AdminLocalPointRequest
@@ -138,10 +143,14 @@ func (handler *Handler) CreateLocalPoint(context *gin.Context) {
 // @Summary List local geocoder points
 // @Tags admin-geocoder
 // @Produce json
+// @Security BearerAuth
 // @Param city_id query string false "City UUID"
 // @Param trust_level query string false "confirmed|trusted|rejected"
 // @Param limit query int false "Limit"
 // @Success 200 {object} LocalPointsSuccessResponse
+// @Failure 400 {object} response.Error
+// @Failure 401 {object} response.Error
+// @Failure 403 {object} response.Error
 // @Router /admin/geocoder/local-points [get]
 func (handler *Handler) ListLocalPoints(context *gin.Context) {
 	filter, err := localPointFilterFromQuery(context)
@@ -161,8 +170,12 @@ func (handler *Handler) ListLocalPoints(context *gin.Context) {
 // @Summary Approve local geocoder point
 // @Tags admin-geocoder
 // @Produce json
+// @Security BearerAuth
 // @Param id path string true "Local point UUID"
 // @Success 200 {object} LocalPointSuccessResponse
+// @Failure 400 {object} response.Error
+// @Failure 401 {object} response.Error
+// @Failure 403 {object} response.Error
 // @Failure 404 {object} response.Error
 // @Router /admin/geocoder/local-points/{id}/approve [post]
 func (handler *Handler) ApproveLocalPoint(context *gin.Context) {
@@ -184,8 +197,12 @@ func (handler *Handler) ApproveLocalPoint(context *gin.Context) {
 // @Summary Reject local geocoder point
 // @Tags admin-geocoder
 // @Produce json
+// @Security BearerAuth
 // @Param id path string true "Local point UUID"
 // @Success 200 {object} LocalPointSuccessResponse
+// @Failure 400 {object} response.Error
+// @Failure 401 {object} response.Error
+// @Failure 403 {object} response.Error
 // @Failure 404 {object} response.Error
 // @Router /admin/geocoder/local-points/{id}/reject [post]
 func (handler *Handler) RejectLocalPoint(context *gin.Context) {
@@ -208,7 +225,10 @@ func (handler *Handler) RejectLocalPoint(context *gin.Context) {
 // @Description Exports only platform-owned trusted local_geo_points; temporary external geocoder cache is never exported.
 // @Tags admin-geocoder
 // @Produce text/csv
+// @Security BearerAuth
 // @Success 200 {file} file
+// @Failure 401 {object} response.Error
+// @Failure 403 {object} response.Error
 // @Failure 500 {object} response.Error
 // @Router /admin/geocoder/export/pelias-csv [get]
 func (handler *Handler) ExportPeliasCSV(context *gin.Context) {

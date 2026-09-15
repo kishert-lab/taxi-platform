@@ -11,6 +11,7 @@ import (
 	"github.com/kishert-lab/taxi-platform/internal/dto"
 	geodomain "github.com/kishert-lab/taxi-platform/internal/geocoder/domain"
 	geoservice "github.com/kishert-lab/taxi-platform/internal/geocoder/service"
+	"github.com/kishert-lab/taxi-platform/internal/routing"
 )
 
 func TestEstimatePassengerOrderReturnsStructuredPricingWhenDriversAvailable(t *testing.T) {
@@ -29,11 +30,11 @@ func TestEstimatePassengerOrderReturnsStructuredPricingWhenDriversAvailable(t *t
 				PricePerMinute: domain.Money{Amount: 600, Currency: "RUB"},
 				MinimumPrice:   domain.Money{Amount: 18000, Currency: "RUB"},
 			},
-			distanceKM:       4.2,
 			nearbyDrivers5KM: true,
 		},
 		nil,
 		estimateCityResolver{cityID: uuid.New()},
+		estimateRouteService{},
 	)
 
 	result, err := service.EstimatePassengerOrder(context.Background(), passengerID, dto.OrderEstimateRequest{
@@ -57,10 +58,10 @@ func TestEstimatePassengerOrderReturnsStructuredPricingWhenDriversAvailable(t *t
 	if result.Pricing.EstimatedPrice == nil || result.Pricing.EstimatedPrice.Amount <= 0 {
 		t.Fatalf("expected structured estimated price, got %#v", result.Pricing)
 	}
-	if result.Pricing.EstimatedPriceSource != string(domain.EstimatedPriceSourceCarClassCatalog) {
+	if result.Pricing.EstimatedPriceSource != string(domain.EstimatedPriceSourceAverageParks) {
 		t.Fatalf("unexpected pricing source: %s", result.Pricing.EstimatedPriceSource)
 	}
-	if result.Pricing.PricingMode != string(domain.PricingModeDistanceTime) {
+	if result.Pricing.PricingMode != string(domain.PricingModeUnknown) {
 		t.Fatalf("unexpected pricing mode: %s", result.Pricing.PricingMode)
 	}
 	if result.Price != result.Pricing.EstimatedPrice.Amount/100 {
@@ -84,10 +85,10 @@ func TestEstimatePassengerOrderReturnsUnavailableWhenNoNearbyDrivers(t *testing.
 				PricePerMinute: domain.Money{Amount: 600, Currency: "RUB"},
 				MinimumPrice:   domain.Money{Amount: 18000, Currency: "RUB"},
 			},
-			distanceKM: 3.5,
 		},
 		nil,
 		estimateCityResolver{cityID: uuid.New()},
+		estimateRouteService{},
 	)
 
 	result, err := service.EstimatePassengerOrder(context.Background(), passengerID, dto.OrderEstimateRequest{
@@ -145,7 +146,6 @@ func (repository estimatePassengerRepository) MarkAuthenticated(context.Context,
 
 type estimateOrderRepository struct {
 	carClass         domain.CarClass
-	distanceKM       float64
 	nearbyDrivers5KM bool
 	nearbyDrivers10  bool
 }
@@ -163,7 +163,7 @@ func (repository *estimateOrderRepository) GetActiveCarClassByID(context.Context
 }
 
 func (repository *estimateOrderRepository) EstimateRoute(context.Context, geodomain.Coordinates, geodomain.Coordinates) (float64, error) {
-	return repository.distanceKM, nil
+	return 0, nil
 }
 
 func (repository *estimateOrderRepository) HasNearbyAvailableDrivers(_ context.Context, _ geodomain.Coordinates, _ uuid.UUID, _ uuid.UUID, radiusMeters int, _ time.Duration) (bool, error) {
@@ -171,6 +171,26 @@ func (repository *estimateOrderRepository) HasNearbyAvailableDrivers(_ context.C
 		return repository.nearbyDrivers5KM, nil
 	}
 	return repository.nearbyDrivers10, nil
+}
+
+func (repository *estimateOrderRepository) ListAvailableTaxiParkTariffs(_ context.Context, _ geodomain.Coordinates, _ uuid.UUID, carClassID uuid.UUID, radiusMeters int, _ time.Duration) ([]domain.TaxiParkTariff, error) {
+	available := repository.nearbyDrivers5KM
+	if radiusMeters > 5000 {
+		available = repository.nearbyDrivers10
+	}
+	if !available {
+		return nil, nil
+	}
+	return []domain.TaxiParkTariff{{
+		ID:             uuid.New(),
+		TaxiParkID:     uuid.New(),
+		CarClassID:     &carClassID,
+		PricingMode:    domain.PricingModeDistanceTime,
+		BasePrice:      domain.Money{Amount: 12000, Currency: "RUB"},
+		PricePerKM:     domain.Money{Amount: 1800, Currency: "RUB"},
+		PricePerMinute: domain.Money{Amount: 600, Currency: "RUB"},
+		MinimumPrice:   domain.Money{Amount: 18000, Currency: "RUB"},
+	}}, nil
 }
 
 func (repository *estimateOrderRepository) CreatePassengerOrder(context.Context, CreateOrderRecord) (OrderDetails, error) {
@@ -195,6 +215,12 @@ func (repository *estimateOrderRepository) CancelPassengerOrder(context.Context,
 
 type estimateCityResolver struct {
 	cityID uuid.UUID
+}
+
+type estimateRouteService struct{}
+
+func (estimateRouteService) Route(context.Context, geodomain.Coordinates, geodomain.Coordinates) (routing.Route, error) {
+	return routing.Route{DistanceMeters: 4200, DurationSeconds: 660, Source: "osrm", CalculatedAt: time.Now().UTC()}, nil
 }
 
 func (resolver estimateCityResolver) ResolveCityByCoordinates(context.Context, geodomain.Coordinates) (geoservice.CityContext, bool, error) {

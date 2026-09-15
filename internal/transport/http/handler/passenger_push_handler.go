@@ -31,16 +31,18 @@ func (handler *PassengerPushHandler) RegisterRoutes(router gin.IRouter, passenge
 
 // RegisterToken godoc
 // @Summary Register passenger push token
+// @Description Registers or updates the push token for the authenticated passenger device.
 // @Tags passenger
 // @Accept json
 // @Produce json
-// @Param Authorization header string true "Bearer access token"
+// @Security BearerAuth
 // @Param request body dto.PassengerPushTokenRequest true "Passenger push token registration payload"
 // @Success 200 {object} PassengerPushTokenSuccessResponse
 // @Failure 400 {object} response.Error
 // @Failure 401 {object} response.Error
 // @Failure 500 {object} response.Error
 // @Router /passenger/push-tokens [post]
+// @Router /passenger/push/token [post]
 func (handler *PassengerPushHandler) RegisterToken(context *gin.Context) {
 	passengerID, ok := middleware.PassengerIDFromContext(context)
 	if !ok {

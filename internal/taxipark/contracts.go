@@ -73,6 +73,7 @@ type FinanceProcessor interface {
 }
 
 type CreateOrderRecord struct {
+	PricingSnapshot     *domain.OrderPricingSnapshot
 	PassengerPhone      string
 	PassengerName       string
 	TariffID            uuid.UUID
@@ -94,6 +95,7 @@ type UpdateOrderRecord struct {
 }
 
 type CreateScheduledOrderRecord struct {
+	PricingSnapshot     *domain.OrderPricingSnapshot
 	PassengerPhone      string
 	PassengerName       string
 	TariffID            uuid.UUID

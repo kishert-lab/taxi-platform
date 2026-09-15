@@ -1,0 +1,25 @@
+{
+  "root": "/srv/taxi-maps",
+  "region": "russia",
+  "pbf_url": "https://download.geofabrik.de/russia-latest.osm.pbf",
+  "checksum_url": "https://download.geofabrik.de/russia-latest.osm.pbf.md5",
+  "public_url": "https://maps.example.com",
+  "cors_origin": "https://dispatch.example.com",
+  "bounds": [19, 41, -169, 82],
+  "min_free_bytes": null,
+  "build_memory": "4g",
+  "build_cpus": "2",
+  "es_heap": "1g",
+  "retain_releases": 2,
+  "network": "taxi-maps",
+  "probe": {
+    "route": [[56.229443, 58.010455], [56.2500, 58.0200]],
+    "search": "Пермь Ленина 50",
+    "reverse": [56.229443, 58.010455],
+    "tile": [14, 10751, 4936]
+  },
+  "backend_compose_files": ["docker-compose.deploy.yml"],
+  "backend_service": "backend",
+  "backend_project": "taxi-platform",
+  "backend_env_file": ".env"
+}

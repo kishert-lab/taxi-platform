@@ -144,6 +144,84 @@ func (repository *PostgresPassengerOrderRepository) EstimateRoute(ctx context.Co
 	return distanceMeters / 1000.0, nil
 }
 
+func (repository *PostgresPassengerOrderRepository) ListAvailableTaxiParkTariffs(ctx context.Context, pickup geodomain.Coordinates, cityID uuid.UUID, carClassID uuid.UUID, radiusMeters int, locationMaxAge time.Duration) ([]domain.TaxiParkTariff, error) {
+	rows, err := repository.pool.Query(ctx, `
+		WITH pickup AS (
+			SELECT ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography AS location
+		), eligible_parks AS (
+			SELECT DISTINCT d.taxi_park_id
+			FROM drivers d
+			INNER JOIN driver_locations dl ON dl.driver_id = d.id
+			CROSS JOIN pickup
+			WHERE d.city_id = $3
+			  AND d.status = 'online'
+			  AND d.is_verified = true
+			  AND d.verification_status = 'verified'
+			  AND d.taxi_park_id IS NOT NULL
+			  AND d.deleted_at IS NULL
+			  AND dl.updated_at >= now() - make_interval(secs => $5)
+			  AND ST_DWithin(dl.location, pickup.location, $4)
+			  AND EXISTS (
+		            SELECT 1 FROM taxi_parks tp
+		            LEFT JOIN taxi_park_settings tps ON tps.taxi_park_id = tp.id
+		            WHERE tp.id = d.taxi_park_id AND tp.deleted_at IS NULL AND COALESCE(tps.is_active, true) = true
+			  )
+			  AND EXISTS (
+		            SELECT 1
+		            FROM cars c
+		            LEFT JOIN car_driver_assignments cda ON cda.car_id = c.id
+		            JOIN car_classes driver_class ON driver_class.code = c.car_class
+		            JOIN car_classes requested_class ON requested_class.id = $6
+		            WHERE c.taxi_park_id = d.taxi_park_id
+		              AND (c.driver_id = d.id OR cda.driver_id = d.id)
+		              AND driver_class.deleted_at IS NULL AND driver_class.is_active = true
+		              AND requested_class.deleted_at IS NULL AND requested_class.is_active = true
+		              AND driver_class.sort_order >= requested_class.sort_order
+		              AND c.verification_status = 'verified' AND c.is_active = true AND c.deleted_at IS NULL
+		              AND COALESCE(c.permit_expires_at, current_date + interval '1 day') >= current_date
+		              AND COALESCE(c.osago_expires_at, current_date + interval '1 day') >= current_date
+			  )
+		), ranked_tariffs AS (
+			SELECT DISTINCT ON (t.taxi_park_id) t.id, t.taxi_park_id, t.car_class_id, t.name, COALESCE(t.description, ''),
+				t.pricing_mode, t.base_price_cents, t.fixed_price_cents, t.price_per_km_cents, t.price_per_minute_cents,
+				t.minimum_price_cents, t.fixed_routes, t.is_active, t.created_at, t.updated_at
+			FROM taxi_park_tariffs t
+			INNER JOIN eligible_parks ep ON ep.taxi_park_id = t.taxi_park_id
+			WHERE t.car_class_id = $6 AND t.is_active = true
+			ORDER BY t.taxi_park_id, t.created_at DESC, t.id DESC
+		)
+		SELECT * FROM ranked_tariffs ORDER BY taxi_park_id`,
+		pickup.Longitude, pickup.Latitude, cityID, radiusMeters, int(locationMaxAge.Seconds()), carClassID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list available taxi park tariffs: %w", err)
+	}
+	defer rows.Close()
+
+	tariffs := make([]domain.TaxiParkTariff, 0)
+	for rows.Next() {
+		var tariff domain.TaxiParkTariff
+		var assignedCarClassID pgtype.UUID
+		if err := rows.Scan(&tariff.ID, &tariff.TaxiParkID, &assignedCarClassID, &tariff.Name, &tariff.Description, &tariff.PricingMode, &tariff.BasePrice.Amount, &tariff.FixedPrice.Amount, &tariff.PricePerKM.Amount, &tariff.PricePerMinute.Amount, &tariff.MinimumPrice.Amount, &tariff.FixedRoutes, &tariff.IsActive, &tariff.CreatedAt, &tariff.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan available taxi park tariff: %w", err)
+		}
+		if assignedCarClassID.Valid {
+			value := uuid.UUID(assignedCarClassID.Bytes)
+			tariff.CarClassID = &value
+		}
+		tariff.BasePrice.Currency = "RUB"
+		tariff.FixedPrice.Currency = "RUB"
+		tariff.PricePerKM.Currency = "RUB"
+		tariff.PricePerMinute.Currency = "RUB"
+		tariff.MinimumPrice.Currency = "RUB"
+		tariffs = append(tariffs, tariff)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate available taxi park tariffs: %w", err)
+	}
+	return tariffs, nil
+}
+
 func (repository *PostgresPassengerOrderRepository) HasNearbyAvailableDrivers(ctx context.Context, pickup geodomain.Coordinates, cityID uuid.UUID, carClassID uuid.UUID, radiusMeters int, locationMaxAge time.Duration) (bool, error) {
 	var exists bool
 	err := repository.pool.QueryRow(ctx, `

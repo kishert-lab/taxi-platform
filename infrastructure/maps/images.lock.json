@@ -1,0 +1,10 @@
+{
+  "tilemaker": "ghcr.io/systemed/tilemaker@sha256:d3eda2790458de727bb0096eebce775984fc060f60901dac6dbfbbb79ae17370",
+  "osrm": "ghcr.io/project-osrm/osrm-backend@sha256:855614a38f464b0558a2ad6eaa7cb8c139f39887da9b38b485ce453c6e6e6124",
+  "pelias_osm": "pelias/openstreetmap@sha256:2fa7ad8662bfff26c6673afcb64e62d25d69e6dd8f835c5583970065bac04843",
+  "pelias_schema": "pelias/schema@sha256:df1348a47237f8281804fc1e921321591843b9c021df6fda0aaa42122a1bc267",
+  "pelias_api": "pelias/api@sha256:50f3bbb2e1d3c1f87ea3c88d4ebaa3b10b9cab10f108e106ad8e76d605880f49",
+  "libpostal": "pelias/libpostal-service@sha256:72beeef72e968a7865ad7538854d900de7aa9cf27f3de899f29c00cd4a4d96fe",
+  "elasticsearch": "pelias/elasticsearch@sha256:8aa3c622abd74192eceaf53e9a3dfd51c1a75e50ee7a537d7f912aa7f80bab05",
+  "fonts_url": "https://github.com/openmaptiles/fonts/releases/download/v2.0/noto-sans.zip"
+}

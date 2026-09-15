@@ -35,8 +35,8 @@
       timeout: 5s
       retries: 5
     networks:
-      - network-taxi-api 
-      
+      - network-taxi-api
+
   pelias-elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:7.17.23
     container_name: taxi_pelias_elasticsearch
@@ -166,6 +166,8 @@
       TAXI_GEOCODER_DADATA_CACHE_TTL_DAYS: 13650
       TAXI_GEOCODER_PELIAS_CACHE_TTL_DAYS: 488889
       TAXI_GEOCODER_PELIAS_CONFIDENCE_THRESHOLD: 0.7
+      TAXI_ROUTING_OSRM_URL: ${OSRM_URL:-}
+      TAXI_ROUTING_TIMEOUT: ${OSRM_TIMEOUT:-3s}
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/health/ready"]
       interval: 10s

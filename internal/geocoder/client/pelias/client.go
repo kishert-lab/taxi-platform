@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -27,6 +28,15 @@ func New(baseURL string, httpClient *http.Client) *Client {
 }
 
 func (client *Client) Search(ctx context.Context, request geodomain.SearchRequest) ([]geodomain.SearchResult, error) {
+	return client.lookup(ctx, request, nil)
+}
+func (client *Client) Reverse(ctx context.Context, point geodomain.Coordinates) ([]geodomain.SearchResult, error) {
+	if _, err := geodomain.NewCoordinates(point.Latitude, point.Longitude); err != nil {
+		return nil, err
+	}
+	return client.lookup(ctx, geodomain.SearchRequest{Limit: 1}, &point)
+}
+func (client *Client) lookup(ctx context.Context, request geodomain.SearchRequest, reverse *geodomain.Coordinates) ([]geodomain.SearchResult, error) {
 	if client.baseURL == "" {
 		return nil, nil
 	}
@@ -42,6 +52,12 @@ func (client *Client) Search(ctx context.Context, request geodomain.SearchReques
 	if request.Focus != nil {
 		query.Set("focus.point.lat", strconv.FormatFloat(request.Focus.Latitude, 'f', -1, 64))
 		query.Set("focus.point.lon", strconv.FormatFloat(request.Focus.Longitude, 'f', -1, 64))
+	}
+	if reverse != nil {
+		endpoint.Path = strings.TrimSuffix(endpoint.Path, "search") + "reverse"
+		query.Del("text")
+		query.Set("point.lat", strconv.FormatFloat(reverse.Latitude, 'f', -1, 64))
+		query.Set("point.lon", strconv.FormatFloat(reverse.Longitude, 'f', -1, 64))
 	}
 	endpoint.RawQuery = query.Encode()
 
@@ -59,7 +75,7 @@ func (client *Client) Search(ctx context.Context, request geodomain.SearchReques
 	}
 
 	var payload searchResponse
-	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+	if err := json.NewDecoder(io.LimitReader(response.Body, 2<<20)).Decode(&payload); err != nil {
 		return nil, fmt.Errorf("decode pelias response: %w", err)
 	}
 	results := make([]geodomain.SearchResult, 0, len(payload.Features))

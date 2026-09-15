@@ -17,6 +17,7 @@ import (
 	geoservice "github.com/kishert-lab/taxi-platform/internal/geo"
 	orderapp "github.com/kishert-lab/taxi-platform/internal/order"
 	passengerapp "github.com/kishert-lab/taxi-platform/internal/passenger"
+	"github.com/kishert-lab/taxi-platform/internal/routing"
 	taxiparkapp "github.com/kishert-lab/taxi-platform/internal/taxipark"
 	"github.com/kishert-lab/taxi-platform/pkg/response"
 )
@@ -44,6 +45,12 @@ func failByError(context *gin.Context, err error) {
 		_ = context.Error(err)
 	}
 	switch {
+	case errors.Is(err, routing.ErrUnavailable), errors.Is(err, routing.ErrInvalidResponse):
+		response.Fail(context, http.StatusServiceUnavailable, response.CodeInternalError, "Road routing unavailable", nil)
+	case errors.Is(err, routing.ErrRouteNotFound), errors.Is(err, routing.ErrOutsideCoverage):
+		response.Fail(context, http.StatusUnprocessableEntity, response.CodeValidationError, "No road route within coverage", nil)
+	case errors.Is(err, routing.ErrInvalidRequest):
+		response.Fail(context, http.StatusBadRequest, response.CodeValidationError, "Invalid route coordinates", nil)
 	case errors.Is(err, auth.ErrInvalidCredentials), errors.Is(err, auth.ErrInvalidCode), errors.Is(err, auth.ErrInvalidToken), errors.Is(err, auth.ErrInactiveUser):
 		response.Fail(context, http.StatusUnauthorized, response.CodeUnauthorized, "Unauthorized", nil)
 	case errors.Is(err, passengerapp.ErrInvalidToken), errors.Is(err, passengerapp.ErrInvalidRefreshToken):

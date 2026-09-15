@@ -154,7 +154,13 @@ type OrderPricingResponse struct {
 	PriceAvailable       bool           `json:"price_available"`
 	IsFinal              bool           `json:"is_final"`
 	Message              string         `json:"message,omitempty" example:"Цена будет рассчитана после назначения водителя"`
+	UnavailableReason    string         `json:"unavailable_reason,omitempty" example:"routing_unavailable"`
 	SearchRadiusMeters   *int           `json:"search_radius_meters,omitempty" example:"5000"`
+	RouteDistanceMeters  *int64         `json:"route_distance_meters,omitempty" example:"4200"`
+	RouteDurationSeconds *int64         `json:"route_duration_seconds,omitempty" example:"660"`
+	RouteSource          string         `json:"route_source,omitempty" example:"osrm"`
+	RouteDataVersion     string         `json:"route_data_version,omitempty"`
+	TaxiParkCount        int            `json:"taxi_park_count,omitempty" example:"3"`
 	AssignedTariffID     *uuid.UUID     `json:"assigned_tariff_id,omitempty" example:"22222222-2222-2222-2222-222222222222"`
 	AssignedTaxiParkID   *uuid.UUID     `json:"assigned_taxi_park_id,omitempty" example:"55555555-5555-5555-5555-555555555555"`
 }
@@ -288,8 +294,10 @@ type DriverLocationBatchRequest struct {
 }
 
 type CompleteOrderRequest struct {
-	FinalPrice int64  `json:"final_price" binding:"required,min=0" example:"260"`
-	Currency   string `json:"currency" binding:"required" example:"RUB"`
+	// Deprecated: final price is calculated by the server from trip telemetry and tariff.
+	FinalPrice *int64 `json:"final_price,omitempty" example:"26000"`
+	// Deprecated: the server uses the order tariff currency.
+	Currency string `json:"currency,omitempty" example:"RUB"`
 }
 
 type RejectOrderRequest struct {

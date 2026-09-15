@@ -39,3 +39,8 @@ coverage/
 # Editor/IDE
 .idea/
 .vscode/
+
+# Mapping build artifacts and host configuration
+infrastructure/maps/.cache/
+infrastructure/maps/config.local.json
+infrastructure/maps/__pycache__/

@@ -307,6 +307,7 @@ func (repository *PostgresTaxiParkSettingsRepository) CreateOrderByOwnerUserID(c
 		"taxi_park_id":       taxiParkID,
 		"passenger_phone":    record.PassengerPhone,
 		"passenger_name":     record.PassengerName,
+		"pricing_snapshot":   record.PricingSnapshot,
 	})
 	if err != nil {
 		return domain.Order{}, fmt.Errorf("marshal taxi park order metadata: %w", err)
@@ -319,7 +320,7 @@ func (repository *PostgresTaxiParkSettingsRepository) CreateOrderByOwnerUserID(c
 		destinationLongitude = record.DestinationLocation.Longitude
 	}
 
-	orderTariffID, taxiParkTariffID, basePriceCents, pricePerKMCents, minimumPriceCents, err := repository.resolveOrderTariff(ctx, transaction, taxiParkID, record.TariffID)
+	orderTariffID, taxiParkTariffID, _, _, _, err := repository.resolveOrderTariff(ctx, transaction, taxiParkID, record.TariffID)
 	if err != nil {
 		return domain.Order{}, err
 	}
@@ -350,13 +351,7 @@ func (repository *PostgresTaxiParkSettingsRepository) CreateOrderByOwnerUserID(c
 			       p.pickup_location,
 			       $7,
 			       p.destination_location,
-			       CASE
-			           WHEN p.destination_location IS NULL THEN (GREATEST($16::bigint, $14::bigint)::numeric / 100)
-			           ELSE GREATEST(
-			               $16::bigint::numeric,
-			               $14::bigint::numeric + ((ST_Distance(p.pickup_location, p.destination_location) / 1000.0)::numeric * $15::bigint::numeric)
-			           ) / 100
-			       END,
+			       ($14::bigint::numeric / 100),
 			       $10, NULLIF($11, ''), 0, 1,
 			       $12::jsonb || jsonb_build_object('taxi_park_tariff_id', $13::uuid)
 			FROM order_points p
@@ -376,9 +371,7 @@ func (repository *PostgresTaxiParkSettingsRepository) CreateOrderByOwnerUserID(c
 		record.Comment,
 		string(metadata),
 		nullableUUID(taxiParkTariffID),
-		basePriceCents,
-		pricePerKMCents,
-		minimumPriceCents,
+		snapshotPriceCents(record.PricingSnapshot),
 	))
 	if err != nil {
 		return domain.Order{}, fmt.Errorf("insert taxi park order: %w", err)
@@ -476,6 +469,7 @@ func (repository *PostgresTaxiParkSettingsRepository) CreateScheduledOrderByActo
 		"taxi_park_id":       taxiParkID,
 		"passenger_phone":    record.PassengerPhone,
 		"passenger_name":     record.PassengerName,
+		"pricing_snapshot":   record.PricingSnapshot,
 	})
 	if err != nil {
 		return taxiparkapp.ScheduledOrder{}, fmt.Errorf("marshal scheduled order metadata: %w", err)
@@ -488,7 +482,7 @@ func (repository *PostgresTaxiParkSettingsRepository) CreateScheduledOrderByActo
 		destinationLongitude = record.DestinationLocation.Longitude
 	}
 
-	orderTariffID, taxiParkTariffID, basePriceCents, pricePerKMCents, minimumPriceCents, err := repository.resolveOrderTariff(ctx, transaction, taxiParkID, record.TariffID)
+	orderTariffID, taxiParkTariffID, _, _, _, err := repository.resolveOrderTariff(ctx, transaction, taxiParkID, record.TariffID)
 	if err != nil {
 		return taxiparkapp.ScheduledOrder{}, err
 	}
@@ -515,23 +509,17 @@ func (repository *PostgresTaxiParkSettingsRepository) CreateScheduledOrderByActo
 				estimated_price, payment_method, passenger_comment, dispatch_attempt, version, metadata
 			)
 			SELECT $1,
-			       CASE WHEN $17::uuid IS NULL THEN NULL ELSE $17::uuid END,
-			       $17::uuid,
+			       CASE WHEN $15::uuid IS NULL THEN NULL ELSE $15::uuid END,
+			       $15::uuid,
 			       $2, $3::uuid,
 			       COALESCE(
 			           (SELECT car_class_id FROM taxi_park_tariffs WHERE id = $13::uuid),
 			           (SELECT id FROM car_classes WHERE code = 'economy' AND is_active = true AND deleted_at IS NULL)
 			       ),
-			       'created', 'scheduled', $18::varchar,
-			       $19, $20, $21, $22,
+			       'created', 'scheduled', $16::varchar,
+			       $17, $18, $19, $20,
 			       $4, p.pickup_location, $7, p.destination_location,
-			       CASE
-			           WHEN p.destination_location IS NULL THEN (GREATEST($16::bigint, $14::bigint)::numeric / 100)
-			           ELSE GREATEST(
-			               $16::bigint::numeric,
-			               $14::bigint::numeric + ((ST_Distance(p.pickup_location, p.destination_location) / 1000.0)::numeric * $15::bigint::numeric)
-			           ) / 100
-			       END,
+			       ($14::bigint::numeric / 100),
 			       $10, NULLIF($11, ''), 0, 1, $12::jsonb || jsonb_build_object('taxi_park_tariff_id', $13::uuid)
 			FROM order_points p
 			RETURNING `+dispatchOrderSelectColumns+`
@@ -550,9 +538,7 @@ func (repository *PostgresTaxiParkSettingsRepository) CreateScheduledOrderByActo
 		record.Comment,
 		string(metadata),
 		nullableUUID(taxiParkTariffID),
-		basePriceCents,
-		pricePerKMCents,
-		minimumPriceCents,
+		snapshotPriceCents(record.PricingSnapshot),
 		record.PreassignedDriverID,
 		scheduledStatus,
 		record.ScheduledAt,

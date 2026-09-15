@@ -18,6 +18,10 @@ import (
 // service is not wired yet. It returns an explicit 501 through transport mapping.
 type UnavailableUseCase struct{}
 
+func (useCase *UnavailableUseCase) EstimateOrder(context.Context, uuid.UUID, dto.TaxiParkCreateOrderRequest) (*domain.OrderPricingSnapshot, error) {
+	return nil, common.ErrNotImplemented
+}
+
 func NewUnavailableUseCase() *UnavailableUseCase {
 	return &UnavailableUseCase{}
 }

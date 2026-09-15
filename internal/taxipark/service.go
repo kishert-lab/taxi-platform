@@ -14,6 +14,7 @@ import (
 	dispatchapp "github.com/kishert-lab/taxi-platform/internal/dispatch"
 	"github.com/kishert-lab/taxi-platform/internal/domain"
 	"github.com/kishert-lab/taxi-platform/internal/dto"
+	"github.com/kishert-lab/taxi-platform/internal/routing"
 	wsmsg "github.com/kishert-lab/taxi-platform/internal/ws"
 )
 
@@ -41,6 +42,8 @@ type Service struct {
 	dispatchController DispatchController
 	realtimeGateway    RealtimeGateway
 	financeProcessor   FinanceProcessor
+	routingService     routing.Service
+	tariffReader       OrderTariffReader
 }
 
 func NewService(repository Repository, passwordHasher PasswordHasher) *Service {
@@ -95,6 +98,10 @@ func (service *Service) CreateOrder(ctx context.Context, ownerUserID uuid.UUID, 
 	if err != nil {
 		return domain.Order{}, err
 	}
+	record.PricingSnapshot, err = service.estimateRoadPrice(ctx, ownerUserID, record.TariffID, record.PickupLocation, record.DestinationLocation)
+	if err != nil {
+		return domain.Order{}, err
+	}
 	order, err := service.repository.CreateOrderByOwnerUserID(ctx, ownerUserID, record)
 	if err != nil {
 		return domain.Order{}, err
@@ -120,6 +127,10 @@ func (service *Service) CreateScheduledOrder(ctx context.Context, actorUserID uu
 		return ScheduledOrder{}, ErrScheduledOrdersDisabled
 	}
 	if err := validateScheduledTiming(record.ScheduledAt, record.Timezone, settings.ScheduledMinBeforeMinutes); err != nil {
+		return ScheduledOrder{}, err
+	}
+	record.PricingSnapshot, err = service.estimateRoadPrice(ctx, actorUserID, record.TariffID, record.PickupLocation, record.DestinationLocation)
+	if err != nil {
 		return ScheduledOrder{}, err
 	}
 	return service.repository.CreateScheduledOrderByActorUserID(ctx, actorUserID, record)

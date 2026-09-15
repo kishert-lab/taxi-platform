@@ -1,0 +1,12 @@
+{
+ "layers": {
+  "road":{"minzoom":5,"maxzoom":14},
+  "building":{"minzoom":13,"maxzoom":14},
+  "housenumber":{"minzoom":14,"maxzoom":14},
+  "place":{"minzoom":3,"maxzoom":14},
+  "poi":{"minzoom":13,"maxzoom":14},
+  "water":{"minzoom":6,"maxzoom":14},
+  "landuse":{"minzoom":8,"maxzoom":14}
+ },
+ "settings":{"minzoom":0,"maxzoom":14,"basezoom":14,"include_ids":false,"compress":"gzip","name":"Worker taxi OSM map","version":"1","description":"OSM roads, buildings and addresses","filemetadata":{"attribution":"© OpenStreetMap contributors","format":"pbf","type":"baselayer"}}
+}

@@ -25,6 +25,35 @@ type PassengerPushTokenSuccessResponse struct {
 	Meta response.Meta                  `json:"meta"`
 }
 
+type PassengerAuthRequestCodeSuccessResponse struct {
+	Data dto.PassengerAuthRequestCodeResponse `json:"data"`
+	Meta response.Meta                        `json:"meta"`
+}
+
+type PassengerAuthTokenSuccessResponse struct {
+	Data dto.PassengerAuthTokenResponse `json:"data"`
+	Meta response.Meta                  `json:"meta"`
+}
+
+type PassengerAuthRefreshSuccessResponse struct {
+	Data dto.PassengerAuthRefreshResponse `json:"data"`
+	Meta response.Meta                    `json:"meta"`
+}
+
+type PassengerMeSuccessResponse struct {
+	Data dto.PassengerMeResponse `json:"data"`
+	Meta response.Meta           `json:"meta"`
+}
+
+type PassengerLogoutSuccessResponse struct {
+	Data passengerLogoutResponse `json:"data"`
+	Meta response.Meta           `json:"meta"`
+}
+
+type passengerLogoutResponse struct {
+	LoggedOut bool `json:"logged_out" example:"true"`
+}
+
 type OrderEstimateSuccessResponse struct {
 	Data dto.OrderEstimateResponse `json:"data"`
 	Meta response.Meta             `json:"meta"`

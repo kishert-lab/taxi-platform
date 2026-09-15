@@ -152,10 +152,34 @@ func TestAppendOrderRoutePointsNotFound(t *testing.T) {
 	}
 }
 
+func TestCompleteDriverTripIgnoresClientFinalPrice(t *testing.T) {
+	driverUserID := uuid.New()
+	orderID := uuid.New()
+	repository := &fakeMobileRepository{
+		profile: Profile{DriverID: uuid.New(), UserID: driverUserID, CityID: uuid.New()},
+		completionOrderResult: CurrentOrder{
+			OrderID:  orderID,
+			DriverID: uuid.New(),
+			Status:   domain.OrderStatusCompleted,
+		},
+	}
+	service := NewMobileServiceWithDispatch(repository, &fakePresenceStore{}, nil, nil, zap.NewNop(), nil)
+	clientPrice := int64(99999999)
+
+	if _, err := service.CompleteDriverTrip(context.Background(), driverUserID, orderID, dto.CompleteOrderRequest{FinalPrice: &clientPrice}); err != nil {
+		t.Fatalf("complete driver trip: %v", err)
+	}
+	if repository.completedOrderID != orderID {
+		t.Fatalf("expected server completion for order %s, got %s", orderID, repository.completedOrderID)
+	}
+}
+
 type fakeMobileRepository struct {
 	profile               Profile
 	currentOrder          CurrentOrder
 	transitionOrderResult CurrentOrder
+	completionOrderResult CurrentOrder
+	completedOrderID      uuid.UUID
 	routeAccess           OrderRouteUploadAccess
 	routeAccessErr        error
 	routePointKeys        map[string]struct{}
@@ -190,6 +214,11 @@ func (repository *fakeMobileRepository) GetOrderByUserID(context.Context, uuid.U
 
 func (repository *fakeMobileRepository) ListOrderHistoryByUserID(context.Context, uuid.UUID, int) ([]CurrentOrder, error) {
 	return nil, nil
+}
+
+func (repository *fakeMobileRepository) CompleteOrderByUserID(_ context.Context, _ uuid.UUID, orderID uuid.UUID) (CurrentOrder, error) {
+	repository.completedOrderID = orderID
+	return repository.completionOrderResult, nil
 }
 
 func (repository *fakeMobileRepository) ListRoutePointsByUserID(context.Context, uuid.UUID, uuid.UUID) ([]RoutePoint, error) {

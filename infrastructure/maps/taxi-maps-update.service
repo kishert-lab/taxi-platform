@@ -1,0 +1,12 @@
+[Unit]
+Description=Build, validate and activate monthly taxi map release
+After=docker.service network-online.target
+Requires=docker.service
+[Service]
+Type=oneshot
+WorkingDirectory=/media/d/taxi-platform
+ExecStart=/usr/bin/python3 /media/d/taxi-platform/infrastructure/maps/manage.py update --config /etc/taxi-maps.json
+TimeoutStartSec=infinity
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

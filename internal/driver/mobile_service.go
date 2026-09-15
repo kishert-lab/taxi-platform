@@ -36,6 +36,7 @@ type MobileRepository interface {
 	GetCurrentOrderByUserID(ctx context.Context, userID uuid.UUID) (CurrentOrder, error)
 	GetOrderByUserID(ctx context.Context, userID uuid.UUID, orderID uuid.UUID) (CurrentOrder, error)
 	ListOrderHistoryByUserID(ctx context.Context, userID uuid.UUID, limit int) ([]CurrentOrder, error)
+	CompleteOrderByUserID(ctx context.Context, userID uuid.UUID, orderID uuid.UUID) (CurrentOrder, error)
 	ListRoutePointsByUserID(ctx context.Context, userID uuid.UUID, orderID uuid.UUID) ([]RoutePoint, error)
 	GetOrderRouteUploadAccess(ctx context.Context, orderID uuid.UUID) (OrderRouteUploadAccess, error)
 	TransitionOrderByUserID(ctx context.Context, userID uuid.UUID, orderID uuid.UUID, toStatus domain.OrderStatus, reason string, finalPriceCents *int64) (CurrentOrder, error)
@@ -563,9 +564,8 @@ func (service *MobileService) StartDriverTrip(ctx context.Context, userID uuid.U
 	return currentOrderResponse(order), nil
 }
 
-func (service *MobileService) CompleteDriverTrip(ctx context.Context, userID uuid.UUID, orderID uuid.UUID, request dto.CompleteOrderRequest) (dto.DriverOrderResponse, error) {
-	finalPriceCents := request.FinalPrice
-	order, err := service.repository.TransitionOrderByUserID(ctx, userID, orderID, domain.OrderStatusCompleted, "", &finalPriceCents)
+func (service *MobileService) CompleteDriverTrip(ctx context.Context, userID uuid.UUID, orderID uuid.UUID, _ dto.CompleteOrderRequest) (dto.DriverOrderResponse, error) {
+	order, err := service.repository.CompleteOrderByUserID(ctx, userID, orderID)
 	if err != nil {
 		return dto.DriverOrderResponse{}, err
 	}

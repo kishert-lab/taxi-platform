@@ -16,6 +16,7 @@ import (
 )
 
 type TaxiParkSettingsUseCase interface {
+	EstimateOrder(context.Context, uuid.UUID, dto.TaxiParkCreateOrderRequest) (*domain.OrderPricingSnapshot, error)
 	GetSettings(ctx context.Context, ownerUserID uuid.UUID) (domain.TaxiParkSettings, error)
 	UpdateSettings(ctx context.Context, ownerUserID uuid.UUID, request dto.TaxiParkSettingsPatchRequest) (domain.TaxiParkSettings, error)
 	ListTariffs(ctx context.Context, ownerUserID uuid.UUID) ([]domain.TaxiParkTariff, error)
@@ -74,6 +75,7 @@ func (handler *TaxiParkSettingsHandler) RegisterRoutes(router gin.IRouter) {
 	taxiParkOrders.POST("/orders/scheduled/:id/cancel", handler.CancelScheduledOrder)
 	taxiParkOrders.POST("/orders/scheduled/:id/assign-driver", handler.AssignScheduledOrderDriver)
 	taxiParkOrders.POST("/orders", handler.CreateOrder)
+	taxiParkOrders.POST("/orders/estimate", handler.EstimateOrder)
 	taxiParkOrders.GET("/orders/:id", handler.GetOrder)
 	taxiParkOrders.PATCH("/orders/:id", handler.UpdateOrder)
 	taxiParkOrders.POST("/orders/:id/cancel", handler.CancelOrder)

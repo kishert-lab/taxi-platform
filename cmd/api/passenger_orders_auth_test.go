@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,8 +16,10 @@ import (
 	authapp "github.com/kishert-lab/taxi-platform/internal/auth"
 	"github.com/kishert-lab/taxi-platform/internal/domain"
 	"github.com/kishert-lab/taxi-platform/internal/dto"
+	mapsapp "github.com/kishert-lab/taxi-platform/internal/maps"
 	"github.com/kishert-lab/taxi-platform/internal/middleware"
 	passengerapp "github.com/kishert-lab/taxi-platform/internal/passenger"
+	"github.com/kishert-lab/taxi-platform/internal/routing"
 	"github.com/kishert-lab/taxi-platform/internal/service"
 	"github.com/kishert-lab/taxi-platform/internal/transport/http/handler"
 )
@@ -113,6 +116,7 @@ func passengerOrdersAuthRouter(
 	})
 
 	routes := applicationRoutes{
+		maps:             handler.NewMapHandler(mapsapp.New(configs.MapsConfig{}, routing.UnavailableService{}, false, false)),
 		auth:             handler.NewAuthHandler(unavailableUseCase),
 		mobileAuth:       handler.NewMobileAuthHandler(unavailableUseCase),
 		passengerAuth:    handler.NewPassengerAuthHandler(fakePassengerAuthUseCase{}),
@@ -186,4 +190,39 @@ type fakePassengerLookupRepositoryForOrders struct {
 
 func (repository fakePassengerLookupRepositoryForOrders) GetByID(context.Context, uuid.UUID) (domain.Passenger, error) {
 	return repository.passenger, nil
+}
+
+func TestMapRoutesKeepPassengerAndUserTokensSeparate(t *testing.T) {
+	passengerID := uuid.New()
+	router, passengerTokens, userTokens := passengerOrdersAuthRouter(t, fakePassengerOrdersUseCase{}, fakePassengerLookupRepositoryForOrders{passenger: domain.Passenger{ID: passengerID, IsActive: true}})
+	passengerToken, err := passengerTokens.GeneratePassengerAccessToken(passengerID, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	userToken, _, _, err := userTokens.IssueTokenPair(uuid.New(), domain.UserRoleDriver, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		path, token string
+		status      int
+	}{
+		{"/api/v1/map/routes", passengerToken, 401},
+		{"/api/v1/passenger/map/routes", userToken, 401},
+		{"/api/v1/map/routes", userToken, 503},
+		{"/api/v1/passenger/map/routes", passengerToken, 503},
+		{"/api/v1/map/routes", "", 401},
+		{"/api/v1/passenger/map/routes", "", 401},
+	} {
+		request := httptest.NewRequest(http.MethodPost, test.path, strings.NewReader(`{"points":[{"latitude":58,"longitude":56},{"latitude":58.1,"longitude":56.1}]}`))
+		request.Header.Set("Content-Type", "application/json")
+		if test.token != "" {
+			request.Header.Set("Authorization", "Bearer "+test.token)
+		}
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, request)
+		if recorder.Code != test.status {
+			t.Fatalf("%s: got %d want %d: %s", test.path, recorder.Code, test.status, recorder.Body.String())
+		}
+	}
 }

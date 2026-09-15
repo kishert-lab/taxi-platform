@@ -1,0 +1,9 @@
+[Unit]
+Description=Monthly taxi OpenStreetMap update
+[Timer]
+OnCalendar=*-*-01 03:00:00 UTC
+Persistent=true
+RandomizedDelaySec=1h
+Unit=taxi-maps-update.service
+[Install]
+WantedBy=timers.target

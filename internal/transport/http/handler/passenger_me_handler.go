@@ -30,6 +30,16 @@ func (handler *PassengerMeHandler) RegisterRoutes(router gin.IRouter, passengerA
 	protected.PATCH("/me", handler.UpdateMe)
 }
 
+// GetMe godoc
+// @Summary Get current passenger profile
+// @Tags passenger
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} PassengerMeSuccessResponse
+// @Failure 401 {object} response.Error
+// @Failure 404 {object} response.Error
+// @Failure 500 {object} response.Error
+// @Router /passenger/me [get]
 func (handler *PassengerMeHandler) GetMe(context *gin.Context) {
 	passengerID, ok := middleware.PassengerIDFromContext(context)
 	if !ok {
@@ -46,6 +56,19 @@ func (handler *PassengerMeHandler) GetMe(context *gin.Context) {
 	response.OK(context, result)
 }
 
+// UpdateMe godoc
+// @Summary Update current passenger profile
+// @Tags passenger
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body dto.PassengerMePatchRequest true "Passenger profile patch"
+// @Success 200 {object} PassengerMeSuccessResponse
+// @Failure 400 {object} response.Error
+// @Failure 401 {object} response.Error
+// @Failure 404 {object} response.Error
+// @Failure 500 {object} response.Error
+// @Router /passenger/me [patch]
 func (handler *PassengerMeHandler) UpdateMe(context *gin.Context) {
 	passengerID, ok := middleware.PassengerIDFromContext(context)
 	if !ok {

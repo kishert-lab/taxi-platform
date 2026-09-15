@@ -66,6 +66,13 @@ Swagger is served at:
 http://localhost:8080/swagger/index.html
 ```
 
+## Self-hosted OSM maps
+
+The reproducible vector-tile, Pelias and OSRM pipeline, release activation,
+rollback procedure and client contracts are documented in
+[docs/maps.md](docs/maps.md). The server pilot and production checks are in
+[docs/maps-validation.md](docs/maps-validation.md).
+
 ## Build And Release
 
 ### Build

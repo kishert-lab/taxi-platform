@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"fmt"
+	mapsapp "github.com/kishert-lab/taxi-platform/internal/maps"
+	"github.com/prometheus/client_golang/prometheus"
 	"net/http"
 	"strings"
 	"time"
@@ -32,6 +35,8 @@ import (
 	pushapp "github.com/kishert-lab/taxi-platform/internal/push"
 	redisinfra "github.com/kishert-lab/taxi-platform/internal/redis"
 	"github.com/kishert-lab/taxi-platform/internal/repository"
+	"github.com/kishert-lab/taxi-platform/internal/routing"
+	osrmclient "github.com/kishert-lab/taxi-platform/internal/routing/client/osrm"
 	scheduledapp "github.com/kishert-lab/taxi-platform/internal/scheduled"
 	"github.com/kishert-lab/taxi-platform/internal/security"
 	"github.com/kishert-lab/taxi-platform/internal/service"
@@ -40,6 +45,7 @@ import (
 )
 
 type applicationRoutes struct {
+	maps                    *handler.MapHandler
 	auth                    *handler.AuthHandler
 	mobileAuth              *handler.MobileAuthHandler
 	passengerAuth           *handler.PassengerAuthHandler
@@ -221,9 +227,29 @@ func newApplicationRoutes(postgresPool *pgxpool.Pool, redisClient *goredis.Clien
 	)
 	passengerAddressSearchService := passengerapp.NewAddressSearchService(geocoderService)
 	passengerOrderRepository := repository.NewPostgresPassengerOrderRepository(postgresPool)
-	passengerOrderService := passengerapp.NewOrderService(passengerRepository, passengerOrderRepository, dispatchService, geocoderService)
+	passengerRoutingService := routing.Service(routing.UnavailableService{})
+	if strings.TrimSpace(config.Routing.OSRMURL) != "" {
+		osrmRoutingService, err := osrmclient.NewWithOptions(config.Routing.OSRMURL, &http.Client{Timeout: config.Routing.Timeout}, osrmclient.Options{DataVersion: config.Routing.DataVersion, MaxSnapMeters: config.Routing.MaxSnapMeters, Bounds: mapBounds(config.Maps.Bounds)})
+		if err != nil {
+			logger.Warn("initialize OSRM routing client", zap.Error(err))
+		} else {
+			namespace := fmt.Sprintf("%s|%s|driving|full|geojson|%g|%v", config.Routing.OSRMURL, config.Routing.DataVersion, config.Routing.MaxSnapMeters, config.Maps.Bounds)
+			cached, cacheError := redisinfra.NewCachedService(osrmRoutingService, redisClient, namespace, config.Routing.CacheTTL, logger, prometheus.DefaultRegisterer)
+			if cacheError != nil {
+				logger.Error("initialize routing cache metrics", zap.Error(cacheError))
+				passengerRoutingService = osrmRoutingService
+			} else {
+				passengerRoutingService = cached
+			}
+		}
+	}
+	taxiParkSettingsService.WithRoutingService(passengerRoutingService, taxiParkSettingsRepository)
+	mapService := mapsapp.New(config.Maps, passengerRoutingService, config.Maps.DataVersion != "" && config.Geocoder.PeliasURL != "", config.Routing.DataVersion != "" && config.Routing.OSRMURL != "")
+	mapService.WithReverseGeocoder(peliasclient.New(config.Geocoder.PeliasURL, &http.Client{Timeout: 3 * time.Second}))
+	passengerOrderService := passengerapp.NewOrderService(passengerRepository, passengerOrderRepository, dispatchService, geocoderService, passengerRoutingService)
 
 	return applicationRoutes{
+		maps:                    handler.NewMapHandler(mapService),
 		auth:                    handler.NewAuthHandler(registrationService),
 		mobileAuth:              handler.NewMobileAuthHandler(mobileAuthService),
 		passengerAuth:           handler.NewPassengerAuthHandler(passengerAuthService),
@@ -282,6 +308,9 @@ func (routes applicationRoutes) Register(api gin.IRouter) {
 	routes.legal.RegisterRoutes(api)
 	routes.chat.RegisterRoutes(api, routes.passengerAuthMiddleware)
 	routes.geocoder.RegisterRoutes(api)
+	if routes.maps != nil {
+		routes.maps.RegisterRoutes(api, routes.passengerAuthMiddleware)
+	}
 	routes.websocket.RegisterRoutes(api)
 }
 
@@ -354,4 +383,11 @@ func (notifier *driverPassengerNotifier) NotifyPassenger(ctx context.Context, pa
 		Body:  notification.Body,
 		Data:  notification.Data,
 	})
+}
+
+func mapBounds(values []float64) [4]float64 {
+	if len(values) == 4 {
+		return [4]float64{values[0], values[1], values[2], values[3]}
+	}
+	return [4]float64{-180, -90, 180, 90}
 }

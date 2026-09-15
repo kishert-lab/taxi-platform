@@ -18,6 +18,7 @@ type OrderRepository interface {
 	GetActiveCarClassByID(ctx context.Context, carClassID uuid.UUID) (domain.CarClass, error)
 	EstimateRoute(ctx context.Context, pickup geodomain.Coordinates, destination geodomain.Coordinates) (float64, error)
 	HasNearbyAvailableDrivers(ctx context.Context, pickup geodomain.Coordinates, cityID uuid.UUID, carClassID uuid.UUID, radiusMeters int, locationMaxAge time.Duration) (bool, error)
+	ListAvailableTaxiParkTariffs(ctx context.Context, pickup geodomain.Coordinates, cityID uuid.UUID, carClassID uuid.UUID, radiusMeters int, locationMaxAge time.Duration) ([]domain.TaxiParkTariff, error)
 	CreatePassengerOrder(ctx context.Context, record CreateOrderRecord) (OrderDetails, error)
 	GetCurrentPassengerOrder(ctx context.Context, passengerID uuid.UUID) (OrderDetails, error)
 	ListPassengerOrderHistory(ctx context.Context, passengerID uuid.UUID, limit int) ([]OrderDetails, error)

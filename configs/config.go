@@ -3,7 +3,10 @@ package configs
 import (
 	"errors"
 	"fmt"
+	"math"
+	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +28,8 @@ type Config struct {
 	Dispatch  DispatchConfig  `mapstructure:"dispatch"`
 	Scheduled ScheduledConfig `mapstructure:"scheduled"`
 	Geocoder  GeocoderConfig  `mapstructure:"geocoder"`
+	Routing   RoutingConfig   `mapstructure:"routing"`
+	Maps      MapsConfig      `mapstructure:"maps"`
 }
 
 type AppConfig struct {
@@ -180,6 +185,23 @@ type GeocoderConfig struct {
 	PeliasConfidenceThreshold float64 `mapstructure:"pelias_confidence_threshold"`
 }
 
+type RoutingConfig struct {
+	OSRMURL       string        `mapstructure:"osrm_url"`
+	Timeout       time.Duration `mapstructure:"timeout"`
+	DataVersion   string        `mapstructure:"data_version"`
+	MaxSnapMeters float64       `mapstructure:"max_snap_meters"`
+	CacheTTL      time.Duration `mapstructure:"cache_ttl"`
+}
+
+type MapsConfig struct {
+	PublicURL   string    `mapstructure:"public_url"`
+	DataVersion string    `mapstructure:"data_version"`
+	Bounds      []float64 `mapstructure:"bounds"`
+	MinZoom     int       `mapstructure:"min_zoom"`
+	MaxZoom     int       `mapstructure:"max_zoom"`
+	UpdatedAt   string    `mapstructure:"updated_at"`
+}
+
 func Load() (*Config, error) {
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
@@ -257,6 +279,14 @@ func bindEnvironmentAliases() error {
 		"geocoder.pelias_confidence_threshold": {
 			"GEOCODER_PELIAS_CONFIDENCE_THRESHOLD",
 		},
+		"routing.osrm_url":                   {"OSRM_URL"},
+		"routing.timeout":                    {"OSRM_TIMEOUT"},
+		"routing.data_version":               {"ROUTING_DATA_VERSION"},
+		"routing.max_snap_meters":            {"ROUTING_MAX_SNAP_METERS"},
+		"routing.cache_ttl":                  {"ROUTING_CACHE_TTL"},
+		"maps.public_url":                    {"MAPS_PUBLIC_URL"},
+		"maps.data_version":                  {"MAPS_DATA_VERSION"},
+		"maps.updated_at":                    {"MAPS_UPDATED_AT"},
 		"push.enabled":                       {"PUSH_ENABLED"},
 		"push.firebase_project_id":           {"FIREBASE_PROJECT_ID"},
 		"push.firebase_credentials_file":     {"FIREBASE_CREDENTIALS_FILE"},
@@ -282,6 +312,32 @@ func bindEnvironmentAliases() error {
 }
 
 func (config Config) Validate() error {
+	if config.Maps.PublicURL != "" {
+		endpoint, err := url.Parse(config.Maps.PublicURL)
+		if err != nil || endpoint.Scheme != "https" || endpoint.Host == "" || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" {
+			return errors.New("maps.public_url must be a public HTTPS base URL")
+		}
+		if !regexp.MustCompile(`^[a-zA-Z0-9_-]+$`).MatchString(config.Maps.DataVersion) {
+			return errors.New("maps.data_version is required for published maps")
+		}
+		if config.Routing.DataVersion != config.Maps.DataVersion {
+			return errors.New("routing and map release versions must match")
+		}
+	}
+	if len(config.Maps.Bounds) != 0 {
+		if len(config.Maps.Bounds) != 4 {
+			return errors.New("maps.bounds must contain west,south,east,north")
+		}
+		for _, value := range config.Maps.Bounds {
+			if math.IsNaN(value) || math.IsInf(value, 0) {
+				return errors.New("map bounds must be finite")
+			}
+		}
+		bounds := config.Maps.Bounds
+		if bounds[0] < -180 || bounds[0] > 180 || bounds[2] < -180 || bounds[2] > 180 || bounds[1] < -90 || bounds[3] > 90 || bounds[1] >= bounds[3] {
+			return errors.New("invalid map bounds")
+		}
+	}
 	if config.Server.Port <= 0 {
 		return errors.New("server port must be positive")
 	}
@@ -310,6 +366,15 @@ func (config Config) Validate() error {
 }
 
 func setDefaults() {
+	viper.SetDefault("routing.data_version", "")
+	viper.SetDefault("routing.max_snap_meters", 500)
+	viper.SetDefault("routing.cache_ttl", "5m")
+	viper.SetDefault("maps.public_url", "")
+	viper.SetDefault("maps.data_version", "")
+	viper.SetDefault("maps.bounds", []float64{19, 41, -169, 82})
+	viper.SetDefault("maps.min_zoom", 0)
+	viper.SetDefault("maps.max_zoom", 22)
+	viper.SetDefault("maps.updated_at", "")
 	viper.SetDefault("app.name", "taxi-platform")
 	viper.SetDefault("app.env", "local")
 	viper.SetDefault("app.version", "0.1.0")
@@ -397,4 +462,6 @@ func setDefaults() {
 	viper.SetDefault("geocoder.dadata_cache_ttl_days", 3650)
 	viper.SetDefault("geocoder.pelias_cache_ttl_days", 3650)
 	viper.SetDefault("geocoder.pelias_confidence_threshold", 0.75)
+	viper.SetDefault("routing.osrm_url", "")
+	viper.SetDefault("routing.timeout", "3s")
 }

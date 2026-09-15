@@ -105,3 +105,16 @@ geocoder:
   dadata_cache_ttl_days: 3650
   pelias_cache_ttl_days: 3650
   pelias_confidence_threshold: 0.75
+
+routing:
+  # Set OSRM_URL to a local OSRM instance. Pricing is unavailable when it is empty.
+  osrm_url: ""
+  timeout: 3s
+
+maps:
+  public_url: ""
+  data_version: ""
+  updated_at: ""
+  bounds: [19, 41, -169, 82]
+  min_zoom: 0
+  max_zoom: 22

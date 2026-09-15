@@ -635,6 +635,7 @@ func (handler *DriverMobileHandler) StartTrip(context *gin.Context) {
 
 // CompleteTrip godoc
 // @Summary Complete driver trip
+// @Description Final price is calculated by the server from recorded trip telemetry and the assigned tariff. final_price and currency in legacy clients are ignored.
 // @Tags driver-orders
 // @Accept json
 // @Produce json

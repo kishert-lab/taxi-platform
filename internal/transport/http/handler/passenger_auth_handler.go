@@ -33,6 +33,18 @@ func (handler *PassengerAuthHandler) RegisterRoutes(router gin.IRouter, passenge
 	protected.POST("/logout", handler.Logout)
 }
 
+// RequestCode godoc
+// @Summary Request passenger authentication code
+// @Description Sends a one-time confirmation code to the passenger phone number.
+// @Tags passenger-auth
+// @Accept json
+// @Produce json
+// @Param request body dto.PassengerAuthRequestCodeRequest true "Passenger code request"
+// @Success 200 {object} PassengerAuthRequestCodeSuccessResponse
+// @Failure 400 {object} response.Error
+// @Failure 429 {object} response.Error
+// @Failure 500 {object} response.Error
+// @Router /passenger/auth/request-code [post]
 func (handler *PassengerAuthHandler) RequestCode(context *gin.Context) {
 	var request dto.PassengerAuthRequestCodeRequest
 	if err := context.ShouldBindJSON(&request); err != nil {
@@ -49,6 +61,19 @@ func (handler *PassengerAuthHandler) RequestCode(context *gin.Context) {
 	response.OK(context, result)
 }
 
+// ConfirmCode godoc
+// @Summary Confirm passenger authentication code
+// @Description Verifies the one-time code and returns passenger access and refresh tokens.
+// @Tags passenger-auth
+// @Accept json
+// @Produce json
+// @Param request body dto.PassengerAuthConfirmCodeRequest true "Passenger code confirmation"
+// @Success 200 {object} PassengerAuthTokenSuccessResponse
+// @Failure 400 {object} response.Error
+// @Failure 401 {object} response.Error
+// @Failure 429 {object} response.Error
+// @Failure 500 {object} response.Error
+// @Router /passenger/auth/confirm-code [post]
 func (handler *PassengerAuthHandler) ConfirmCode(context *gin.Context) {
 	var request dto.PassengerAuthConfirmCodeRequest
 	if err := context.ShouldBindJSON(&request); err != nil {
@@ -65,6 +90,17 @@ func (handler *PassengerAuthHandler) ConfirmCode(context *gin.Context) {
 	response.OK(context, result)
 }
 
+// Refresh godoc
+// @Summary Refresh passenger tokens
+// @Tags passenger-auth
+// @Accept json
+// @Produce json
+// @Param request body dto.RefreshTokenRequest true "Passenger refresh token"
+// @Success 200 {object} PassengerAuthRefreshSuccessResponse
+// @Failure 400 {object} response.Error
+// @Failure 401 {object} response.Error
+// @Failure 500 {object} response.Error
+// @Router /passenger/auth/refresh [post]
 func (handler *PassengerAuthHandler) Refresh(context *gin.Context) {
 	var request dto.RefreshTokenRequest
 	if err := context.ShouldBindJSON(&request); err != nil {
@@ -81,6 +117,18 @@ func (handler *PassengerAuthHandler) Refresh(context *gin.Context) {
 	response.OK(context, result)
 }
 
+// Logout godoc
+// @Summary Logout passenger
+// @Tags passenger-auth
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body dto.LogoutRequest true "Passenger refresh token to revoke"
+// @Success 200 {object} PassengerLogoutSuccessResponse
+// @Failure 400 {object} response.Error
+// @Failure 401 {object} response.Error
+// @Failure 500 {object} response.Error
+// @Router /passenger/auth/logout [post]
 func (handler *PassengerAuthHandler) Logout(context *gin.Context) {
 	var request dto.LogoutRequest
 	if err := context.ShouldBindJSON(&request); err != nil {

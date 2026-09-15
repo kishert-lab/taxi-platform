@@ -457,6 +457,125 @@ func (repository *PostgresDriverMobileRepository) TransitionOrderByUserID(ctx co
 	return order, nil
 }
 
+func (repository *PostgresDriverMobileRepository) CompleteOrderByUserID(ctx context.Context, userID uuid.UUID, orderID uuid.UUID) (driverapp.CurrentOrder, error) {
+	transaction, err := repository.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return driverapp.CurrentOrder{}, fmt.Errorf("begin driver order completion: %w", err)
+	}
+	defer rollbackTx(ctx, transaction)
+
+	currentOrder, err := selectDriverDomainOrderForTransition(ctx, transaction, userID, orderID)
+	if err != nil {
+		return driverapp.CurrentOrder{}, err
+	}
+	transition, err := domain.NewOrderTransition(currentOrder, domain.OrderStatusCompleted, &userID, currentOrder.DriverID, "", time.Now().UTC())
+	if err != nil {
+		return driverapp.CurrentOrder{}, err
+	}
+
+	finalPriceCents, actualDistanceMeters, actualDurationSeconds, err := completedTripPrice(ctx, transaction, orderID)
+	if err != nil {
+		return driverapp.CurrentOrder{}, err
+	}
+	updated, changed, err := transitionDispatchOrderStatus(ctx, transaction, transition, &finalPriceCents)
+	if err != nil {
+		return driverapp.CurrentOrder{}, err
+	}
+	if !changed {
+		return driverapp.CurrentOrder{}, fmt.Errorf("driver order completion concurrent update: %w", domain.ErrInvalidOrderStatusTransition)
+	}
+	if _, err := transaction.Exec(ctx, `
+		UPDATE orders
+		SET actual_distance_meters = $2,
+		    actual_duration_seconds = $3
+		WHERE id = $1`, orderID, actualDistanceMeters, actualDurationSeconds); err != nil {
+		return driverapp.CurrentOrder{}, fmt.Errorf("store actual trip metrics: %w", err)
+	}
+	if err := insertDriverMobileOrderEvent(ctx, transaction, transition, updated); err != nil {
+		return driverapp.CurrentOrder{}, err
+	}
+	if err := markDriverOnlineInTx(ctx, transaction, *updated.DriverID); err != nil {
+		return driverapp.CurrentOrder{}, err
+	}
+
+	order, err := selectDriverCurrentOrderByID(ctx, transaction, userID, orderID)
+	if err != nil {
+		return driverapp.CurrentOrder{}, err
+	}
+	if err := transaction.Commit(ctx); err != nil {
+		return driverapp.CurrentOrder{}, fmt.Errorf("commit driver order completion: %w", err)
+	}
+	return order, nil
+}
+
+func completedTripPrice(ctx context.Context, transaction pgx.Tx, orderID uuid.UUID) (int64, int64, int64, error) {
+	var distanceMeters int64
+	var durationSeconds int64
+	var assignedTariffID pgtype.UUID
+	var pricingMode string
+	var basePriceCents int64
+	var fixedPriceCents int64
+	var pricePerKMCents int64
+	var pricePerMinuteCents int64
+	var minimumPriceCents int64
+	var estimatedPriceCents int64
+
+	err := transaction.QueryRow(ctx, `
+		WITH route_segments AS (
+			SELECT location,
+			       LAG(location) OVER (ORDER BY recorded_at, id) AS previous_location
+			FROM order_route_points
+			WHERE order_id = $1
+		), route_metrics AS (
+			SELECT COALESCE(ROUND(SUM(ST_Distance(location, previous_location))), 0)::bigint AS distance_meters
+			FROM route_segments
+		)
+		SELECT route_metrics.distance_meters,
+		       GREATEST(EXTRACT(EPOCH FROM now() - o.started_at), 0)::bigint,
+		       o.assigned_tariff_id,
+		       COALESCE(t.pricing_mode, ''),
+		       COALESCE(t.base_price_cents, 0),
+		       COALESCE(t.fixed_price_cents, 0),
+		       COALESCE(t.price_per_km_cents, 0),
+		       COALESCE(t.price_per_minute_cents, 0),
+		       COALESCE(t.minimum_price_cents, 0),
+		       COALESCE((o.estimated_price * 100)::bigint, 0)
+		FROM orders o
+		CROSS JOIN route_metrics
+		LEFT JOIN taxi_park_tariffs t ON t.id = o.assigned_tariff_id
+		WHERE o.id = $1`, orderID).Scan(
+		&distanceMeters,
+		&durationSeconds,
+		&assignedTariffID,
+		&pricingMode,
+		&basePriceCents,
+		&fixedPriceCents,
+		&pricePerKMCents,
+		&pricePerMinuteCents,
+		&minimumPriceCents,
+		&estimatedPriceCents,
+	)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("calculate completed trip metrics: %w", err)
+	}
+	if !assignedTariffID.Valid {
+		return estimatedPriceCents, distanceMeters, durationSeconds, nil
+	}
+
+	priceCents, err := domain.CalculateTripPrice(domain.TaxiParkTariff{
+		PricingMode:    domain.PricingMode(pricingMode),
+		BasePrice:      domain.Money{Amount: basePriceCents, Currency: "RUB"},
+		FixedPrice:     domain.Money{Amount: fixedPriceCents, Currency: "RUB"},
+		PricePerKM:     domain.Money{Amount: pricePerKMCents, Currency: "RUB"},
+		PricePerMinute: domain.Money{Amount: pricePerMinuteCents, Currency: "RUB"},
+		MinimumPrice:   domain.Money{Amount: minimumPriceCents, Currency: "RUB"},
+	}, distanceMeters, durationSeconds)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("calculate completed trip tariff price: %w", err)
+	}
+	return priceCents, distanceMeters, durationSeconds, nil
+}
+
 func (repository *PostgresDriverMobileRepository) ListRoutePointsByUserID(ctx context.Context, userID uuid.UUID, orderID uuid.UUID) ([]driverapp.RoutePoint, error) {
 	var orderExists bool
 	if err := repository.pool.QueryRow(ctx, `

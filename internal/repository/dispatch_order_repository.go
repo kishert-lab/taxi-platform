@@ -112,8 +112,35 @@ func (repository *PostgresDispatchOrderRepository) AssignDriver(ctx context.Cont
 		    	WHERE d.id = $2
 		    	  AND tariff.car_class_id = orders.car_class_id
 		    	  AND tariff.is_active = true
-		    	ORDER BY tariff.created_at DESC
+		        ORDER BY tariff.created_at DESC, tariff.id DESC
 		    	LIMIT 1
+		    ),
+		    metadata = jsonb_set(
+		        COALESCE(metadata, '{}'::jsonb),
+		        '{assigned_tariff_snapshot}',
+		        COALESCE((
+		            SELECT jsonb_build_object(
+		                'id', tariff.id,
+		                'taxi_park_id', tariff.taxi_park_id,
+		                'car_class_id', tariff.car_class_id,
+		                'pricing_mode', tariff.pricing_mode,
+		                'base_price_cents', tariff.base_price_cents,
+		                'fixed_price_cents', tariff.fixed_price_cents,
+		                'price_per_km_cents', tariff.price_per_km_cents,
+		                'price_per_minute_cents', tariff.price_per_minute_cents,
+		                'minimum_price_cents', tariff.minimum_price_cents,
+		                'fixed_routes', tariff.fixed_routes,
+		                'captured_at', $3
+		            )
+		            FROM drivers d
+		            JOIN taxi_park_tariffs tariff ON tariff.taxi_park_id = d.taxi_park_id
+		            WHERE d.id = $2
+		              AND tariff.car_class_id = orders.car_class_id
+		              AND tariff.is_active = true
+		            ORDER BY tariff.created_at DESC, tariff.id DESC
+		            LIMIT 1
+		        ), 'null'::jsonb),
+		        true
 		    ),
 		    status = 'driver_assigned',
 		    accepted_at = $3,

@@ -1,0 +1,29 @@
+services:
+  map-origin:
+    image: ${MAP_ORIGIN_IMAGE:?Set a published immutable map origin image tag or digest}
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    environment:
+      MAP_ROOT: /data
+    volumes:
+      - ${MAP_DATA_ROOT:-/srv/taxi-maps}:/data:ro
+    networks: [maps]
+  map-proxy:
+    image: nginx@sha256:30f1c0d78e0ad60901648be663a710bdadf19e4c10ac6782c235200619158284
+    restart: unless-stopped
+    depends_on: [map-origin]
+    ports:
+      - "127.0.0.1:${MAP_HTTP_PORT:-8090}:8080"
+    environment:
+      MAP_CORS_ORIGIN: ${MAP_CORS_ORIGIN:?Set the dispatcher HTTPS origin}
+    volumes:
+      - ./infrastructure/maps/nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - map_proxy_cache:/var/cache/nginx/maps
+    networks: [maps]
+volumes:
+  map_proxy_cache:
+networks:
+  maps:
+    external: true
+    name: ${MAP_NETWORK:-taxi-maps}
