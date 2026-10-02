@@ -211,7 +211,12 @@ func TestSearchUsesTaxiParkCityWhenCityIDIsMissing(t *testing.T) {
 	center, _ := geodomain.NewCoordinates(58.01, 56.22)
 	repository := &fakeRepository{actorCityFound: true, actorCity: CityContext{CityID: cityID, Name: "РџРµСЂРјСЊ", Center: center}}
 	pelias := fakeClient{results: []geodomain.SearchResult{testResult(geodomain.ProviderPelias, 0.90)}}
-	service := newTestService(repository, pelias, fakeClient{})
+	service := New(repository, &pelias, nil, nil, zap.NewNop(), Config{
+		YandexEnabled:             true,
+		ExternalCacheTTL:          30 * 24 * time.Hour,
+		PeliasConfidenceThreshold: 0.75,
+		DefaultLimit:              10,
+	})
 	actorUserID := uuid.New()
 
 	if _, err := service.Search(context.Background(), geodomain.SearchRequest{
@@ -226,6 +231,40 @@ func TestSearchUsesTaxiParkCityWhenCityIDIsMissing(t *testing.T) {
 	}
 	if repository.lastLocalSearch.Focus == nil || repository.lastLocalSearch.Focus.Latitude != center.Latitude {
 		t.Fatalf("expected taxi park city focus, got %#v", repository.lastLocalSearch.Focus)
+	}
+}
+
+func TestSearchDoesNotApplyActorCityBiasForExplicitLocality(t *testing.T) {
+	actorCityID := uuid.New()
+	providedCityID := uuid.New()
+	actorCenter, _ := geodomain.NewCoordinates(57.8667, 54.7167)
+	repository := &fakeRepository{
+		actorCityFound: true,
+		actorCity:      CityContext{CityID: actorCityID, Name: "Default City", Center: actorCenter},
+	}
+	pelias := fakeClient{results: []geodomain.SearchResult{testResult(geodomain.ProviderPelias, 0.90)}}
+	service := New(repository, &pelias, nil, nil, zap.NewNop(), Config{
+		YandexEnabled:             true,
+		ExternalCacheTTL:          30 * 24 * time.Hour,
+		PeliasConfidenceThreshold: 0.75,
+		DefaultLimit:              10,
+	})
+	actorUserID := uuid.New()
+
+	if _, err := service.Search(context.Background(), geodomain.SearchRequest{
+		Query:       "Destination City, Main Street",
+		CityID:      &providedCityID,
+		Focus:       &actorCenter,
+		ActorUserID: &actorUserID,
+		ActorRole:   "dispatcher",
+	}); err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if repository.lastLocalSearch.CityID != nil || repository.lastLocalSearch.Focus != nil {
+		t.Fatalf("explicit locality was constrained to actor city: %#v", repository.lastLocalSearch)
+	}
+	if pelias.lastRequest.Query != "Destination City, Main Street" {
+		t.Fatalf("unexpected city-prefixed query: %q", pelias.lastRequest.Query)
 	}
 }
 

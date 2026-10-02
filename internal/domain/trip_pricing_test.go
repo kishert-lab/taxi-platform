@@ -19,3 +19,23 @@ func TestCalculateTripPriceUsesServerTripMetrics(t *testing.T) {
 		t.Fatalf("expected 14125 cents, got %d", price)
 	}
 }
+
+func TestCalculateTripPriceAppliesMinimumAndRoundsUpStartedMinute(t *testing.T) {
+	tariff := TaxiParkTariff{
+		PricingMode: PricingModeDistanceTime,
+		PricePerKM:  Money{Amount: 101}, PricePerMinute: Money{Amount: 50},
+		MinimumPrice: Money{Amount: 300},
+	}
+	price, err := CalculateTripPrice(tariff, 1001, 61)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if price != 300 {
+		t.Fatalf("minimum must win, got %d", price)
+	}
+	tariff.MinimumPrice.Amount = 0
+	price, err = CalculateTripPrice(tariff, 1001, 61)
+	if err != nil || price != 201 {
+		t.Fatalf("expected 101 distance + 100 for two started minutes, got %d (%v)", price, err)
+	}
+}

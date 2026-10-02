@@ -101,6 +101,12 @@ type Order struct {
 	ScheduledCancelReason           string
 	EstimatedPrice                  *Money
 	FinalPrice                      *Money
+	FareMode                        FareMode
+	PriceConfirmationState          string
+	ProposedPriceCents              *int64
+	AgreedPriceCents                *int64
+	PriceConfirmationExpiresAt      *time.Time
+	DeclinedDriverIDs               []uuid.UUID
 	ActualDistanceMeters            *int64
 	ActualDurationSeconds           *int64
 	PaymentMethod                   PaymentMethod

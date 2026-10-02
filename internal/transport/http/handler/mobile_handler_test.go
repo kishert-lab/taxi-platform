@@ -36,6 +36,7 @@ func TestPassengerCanCreateOrder(t *testing.T) {
 	router := passengerRouter(passengerID, domain.UserRolePassenger, orderUseCase, &fakePassengerAddressUseCase{})
 
 	requestBody := `{
+		"quote_id":"11111111-1111-1111-1111-111111111111",
 		"pickup_location":{"latitude":56.838011,"longitude":60.597465},
 		"pickup_address":"Lenina 1",
 		"destination_location":{"latitude":56.848011,"longitude":60.607465},
@@ -435,6 +436,13 @@ type fakePassengerOrderUseCase struct {
 	currentResult     dto.PassengerOrderResponse
 	createPassengerID uuid.UUID
 	err               error
+}
+
+func (useCase *fakePassengerOrderUseCase) ConfirmPassengerPrice(context.Context, uuid.UUID, uuid.UUID) (dto.PassengerOrderResponse, error) {
+	return useCase.createResult, nil
+}
+func (useCase *fakePassengerOrderUseCase) DeclinePassengerPrice(context.Context, uuid.UUID, uuid.UUID) (dto.PassengerOrderResponse, error) {
+	return useCase.createResult, nil
 }
 
 func (useCase *fakePassengerOrderUseCase) EstimatePassengerOrder(_ context.Context, _ uuid.UUID, _ dto.OrderEstimateRequest) (dto.OrderEstimateResponse, error) {

@@ -142,26 +142,29 @@ type ProfilePatch struct {
 }
 
 type CurrentOrder struct {
-	OrderID               uuid.UUID
-	DriverID              uuid.UUID
-	PassengerID           uuid.UUID
-	PassengerName         string
-	PassengerPhone        string
-	PassengerPhotoURL     string
-	PassengerRating       float64
-	PassengerRatingsCount int
-	PickupAddress         string
-	PickupLocation        domain.Coordinates
-	DestinationAddress    string
-	DestinationLocation   *domain.Coordinates
-	Status                domain.OrderStatus
-	Price                 *domain.Money
-	AssignedTariffID      *uuid.UUID
-	AssignedTaxiParkID    *uuid.UUID
-	PricingMode           domain.PricingMode
-	Comment               string
-	Version               int
-	CreatedAt             time.Time
+	OrderID                    uuid.UUID
+	DriverID                   uuid.UUID
+	PassengerID                uuid.UUID
+	PassengerName              string
+	PassengerPhone             string
+	PassengerPhotoURL          string
+	PassengerRating            float64
+	PassengerRatingsCount      int
+	PickupAddress              string
+	PickupLocation             domain.Coordinates
+	DestinationAddress         string
+	DestinationLocation        *domain.Coordinates
+	Status                     domain.OrderStatus
+	Price                      *domain.Money
+	AssignedTariffID           *uuid.UUID
+	AssignedTaxiParkID         *uuid.UUID
+	PricingMode                domain.PricingMode
+	FareMode                   domain.FareMode
+	PriceConfirmationState     string
+	PriceConfirmationExpiresAt *time.Time
+	Comment                    string
+	Version                    int
+	CreatedAt                  time.Time
 }
 
 type RoutePoint struct {
@@ -853,6 +856,10 @@ func driverOrderOfferResponse(offer dispatchapp.DriverOrderOffer) dto.DriverOrde
 			Currency: offer.Order.EstimatedPrice.Currency,
 		}
 	}
+	var proposedPrice *dto.MoneyResponse
+	if offer.ProposedPrice != nil {
+		proposedPrice = &dto.MoneyResponse{Amount: offer.ProposedPrice.Amount, Currency: offer.ProposedPrice.Currency}
+	}
 
 	return dto.DriverOrderOfferResponse{
 		OrderID: offer.Order.ID,
@@ -869,6 +876,9 @@ func driverOrderOfferResponse(offer dispatchapp.DriverOrderOffer) dto.DriverOrde
 		},
 		Status:         offer.Order.Status,
 		EstimatedPrice: estimatedPrice,
+		ProposedPrice:  proposedPrice,
+		FareMode:       offer.FareMode,
+		TariffRates:    offer.TariffRates,
 		Attempt:        offer.Offer.Attempt,
 		RadiusMeters:   offer.Offer.RadiusMeters,
 		DistanceMeters: offer.Offer.DistanceMeters,
@@ -915,13 +925,23 @@ func currentOrderResponse(order CurrentOrder) dto.DriverOrderResponse {
 			Address:  order.DestinationAddress,
 			Location: destinationLocation,
 		},
-		Status:         order.Status,
-		Price:          price,
-		Comment:        order.Comment,
-		Timeline:       []dto.OrderTimelineItem{{Status: order.Status, OccurredAt: order.CreatedAt}},
-		AllowedActions: driverAllowedActions(order.Status),
-		Version:        order.Version,
+		Status:                     order.Status,
+		Price:                      price,
+		FareMode:                   order.FareMode,
+		PriceConfirmationState:     order.PriceConfirmationState,
+		PriceConfirmationExpiresAt: order.PriceConfirmationExpiresAt,
+		Comment:                    order.Comment,
+		Timeline:                   []dto.OrderTimelineItem{{Status: order.Status, OccurredAt: order.CreatedAt}},
+		AllowedActions:             driverAllowedActionsForOrder(order),
+		Version:                    order.Version,
 	}
+}
+
+func driverAllowedActionsForOrder(order CurrentOrder) []string {
+	if order.Status == domain.OrderStatusDriverAssigned && order.PriceConfirmationState == "pending" {
+		return []string{"cancel", "call_passenger"}
+	}
+	return driverAllowedActions(order.Status)
 }
 
 func driverAllowedActions(status domain.OrderStatus) []string {
@@ -959,16 +979,7 @@ func trimStringPointer(value *string) *string {
 }
 
 func canAppendOrderRoutePoints(status domain.OrderStatus) bool {
-	switch status {
-	case domain.OrderStatusDriverAssigned,
-		domain.OrderStatusDriverArriving,
-		domain.OrderStatusDriverWaiting,
-		domain.OrderStatusInProgress,
-		domain.OrderStatusCompleted:
-		return true
-	default:
-		return false
-	}
+	return status == domain.OrderStatusInProgress
 }
 
 func requestIDFromContext(ctx context.Context) string {

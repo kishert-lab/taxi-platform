@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -80,8 +81,15 @@ func (service *Service) Search(ctx context.Context, request geodomain.SearchRequ
 	if request.RequestedAt.IsZero() {
 		request.RequestedAt = time.Now().UTC()
 	}
+	explicitLocality := hasExplicitLocality(request.Query)
+	if explicitLocality {
+		// A manually specified locality is more precise than the UI's saved city
+		// context, which otherwise prevents cross-city address lookup.
+		request.CityID = nil
+		request.Focus = nil
+	}
 	cityName := ""
-	if request.CityID == nil && request.ActorUserID != nil {
+	if request.CityID == nil && request.ActorUserID != nil && !explicitLocality {
 		cityContext, found, err := service.repository.ResolveActorCity(ctx, *request.ActorUserID, request.ActorRole)
 		if err != nil {
 			return nil, fmt.Errorf("resolve actor geocoder city: %w", err)
@@ -144,6 +152,27 @@ func (service *Service) Search(ctx context.Context, request geodomain.SearchRequ
 		return nil, geodomain.ErrExternalUnavailable
 	}
 	return []geodomain.SearchResult{}, nil
+}
+
+// hasExplicitLocality recognizes a city-qualified request. Such a request
+// must not be constrained to the actor's default city before it reaches the
+// self-hosted geocoder.
+func hasExplicitLocality(query string) bool {
+	parts := strings.SplitN(query, ",", 2)
+	if len(parts) != 2 {
+		return false
+	}
+	locality := strings.TrimSpace(parts[0])
+	remainder := strings.TrimSpace(parts[1])
+	if locality == "" || remainder == "" || len([]rune(locality)) < 3 {
+		return false
+	}
+	for _, character := range locality {
+		if unicode.IsDigit(character) {
+			return false
+		}
+	}
+	return true
 }
 
 func (service *Service) ResolveCityByCoordinates(ctx context.Context, coordinates geodomain.Coordinates) (CityContext, bool, error) {

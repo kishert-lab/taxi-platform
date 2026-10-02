@@ -127,6 +127,15 @@ func (worker *Worker) recoverSearchingOrders(ctx context.Context) error {
 	if worker.recoveryRepository == nil {
 		return nil
 	}
+	expiredIDs, err := worker.recoveryRepository.ListExpiredPriceConfirmations(ctx, 500)
+	if err != nil {
+		return fmt.Errorf("list expired price confirmations for recovery: %w", err)
+	}
+	for _, orderID := range expiredIDs {
+		if err := worker.service.ExpireOrderPrice(ctx, orderID); err != nil {
+			return fmt.Errorf("expire recovered price confirmation: %w", err)
+		}
+	}
 
 	orderIDs, err := worker.recoveryRepository.ListSearchingOrders(ctx, 500)
 	if err != nil {

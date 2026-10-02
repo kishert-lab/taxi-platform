@@ -44,6 +44,11 @@ func failByError(context *gin.Context, err error) {
 	if err != nil {
 		_ = context.Error(err)
 	}
+	var changedQuote *passengerapp.PriceQuoteChangedError
+	if errors.As(err, &changedQuote) {
+		response.Fail(context, http.StatusConflict, response.CodeOrderInvalidState, "Price quote changed; confirm updated terms", map[string]any{"updated_estimate": changedQuote.Updated})
+		return
+	}
 	switch {
 	case errors.Is(err, routing.ErrUnavailable), errors.Is(err, routing.ErrInvalidResponse):
 		response.Fail(context, http.StatusServiceUnavailable, response.CodeInternalError, "Road routing unavailable", nil)
@@ -71,6 +76,10 @@ func failByError(context *gin.Context, err error) {
 		response.Fail(context, http.StatusNotFound, response.CodeNotFound, "Car class not found", nil)
 	case errors.Is(err, passengerapp.ErrPassengerActiveOrderExists):
 		response.Fail(context, http.StatusConflict, response.CodeOrderInvalidState, "Passenger already has active order", nil)
+	case errors.Is(err, passengerapp.ErrPriceQuoteStale):
+		response.Fail(context, http.StatusConflict, response.CodeOrderInvalidState, "Price quote expired; request a new estimate", nil)
+	case errors.Is(err, passengerapp.ErrPriceQuoteRequired):
+		response.Fail(context, http.StatusBadRequest, response.CodeValidationError, "Price quote is required", nil)
 	case errors.Is(err, passengerapp.ErrPassengerOrderNotFound):
 		response.Fail(context, http.StatusNotFound, response.CodeOrderNotFound, "Order not found", nil)
 	case errors.Is(err, auth.ErrDriverAccessDenied):
@@ -115,6 +124,8 @@ func failByError(context *gin.Context, err error) {
 		response.Fail(context, http.StatusForbidden, response.CodeForbidden, "Taxi park account is not available", nil)
 	case errors.Is(err, taxiparkapp.ErrTaxiParkResourceNotFound), errors.Is(err, pgx.ErrNoRows):
 		response.Fail(context, http.StatusNotFound, response.CodeNotFound, "Taxi park resource not found", nil)
+	case errors.Is(err, taxiparkapp.ErrTariffPriorityConflict):
+		response.Fail(context, http.StatusConflict, response.CodeOrderInvalidState, "An active tariff already uses this class, fare mode, and priority", nil)
 	case errors.Is(err, taxiparkapp.ErrTaxiParkResourceForbidden):
 		response.Fail(context, http.StatusForbidden, response.CodeForbidden, "Taxi park resource is forbidden", nil)
 	case errors.Is(err, taxiparkapp.ErrInvalidDriverCreateFields):

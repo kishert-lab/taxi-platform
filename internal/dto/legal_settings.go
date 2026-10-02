@@ -119,9 +119,11 @@ type TaxiParkScheduledSettingsPatchRequest struct {
 
 type TaxiParkTariffRequest struct {
 	Name                string          `json:"name" binding:"required" example:"Park Economy"`
-	CarClassID          *uuid.UUID      `json:"car_class_id,omitempty" example:"33333333-3333-3333-3333-333333333333"`
+	CarClassID          *uuid.UUID      `json:"car_class_id" binding:"required" example:"33333333-3333-3333-3333-333333333333"`
 	Description         string          `json:"description,omitempty" example:"Local economy tariff"`
-	PricingMode         string          `json:"pricing_mode" binding:"omitempty,oneof=fixed distance time distance_time" example:"distance_time"`
+	PricingMode         string          `json:"pricing_mode" binding:"required,oneof=fixed distance time distance_time" example:"distance_time"`
+	FareMode            string          `json:"fare_mode" binding:"required,oneof=fixed_quote metered" example:"metered"`
+	Priority            int             `json:"priority" binding:"min=0" example:"0"`
 	BasePriceCents      int64           `json:"base_price_cents" binding:"min=0" example:"10000"`
 	FixedPriceCents     int64           `json:"fixed_price_cents" binding:"min=0" example:"25000"`
 	PricePerKMCents     int64           `json:"price_per_km_cents" binding:"min=0" example:"2500"`
@@ -136,6 +138,8 @@ type TaxiParkTariffPatchRequest struct {
 	CarClassID          *uuid.UUID      `json:"car_class_id,omitempty" example:"33333333-3333-3333-3333-333333333333"`
 	Description         *string         `json:"description,omitempty" example:"Local economy tariff"`
 	PricingMode         *string         `json:"pricing_mode,omitempty" binding:"omitempty,oneof=fixed distance time distance_time" example:"distance_time"`
+	FareMode            *string         `json:"fare_mode,omitempty" binding:"omitempty,oneof=fixed_quote metered" example:"metered"`
+	Priority            *int            `json:"priority,omitempty" binding:"omitempty,min=0" example:"0"`
 	BasePriceCents      *int64          `json:"base_price_cents,omitempty" binding:"omitempty,min=0" example:"10000"`
 	FixedPriceCents     *int64          `json:"fixed_price_cents,omitempty" binding:"omitempty,min=0" example:"25000"`
 	PricePerKMCents     *int64          `json:"price_per_km_cents,omitempty" binding:"omitempty,min=0" example:"2500"`
@@ -152,6 +156,8 @@ type TaxiParkTariffResponse struct {
 	Name           string             `json:"name" example:"Park Economy"`
 	Description    string             `json:"description,omitempty" example:"Local economy tariff"`
 	PricingMode    string             `json:"pricing_mode" example:"distance_time"`
+	FareMode       string             `json:"fare_mode" example:"metered"`
+	Priority       int                `json:"priority" example:"0"`
 	BasePrice      MoneyCentsResponse `json:"base_price"`
 	FixedPrice     MoneyCentsResponse `json:"fixed_price"`
 	PricePerKM     MoneyCentsResponse `json:"price_per_km"`
@@ -165,6 +171,16 @@ type TaxiParkTariffResponse struct {
 
 type TaxiParkTariffsResponse struct {
 	Tariffs []TaxiParkTariffResponse `json:"tariffs"`
+}
+
+type TaxiParkTariffCarClassResponse struct {
+	ID   uuid.UUID `json:"id"`
+	Code string    `json:"code"`
+	Name string    `json:"name"`
+}
+
+type TaxiParkTariffCarClassesResponse struct {
+	Items []TaxiParkTariffCarClassResponse `json:"items"`
 }
 
 type LegalDocumentRequest struct {
@@ -263,6 +279,8 @@ func TaxiParkTariffFromDomain(tariff domain.TaxiParkTariff) TaxiParkTariffRespon
 		Name:           tariff.Name,
 		Description:    tariff.Description,
 		PricingMode:    string(tariff.PricingMode),
+		FareMode:       string(tariff.FareMode),
+		Priority:       tariff.Priority,
 		BasePrice:      MoneyCentsFromDomain(tariff.BasePrice),
 		FixedPrice:     MoneyCentsFromDomain(tariff.FixedPrice),
 		PricePerKM:     MoneyCentsFromDomain(tariff.PricePerKM),

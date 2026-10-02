@@ -61,6 +61,8 @@ type TaxiParkTariff struct {
 	Name           string
 	Description    string
 	PricingMode    PricingMode
+	FareMode       FareMode
+	Priority       int
 	BasePrice      Money
 	FixedPrice     Money
 	PricePerKM     Money

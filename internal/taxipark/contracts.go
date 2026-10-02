@@ -12,6 +12,7 @@ import (
 )
 
 type Repository interface {
+	ListTariffCarClasses(ctx context.Context) ([]domain.CarClass, error)
 	GetSettingsByOwnerUserID(ctx context.Context, ownerUserID uuid.UUID) (domain.TaxiParkSettings, error)
 	UpdateSettingsByOwnerUserID(ctx context.Context, ownerUserID uuid.UUID, request dto.TaxiParkSettingsPatchRequest) (domain.TaxiParkSettings, error)
 	ListTariffsByOwnerUserID(ctx context.Context, ownerUserID uuid.UUID) ([]domain.TaxiParkTariff, error)

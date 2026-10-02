@@ -9,14 +9,16 @@ import (
 )
 
 const (
-	EventOrderOffer              = "order.offer"
-	EventOrderOfferCancelled     = "order.offer_cancelled"
-	EventOrderCancelled          = "order.cancelled"
-	EventOrderAssigned           = "order.assigned"
-	EventOrderDispatchSearching  = "order.searching"
-	EventOrderNoDriversFound     = "no_drivers_found"
-	EventOrderExpired            = "order.expired"
-	EventPassengerDriverAssigned = "driver_assigned"
+	EventOrderOffer                 = "order.offer"
+	EventOrderOfferCancelled        = "order.offer_cancelled"
+	EventOrderCancelled             = "order.cancelled"
+	EventOrderAssigned              = "order.assigned"
+	EventOrderDispatchSearching     = "order.searching"
+	EventOrderNoDriversFound        = "no_drivers_found"
+	EventOrderExpired               = "order.expired"
+	EventPassengerDriverAssigned    = "driver_assigned"
+	EventPriceConfirmationRequested = "order.price_confirmation_requested"
+	EventPriceConfirmationExpired   = "order.price_confirmation_expired"
 )
 
 type Config struct {
@@ -30,10 +32,12 @@ type Config struct {
 	AcceptLockTTL        time.Duration
 	WorkerPollTimeout    time.Duration
 	RecoveryInterval     time.Duration
+	ConfirmationTTL      time.Duration
 }
 
 type NearestDriversQuery struct {
 	CityID         uuid.UUID
+	FareMode       domain.FareMode
 	CarClassID     *uuid.UUID
 	Pickup         domain.Coordinates
 	RadiusMeters   int
@@ -60,8 +64,11 @@ type OrderOffer struct {
 }
 
 type DriverOrderOffer struct {
-	Offer OrderOffer
-	Order domain.Order
+	Offer         OrderOffer
+	Order         domain.Order
+	ProposedPrice *domain.Money
+	FareMode      domain.FareMode
+	TariffRates   []domain.TariffRateSnapshot
 }
 
 type DispatchTask struct {

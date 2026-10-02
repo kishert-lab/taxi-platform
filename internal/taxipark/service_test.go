@@ -194,8 +194,12 @@ func TestCreateScheduledOrderCalculatesTimingAndDoesNotRejectValidFutureTime(t *
 			Longitude: 60.575867,
 		},
 		DestinationAddress: "ADR 2",
-		ScheduledAt:        scheduledAt,
-		Timezone:           "Asia/Yekaterinburg",
+		DestinationLocation: &dto.TaxiParkOrderCoordinatesRequest{
+			Latitude:  56.8519,
+			Longitude: 60.6122,
+		},
+		ScheduledAt: scheduledAt,
+		Timezone:    "Asia/Yekaterinburg",
 	})
 	if err != nil {
 		t.Fatalf("create scheduled order: %v", err)
@@ -225,6 +229,10 @@ func (repository *fakeRepository) GetSettingsByOwnerUserID(context.Context, uuid
 
 func (repository *fakeRepository) UpdateSettingsByOwnerUserID(context.Context, uuid.UUID, dto.TaxiParkSettingsPatchRequest) (domain.TaxiParkSettings, error) {
 	return domain.TaxiParkSettings{}, nil
+}
+
+func (repository *fakeRepository) ListTariffCarClasses(context.Context) ([]domain.CarClass, error) {
+	return nil, nil
 }
 
 func (repository *fakeRepository) ListTariffsByOwnerUserID(context.Context, uuid.UUID) ([]domain.TaxiParkTariff, error) {

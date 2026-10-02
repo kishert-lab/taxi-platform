@@ -98,6 +98,7 @@ func TestSearchPassengerAddressesFallsBackWithoutResolvedCityIDWhenEmpty(t *test
 	}
 }
 
+
 type fakeAddressSearcher struct {
 	cityContext        geoservice.CityContext
 	cityFound          bool

@@ -264,11 +264,64 @@ func TestAcceptOfferAssignsDriverAndCancelsRemainingOffers(t *testing.T) {
 	if !realtimeGateway.hasDriverEvent(otherDriverID, EventOrderCancelled) {
 		t.Fatalf("expected remaining driver offer to be cancelled")
 	}
-	if !realtimeGateway.hasPassengerEvent(order.PassengerID, EventPassengerDriverAssigned) {
-		t.Fatalf("expected passenger to receive driver assigned event")
+	if !realtimeGateway.hasPassengerEvent(order.PassengerID, EventPriceConfirmationRequested) {
+		t.Fatalf("expected passenger to receive price confirmation event")
 	}
 	if len(passengerNotifier.notifications) != 1 {
 		t.Fatalf("expected one passenger push notification, got %d", len(passengerNotifier.notifications))
+	}
+}
+
+func TestPassengerConfirmsDriverFareOnce(t *testing.T) {
+	order := testOrder()
+	order.Status = domain.OrderStatusSearching
+	driverID := uuid.New()
+	repository := &fakeOrderRepository{order: order}
+	offers := newFakeOfferStore()
+	offers.saveTestOffer(order.ID, driverID)
+	gateway := &fakeRealtimeGateway{}
+	service := newTestService(repository, &fakeDriverSearchRepository{}, offers, &fakeTaskQueue{}, &fakeTimeoutQueue{}, gateway)
+	if err := service.AcceptOffer(context.Background(), order.ID, driverID); err != nil {
+		t.Fatalf("accept driver: %v", err)
+	}
+	if repository.order.PriceConfirmationState != "pending" || repository.order.AgreedPriceCents != nil {
+		t.Fatalf("driver acceptance finalized price before passenger approval")
+	}
+	for attempt := 0; attempt < 2; attempt++ {
+		if err := service.ConfirmOrderPrice(context.Background(), order.ID, order.PassengerID); err != nil {
+			t.Fatalf("confirm price attempt %d: %v", attempt, err)
+		}
+	}
+	if repository.order.AgreedPriceCents == nil || *repository.order.AgreedPriceCents != 36000 {
+		t.Fatalf("fixed price not recorded after confirmation: %#v", repository.order.AgreedPriceCents)
+	}
+	if !gateway.hasDriverEvent(driverID, EventOrderAssigned) {
+		t.Fatalf("driver was not notified of final assignment")
+	}
+}
+
+func TestExpiredPriceConfirmationReleasesDriverAndContinuesSearch(t *testing.T) {
+	order := testOrder()
+	order.Status = domain.OrderStatusSearching
+	driverID := uuid.New()
+	repository := &fakeOrderRepository{order: order}
+	offers := newFakeOfferStore()
+	offers.saveTestOffer(order.ID, driverID)
+	tasks := &fakeTaskQueue{}
+	service := newTestService(repository, &fakeDriverSearchRepository{}, offers, tasks, &fakeTimeoutQueue{}, &fakeRealtimeGateway{})
+	if err := service.AcceptOffer(context.Background(), order.ID, driverID); err != nil {
+		t.Fatalf("accept driver: %v", err)
+	}
+	expiredAt := time.Now().Add(-time.Second)
+	repository.order.PriceConfirmationExpiresAt = &expiredAt
+	if err := service.ExpireOrderPrice(context.Background(), order.ID); err != nil {
+		t.Fatalf("expire price confirmation: %v", err)
+	}
+	if repository.order.DriverID != nil || repository.order.Status != domain.OrderStatusSearching {
+		t.Fatalf("expired driver reservation was not released")
+	}
+	if len(tasks.published) != 1 || len(tasks.published[0].ExcludeDriverIDs) != 1 || tasks.published[0].ExcludeDriverIDs[0] != driverID {
+		t.Fatalf("next search did not exclude expired driver: %#v", tasks.published)
 	}
 }
 
@@ -329,6 +382,13 @@ type fakeOrderRepository struct {
 	order domain.Order
 }
 
+func (repository *fakeOrderRepository) GetCandidateFare(context.Context, uuid.UUID, uuid.UUID) (CandidateFare, error) {
+	return CandidateFare{Tariff: domain.TaxiParkTariff{
+		ID: uuid.New(), FareMode: domain.FareModeFixedQuote, PricingMode: domain.PricingModeFixed,
+		FixedPrice: domain.Money{Amount: 36000, Currency: "RUB"},
+	}, DistanceMeters: 5000, DurationSeconds: 600}, nil
+}
+
 func (repository *fakeOrderRepository) GetOrderByID(_ context.Context, _ uuid.UUID) (domain.Order, error) {
 	return repository.order, nil
 }
@@ -338,13 +398,39 @@ func (repository *fakeOrderRepository) MarkOrderSearching(_ context.Context, _ u
 	return nil
 }
 
-func (repository *fakeOrderRepository) AssignDriver(_ context.Context, _ uuid.UUID, driverID uuid.UUID, acceptedAt time.Time) (bool, error) {
+func (repository *fakeOrderRepository) AssignDriver(_ context.Context, _ uuid.UUID, driverID uuid.UUID, acceptedAt time.Time, fare CandidateFare, priceCents int64, expiresAt time.Time) (bool, error) {
 	if repository.order.DriverID != nil {
 		return false, nil
 	}
 	repository.order.DriverID = &driverID
 	repository.order.Status = domain.OrderStatusDriverAssigned
 	repository.order.AcceptedAt = &acceptedAt
+	repository.order.FareMode = fare.Tariff.FareMode
+	repository.order.PriceConfirmationState = "pending"
+	repository.order.ProposedPriceCents = &priceCents
+	repository.order.PriceConfirmationExpiresAt = &expiresAt
+	return true, nil
+}
+
+func (repository *fakeOrderRepository) ConfirmDriverPrice(_ context.Context, _ uuid.UUID, passengerID uuid.UUID) (bool, error) {
+	if repository.order.PassengerID != passengerID || repository.order.PriceConfirmationState != "pending" {
+		return false, nil
+	}
+	repository.order.PriceConfirmationState = "confirmed"
+	if repository.order.FareMode == domain.FareModeFixedQuote {
+		repository.order.AgreedPriceCents = repository.order.ProposedPriceCents
+	}
+	return true, nil
+}
+
+func (repository *fakeOrderRepository) ReleaseDriverReservation(_ context.Context, _ uuid.UUID, driverID uuid.UUID) (bool, error) {
+	if repository.order.DriverID == nil || *repository.order.DriverID != driverID || repository.order.PriceConfirmationState != "pending" {
+		return false, nil
+	}
+	repository.order.DriverID = nil
+	repository.order.Status = domain.OrderStatusSearching
+	repository.order.PriceConfirmationState = ""
+	repository.order.DeclinedDriverIDs = append(repository.order.DeclinedDriverIDs, driverID)
 	return true, nil
 }
 

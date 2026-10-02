@@ -27,6 +27,52 @@ func NewPostgresPassengerOrderRepository(pool *pgxpool.Pool) *PostgresPassengerO
 	return &PostgresPassengerOrderRepository{pool: pool}
 }
 
+func (repository *PostgresPassengerOrderRepository) SavePriceQuote(ctx context.Context, quote passengerapp.PriceQuote) error {
+	pricingBytes, err := json.Marshal(quote.Pricing)
+	if err != nil {
+		return fmt.Errorf("marshal passenger price quote: %w", err)
+	}
+	_, err = repository.pool.Exec(ctx, `
+		INSERT INTO passenger_price_quotes (
+			id, passenger_id, city_id, car_class_id, fare_mode,
+			pickup_latitude, pickup_longitude, destination_latitude, destination_longitude,
+			pricing_snapshot, expires_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+		quote.ID, quote.PassengerID, quote.CityID, quote.CarClassID, quote.FareMode,
+		quote.Pickup.Latitude, quote.Pickup.Longitude, quote.Destination.Latitude, quote.Destination.Longitude,
+		pricingBytes, quote.ExpiresAt)
+	if err != nil {
+		return fmt.Errorf("save passenger price quote: %w", err)
+	}
+	return nil
+}
+
+func (repository *PostgresPassengerOrderRepository) GetPriceQuote(ctx context.Context, quoteID uuid.UUID, passengerID uuid.UUID) (passengerapp.PriceQuote, error) {
+	var quote passengerapp.PriceQuote
+	var pricingBytes []byte
+	var consumedOrderID pgtype.UUID
+	err := repository.pool.QueryRow(ctx, `
+		SELECT id, passenger_id, city_id, car_class_id, fare_mode,
+		       pickup_latitude, pickup_longitude, destination_latitude, destination_longitude,
+		       pricing_snapshot, expires_at, consumed_order_id
+		FROM passenger_price_quotes
+		WHERE id = $1 AND passenger_id = $2`, quoteID, passengerID).Scan(
+		&quote.ID, &quote.PassengerID, &quote.CityID, &quote.CarClassID, &quote.FareMode,
+		&quote.Pickup.Latitude, &quote.Pickup.Longitude, &quote.Destination.Latitude, &quote.Destination.Longitude,
+		&pricingBytes, &quote.ExpiresAt, &consumedOrderID)
+	if err != nil {
+		return passengerapp.PriceQuote{}, fmt.Errorf("get passenger price quote: %w", err)
+	}
+	if err := json.Unmarshal(pricingBytes, &quote.Pricing); err != nil {
+		return passengerapp.PriceQuote{}, fmt.Errorf("decode passenger price quote: %w", err)
+	}
+	if consumedOrderID.Valid {
+		id := uuid.UUID(consumedOrderID.Bytes)
+		quote.ConsumedOrderID = &id
+	}
+	return quote, nil
+}
+
 func (repository *PostgresPassengerOrderRepository) ListActiveCarClasses(ctx context.Context) ([]domain.CarClass, error) {
 	rows, err := repository.pool.Query(ctx, `
 		SELECT `+carClassSelectColumns+`
@@ -76,18 +122,18 @@ func (repository *PostgresPassengerOrderRepository) ListAvailableCarClasses(ctx 
 		  AND c.is_active = true
 		  AND c.verification_status = 'verified'
 		  AND (c.driver_id = d.id OR EXISTS (
-		  	SELECT 1
-		  	FROM car_driver_assignments cda
-		  	WHERE cda.car_id = c.id
-		  	  AND cda.driver_id = d.id
+		    SELECT 1
+		    FROM car_driver_assignments cda
+		    WHERE cda.car_id = c.id
+		      AND cda.driver_id = d.id
 		  ))
 		  AND EXISTS (
-		  	SELECT 1
-		  	FROM taxi_parks tp
-		  	LEFT JOIN taxi_park_settings tps ON tps.taxi_park_id = tp.id
-		  	WHERE tp.id = d.taxi_park_id
-		  	  AND tp.deleted_at IS NULL
-		  	  AND COALESCE(tps.is_active, true) = true
+		    SELECT 1
+		    FROM taxi_parks tp
+		    LEFT JOIN taxi_park_settings tps ON tps.taxi_park_id = tp.id
+		    WHERE tp.id = d.taxi_park_id
+		      AND tp.deleted_at IS NULL
+		      AND COALESCE(tps.is_active, true) = true
 		  )
 		  AND COALESCE(c.permit_expires_at, current_date + interval '1 day') >= current_date
 		  AND COALESCE(c.osago_expires_at, current_date + interval '1 day') >= current_date
@@ -144,7 +190,7 @@ func (repository *PostgresPassengerOrderRepository) EstimateRoute(ctx context.Co
 	return distanceMeters / 1000.0, nil
 }
 
-func (repository *PostgresPassengerOrderRepository) ListAvailableTaxiParkTariffs(ctx context.Context, pickup geodomain.Coordinates, cityID uuid.UUID, carClassID uuid.UUID, radiusMeters int, locationMaxAge time.Duration) ([]domain.TaxiParkTariff, error) {
+func (repository *PostgresPassengerOrderRepository) ListAvailableTaxiParkTariffs(ctx context.Context, pickup geodomain.Coordinates, cityID uuid.UUID, carClassID uuid.UUID, fareMode domain.FareMode, radiusMeters int, locationMaxAge time.Duration) ([]domain.TaxiParkTariff, error) {
 	rows, err := repository.pool.Query(ctx, `
 		WITH pickup AS (
 			SELECT ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography AS location
@@ -159,6 +205,12 @@ func (repository *PostgresPassengerOrderRepository) ListAvailableTaxiParkTariffs
 			  AND d.verification_status = 'verified'
 			  AND d.taxi_park_id IS NOT NULL
 			  AND d.deleted_at IS NULL
+			  AND NOT EXISTS (
+			      SELECT 1 FROM orders active_order
+			      WHERE active_order.driver_id = d.id
+			        AND active_order.status IN ('driver_assigned', 'driver_arriving', 'driver_waiting', 'in_progress')
+			        AND active_order.deleted_at IS NULL
+			  )
 			  AND dl.updated_at >= now() - make_interval(secs => $5)
 			  AND ST_DWithin(dl.location, pickup.location, $4)
 			  AND EXISTS (
@@ -183,15 +235,15 @@ func (repository *PostgresPassengerOrderRepository) ListAvailableTaxiParkTariffs
 			  )
 		), ranked_tariffs AS (
 			SELECT DISTINCT ON (t.taxi_park_id) t.id, t.taxi_park_id, t.car_class_id, t.name, COALESCE(t.description, ''),
-				t.pricing_mode, t.base_price_cents, t.fixed_price_cents, t.price_per_km_cents, t.price_per_minute_cents,
+				t.pricing_mode, t.fare_mode, t.priority, t.base_price_cents, t.fixed_price_cents, t.price_per_km_cents, t.price_per_minute_cents,
 				t.minimum_price_cents, t.fixed_routes, t.is_active, t.created_at, t.updated_at
 			FROM taxi_park_tariffs t
 			INNER JOIN eligible_parks ep ON ep.taxi_park_id = t.taxi_park_id
-			WHERE t.car_class_id = $6 AND t.is_active = true
-			ORDER BY t.taxi_park_id, t.created_at DESC, t.id DESC
+			WHERE t.car_class_id = $6 AND t.fare_mode = $7 AND t.is_active = true
+			ORDER BY t.taxi_park_id, t.priority DESC, t.id DESC
 		)
 		SELECT * FROM ranked_tariffs ORDER BY taxi_park_id`,
-		pickup.Longitude, pickup.Latitude, cityID, radiusMeters, int(locationMaxAge.Seconds()), carClassID,
+		pickup.Longitude, pickup.Latitude, cityID, radiusMeters, int(locationMaxAge.Seconds()), carClassID, fareMode,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list available taxi park tariffs: %w", err)
@@ -202,7 +254,7 @@ func (repository *PostgresPassengerOrderRepository) ListAvailableTaxiParkTariffs
 	for rows.Next() {
 		var tariff domain.TaxiParkTariff
 		var assignedCarClassID pgtype.UUID
-		if err := rows.Scan(&tariff.ID, &tariff.TaxiParkID, &assignedCarClassID, &tariff.Name, &tariff.Description, &tariff.PricingMode, &tariff.BasePrice.Amount, &tariff.FixedPrice.Amount, &tariff.PricePerKM.Amount, &tariff.PricePerMinute.Amount, &tariff.MinimumPrice.Amount, &tariff.FixedRoutes, &tariff.IsActive, &tariff.CreatedAt, &tariff.UpdatedAt); err != nil {
+		if err := rows.Scan(&tariff.ID, &tariff.TaxiParkID, &assignedCarClassID, &tariff.Name, &tariff.Description, &tariff.PricingMode, &tariff.FareMode, &tariff.Priority, &tariff.BasePrice.Amount, &tariff.FixedPrice.Amount, &tariff.PricePerKM.Amount, &tariff.PricePerMinute.Amount, &tariff.MinimumPrice.Amount, &tariff.FixedRoutes, &tariff.IsActive, &tariff.CreatedAt, &tariff.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan available taxi park tariff: %w", err)
 		}
 		if assignedCarClassID.Valid {
@@ -239,32 +291,36 @@ func (repository *PostgresPassengerOrderRepository) HasNearbyAvailableDrivers(ct
 			  AND d.verification_status = 'verified'
 			  AND d.taxi_park_id IS NOT NULL
 			  AND d.deleted_at IS NULL
-			  AND EXISTS (
-			  	SELECT 1
-			  	FROM taxi_parks tp
-			  	LEFT JOIN taxi_park_settings tps ON tps.taxi_park_id = tp.id
-			  	WHERE tp.id = d.taxi_park_id
-			  	  AND tp.deleted_at IS NULL
-			  	  AND COALESCE(tps.is_active, true) = true
+			  AND NOT EXISTS (
+			      SELECT 1 FROM orders active_order
+			      WHERE active_order.driver_id = d.id
+			        AND active_order.status IN ('driver_assigned', 'driver_arriving', 'driver_waiting', 'in_progress')
+			        AND active_order.deleted_at IS NULL
 			  )
 			  AND EXISTS (
-			  	SELECT 1
-			  	FROM cars c
-			  	LEFT JOIN car_driver_assignments cda ON cda.car_id = c.id
-			  	WHERE c.taxi_park_id = d.taxi_park_id
-			  	  AND (c.driver_id = d.id OR cda.driver_id = d.id)
-			  	  AND c.car_class = (
-			  	  		SELECT cc.code
-			  	  		FROM car_classes cc
-			  	  		WHERE cc.id = $6
-			  	  		  AND cc.deleted_at IS NULL
-			  	  		  AND cc.is_active = true
-			  	  )
-			  	  AND c.verification_status = 'verified'
-			  	  AND c.is_active = true
-			  	  AND c.deleted_at IS NULL
-			  	  AND COALESCE(c.permit_expires_at, current_date + interval '1 day') >= current_date
-			  	  AND COALESCE(c.osago_expires_at, current_date + interval '1 day') >= current_date
+			    SELECT 1
+			    FROM taxi_parks tp
+			    LEFT JOIN taxi_park_settings tps ON tps.taxi_park_id = tp.id
+			    WHERE tp.id = d.taxi_park_id
+			      AND tp.deleted_at IS NULL
+			      AND COALESCE(tps.is_active, true) = true
+			  )
+			  AND EXISTS (
+			    SELECT 1
+			    FROM cars c
+			    LEFT JOIN car_driver_assignments cda ON cda.car_id = c.id
+			    JOIN car_classes driver_class ON driver_class.code = c.car_class
+			    JOIN car_classes requested_class ON requested_class.id = $6
+			    WHERE c.taxi_park_id = d.taxi_park_id
+			      AND (c.driver_id = d.id OR cda.driver_id = d.id)
+			      AND driver_class.sort_order >= requested_class.sort_order
+			      AND driver_class.is_active AND driver_class.deleted_at IS NULL
+			      AND requested_class.is_active AND requested_class.deleted_at IS NULL
+			      AND c.verification_status = 'verified'
+			      AND c.is_active = true
+			      AND c.deleted_at IS NULL
+			      AND COALESCE(c.permit_expires_at, current_date + interval '1 day') >= current_date
+			      AND COALESCE(c.osago_expires_at, current_date + interval '1 day') >= current_date
 			  )
 			  AND dl.updated_at >= now() - make_interval(secs => $5)
 			  AND ST_DWithin(dl.location, pickup.location, $4)
@@ -319,7 +375,8 @@ func (repository *PostgresPassengerOrderRepository) CreatePassengerOrder(ctx con
 			car_class_id,
 			dispatch_attempt,
 			version,
-			metadata
+			metadata,
+			fare_mode
 		)
 		VALUES (
 			$1,
@@ -338,7 +395,8 @@ func (repository *PostgresPassengerOrderRepository) CreatePassengerOrder(ctx con
 			$15,
 			0,
 			1,
-			$16::jsonb
+			$16::jsonb,
+			$17
 		)
 		RETURNING id`,
 		record.PassengerID,
@@ -357,6 +415,7 @@ func (repository *PostgresPassengerOrderRepository) CreatePassengerOrder(ctx con
 		record.PassengerLocationSharingEnabled,
 		record.CarClassID,
 		string(metadataBytes),
+		record.FareMode,
 	).Scan(&insertedOrderID)
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -364,6 +423,17 @@ func (repository *PostgresPassengerOrderRepository) CreatePassengerOrder(ctx con
 			return passengerapp.OrderDetails{}, pgx.ErrNoRows
 		}
 		return passengerapp.OrderDetails{}, fmt.Errorf("insert passenger order: %w", err)
+	}
+	commandTag, err := transaction.Exec(ctx, `
+		UPDATE passenger_price_quotes
+		SET consumed_order_id = $3
+		WHERE id = $1 AND passenger_id = $2
+		  AND consumed_order_id IS NULL AND expires_at > now()`, record.QuoteID, record.PassengerID, insertedOrderID)
+	if err != nil {
+		return passengerapp.OrderDetails{}, fmt.Errorf("consume passenger price quote: %w", err)
+	}
+	if commandTag.RowsAffected() != 1 {
+		return passengerapp.OrderDetails{}, passengerapp.ErrPriceQuoteStale
 	}
 
 	if err := insertPassengerOrderEvents(ctx, transaction, insertedOrderID, record.PassengerID); err != nil {
@@ -445,6 +515,12 @@ func (repository *PostgresPassengerOrderRepository) CancelPassengerOrder(ctx con
 	).Scan(&updatedOrderID)
 	if err != nil {
 		return passengerapp.OrderDetails{}, fmt.Errorf("update passenger order cancelled: %w", err)
+	}
+	if _, err := transaction.Exec(ctx, `
+		UPDATE drivers SET status = 'online'
+		WHERE id = (SELECT driver_id FROM orders WHERE id = $1)
+		  AND status = 'busy' AND deleted_at IS NULL`, updatedOrderID); err != nil {
+		return passengerapp.OrderDetails{}, fmt.Errorf("release driver after passenger cancellation: %w", err)
 	}
 
 	payloadBytes, marshalErr := json.Marshal(map[string]any{
@@ -628,6 +704,11 @@ const passengerOrderSelectQuery = `
 		o.created_at,
 		o.updated_at,
 		o.metadata,
+		o.fare_mode,
+		COALESCE(o.price_confirmation_state, ''),
+		o.proposed_price_cents,
+		o.agreed_price_cents,
+		o.price_confirmation_expires_at,
 		cc.id,
 		COALESCE(cc.code, ''),
 		COALESCE(cc.name, ''),
@@ -685,6 +766,9 @@ func scanPassengerOrderDetails(row pgx.Row) (passengerapp.OrderDetails, error) {
 	var carClassCreatedAt pgtype.Timestamptz
 	var carClassUpdatedAt pgtype.Timestamptz
 	var metadataBytes []byte
+	var proposedPrice pgtype.Int8
+	var agreedPrice pgtype.Int8
+	var confirmationExpiresAt pgtype.Timestamptz
 	var assignedDriverID pgtype.UUID
 	var assignedCarID pgtype.UUID
 	var pickupLatitude float64
@@ -739,6 +823,11 @@ func scanPassengerOrderDetails(row pgx.Row) (passengerapp.OrderDetails, error) {
 		&order.CreatedAt,
 		&order.UpdatedAt,
 		&metadataBytes,
+		&order.FareMode,
+		&order.PriceConfirmationState,
+		&proposedPrice,
+		&agreedPrice,
+		&confirmationExpiresAt,
 		&carClassID,
 		&carClassCode,
 		&carClassName,
@@ -765,6 +854,15 @@ func scanPassengerOrderDetails(row pgx.Row) (passengerapp.OrderDetails, error) {
 		&assignedCarClass,
 	); err != nil {
 		return passengerapp.OrderDetails{}, err
+	}
+	if proposedPrice.Valid {
+		order.ProposedPriceCents = &proposedPrice.Int64
+	}
+	if agreedPrice.Valid {
+		order.AgreedPriceCents = &agreedPrice.Int64
+	}
+	if confirmationExpiresAt.Valid {
+		order.PriceConfirmationExpiresAt = &confirmationExpiresAt.Time
 	}
 
 	order.PickupLocation = domain.Coordinates{Latitude: pickupLatitude, Longitude: pickupLongitude}
@@ -817,6 +915,7 @@ func scanPassengerOrderDetails(row pgx.Row) (passengerapp.OrderDetails, error) {
 		order.FinalPrice = &domain.Money{Amount: finalPriceAmount.Int64, Currency: "RUB"}
 	}
 	details.Pricing = parsePassengerOrderPricingSnapshot(metadataBytes)
+	details.AssignedTariffRates = parseAssignedTariffRates(metadataBytes)
 
 	if carClassID.Valid {
 		classUUID := uuid.UUID(carClassID.Bytes)
@@ -885,7 +984,39 @@ func nullableMoneyAmount(money *domain.Money) any {
 }
 
 type passengerOrderMetadata struct {
-	PricingSnapshot *domain.OrderPricingSnapshot `json:"pricing_snapshot"`
+	PricingSnapshot        *domain.OrderPricingSnapshot `json:"pricing_snapshot"`
+	AssignedTariffSnapshot *assignedTariffMetadata      `json:"assigned_tariff_snapshot"`
+}
+
+type assignedTariffMetadata struct {
+	ID                  uuid.UUID          `json:"id"`
+	TaxiParkID uuid.UUID `json:"taxi_park_id"`
+	PricingMode         domain.PricingMode `json:"pricing_mode"`
+	FareMode            domain.FareMode    `json:"fare_mode"`
+	BasePriceCents      int64              `json:"base_price_cents"`
+	FixedPriceCents     int64              `json:"fixed_price_cents"`
+	PricePerKMCents     int64              `json:"price_per_km_cents"`
+	PricePerMinuteCents int64              `json:"price_per_minute_cents"`
+	MinimumPriceCents   int64              `json:"minimum_price_cents"`
+}
+
+func parseAssignedTariffRates(metadataBytes []byte) *domain.TariffRateSnapshot {
+	if len(metadataBytes) == 0 {
+		return nil
+	}
+	var metadata passengerOrderMetadata
+	if err := json.Unmarshal(metadataBytes, &metadata); err != nil || metadata.AssignedTariffSnapshot == nil {
+		return nil
+	}
+	tariff := metadata.AssignedTariffSnapshot
+	return &domain.TariffRateSnapshot{
+		TariffID: tariff.ID.String(), TaxiParkID: tariff.TaxiParkID.String(), PricingMode: tariff.PricingMode, FareMode: tariff.FareMode,
+		BasePrice:      domain.Money{Amount: tariff.BasePriceCents, Currency: "RUB"},
+		FixedPrice:     domain.Money{Amount: tariff.FixedPriceCents, Currency: "RUB"},
+		PricePerKM:     domain.Money{Amount: tariff.PricePerKMCents, Currency: "RUB"},
+		PricePerMinute: domain.Money{Amount: tariff.PricePerMinuteCents, Currency: "RUB"},
+		MinimumPrice:   domain.Money{Amount: tariff.MinimumPriceCents, Currency: "RUB"},
+	}
 }
 
 func parsePassengerOrderPricingSnapshot(metadataBytes []byte) *domain.OrderPricingSnapshot {

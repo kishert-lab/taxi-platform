@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -85,35 +86,86 @@ func (repository *PostgresDispatchOrderRepository) MarkOrderSearching(ctx contex
 	return nil
 }
 
-func (repository *PostgresDispatchOrderRepository) AssignDriver(ctx context.Context, orderID uuid.UUID, driverID uuid.UUID, acceptedAt time.Time) (bool, error) {
+func (repository *PostgresDispatchOrderRepository) GetCandidateFare(ctx context.Context, orderID uuid.UUID, driverID uuid.UUID) (dispatch.CandidateFare, error) {
+	var fare dispatch.CandidateFare
+	var tariff domain.TaxiParkTariff
+	var carClassID pgtype.UUID
+	err := repository.pool.QueryRow(ctx, `
+		SELECT t.id, t.taxi_park_id, t.car_class_id, t.name, COALESCE(t.description, ''),
+		       t.pricing_mode, t.fare_mode, t.priority, t.base_price_cents,
+		       t.fixed_price_cents, t.price_per_km_cents, t.price_per_minute_cents,
+		       t.minimum_price_cents, t.fixed_routes, t.is_active, t.created_at, t.updated_at,
+		       (o.metadata->'pricing_snapshot'->>'route_distance_meters')::bigint,
+		       (o.metadata->'pricing_snapshot'->>'route_duration_seconds')::bigint
+		FROM orders o
+		JOIN drivers d ON d.id = $2
+		JOIN taxi_park_tariffs t ON t.taxi_park_id = d.taxi_park_id
+		WHERE o.id = $1 AND o.status = 'searching' AND o.deleted_at IS NULL
+		  AND t.car_class_id = o.car_class_id AND t.fare_mode = o.fare_mode AND t.is_active
+		ORDER BY t.priority DESC, t.id DESC LIMIT 1`, orderID, driverID).Scan(
+		&tariff.ID, &tariff.TaxiParkID, &carClassID, &tariff.Name, &tariff.Description,
+		&tariff.PricingMode, &tariff.FareMode, &tariff.Priority, &tariff.BasePrice.Amount,
+		&tariff.FixedPrice.Amount, &tariff.PricePerKM.Amount, &tariff.PricePerMinute.Amount,
+		&tariff.MinimumPrice.Amount, &tariff.FixedRoutes, &tariff.IsActive, &tariff.CreatedAt, &tariff.UpdatedAt,
+		&fare.DistanceMeters, &fare.DurationSeconds)
+	if err != nil {
+		return dispatch.CandidateFare{}, fmt.Errorf("get candidate park fare: %w", err)
+	}
+	if carClassID.Valid {
+		id := uuid.UUID(carClassID.Bytes)
+		tariff.CarClassID = &id
+	}
+	tariff.BasePrice.Currency = "RUB"
+	tariff.FixedPrice.Currency = "RUB"
+	tariff.PricePerKM.Currency = "RUB"
+	tariff.PricePerMinute.Currency = "RUB"
+	tariff.MinimumPrice.Currency = "RUB"
+	fare.Tariff = tariff
+	return fare, nil
+}
+
+func (repository *PostgresDispatchOrderRepository) AssignDriver(ctx context.Context, orderID uuid.UUID, driverID uuid.UUID, acceptedAt time.Time, fare dispatch.CandidateFare, priceCents int64, confirmationExpiresAt time.Time) (bool, error) {
 	const query = `
-		UPDATE orders
+		WITH reserved AS (UPDATE orders
 		SET driver_id = $2,
 		    car_id = (
-		    	SELECT c.id
-		    	FROM drivers d
-		    	JOIN cars c ON c.taxi_park_id = d.taxi_park_id
-		    	LEFT JOIN car_driver_assignments cda ON cda.car_id = c.id
-		    	WHERE d.id = $2
-		    	  AND (c.driver_id = d.id OR cda.driver_id = d.id)
-		    	  AND c.deleted_at IS NULL
-		    	ORDER BY (c.driver_id = d.id) DESC, c.created_at DESC
-		    	LIMIT 1
+		      SELECT c.id
+		      FROM drivers d
+		      JOIN cars c ON c.taxi_park_id = d.taxi_park_id
+		      LEFT JOIN car_driver_assignments cda ON cda.car_id = c.id
+		      WHERE d.id = $2
+		        AND (c.driver_id = d.id OR cda.driver_id = d.id)
+		        AND c.deleted_at IS NULL
+		        AND c.is_active = true
+		        AND c.verification_status = 'verified'
+		        AND COALESCE(c.permit_expires_at, current_date + interval '1 day') >= current_date
+		        AND COALESCE(c.osago_expires_at, current_date + interval '1 day') >= current_date
+		        AND EXISTS (
+		            SELECT 1 FROM car_classes requested_class
+		            JOIN car_classes driver_class ON driver_class.code = c.car_class
+		            WHERE requested_class.id = orders.car_class_id
+		              AND driver_class.sort_order >= requested_class.sort_order
+		              AND requested_class.is_active = true AND requested_class.deleted_at IS NULL
+		              AND driver_class.is_active = true AND driver_class.deleted_at IS NULL
+		        )
+		      ORDER BY (c.driver_id = d.id) DESC, c.created_at DESC
+		      LIMIT 1
 		    ),
 		    park_id = (
-		    	SELECT d.taxi_park_id
-		    	FROM drivers d
-		    	WHERE d.id = $2
+		      SELECT d.taxi_park_id
+		      FROM drivers d
+		      WHERE d.id = $2
 		    ),
 		    assigned_tariff_id = (
-		    	SELECT tariff.id
-		    	FROM drivers d
-		    	JOIN taxi_park_tariffs tariff ON tariff.taxi_park_id = d.taxi_park_id
-		    	WHERE d.id = $2
-		    	  AND tariff.car_class_id = orders.car_class_id
-		    	  AND tariff.is_active = true
-		        ORDER BY tariff.created_at DESC, tariff.id DESC
-		    	LIMIT 1
+		      SELECT tariff.id
+		      FROM drivers d
+		      JOIN taxi_park_tariffs tariff ON tariff.taxi_park_id = d.taxi_park_id
+		      WHERE d.id = $2
+		        AND tariff.car_class_id = orders.car_class_id
+		        AND tariff.fare_mode = orders.fare_mode
+		        AND tariff.is_active = true
+		        ORDER BY tariff.priority DESC, tariff.id DESC
+		      LIMIT 1
 		    ),
 		    metadata = jsonb_set(
 		        COALESCE(metadata, '{}'::jsonb),
@@ -124,45 +176,163 @@ func (repository *PostgresDispatchOrderRepository) AssignDriver(ctx context.Cont
 		                'taxi_park_id', tariff.taxi_park_id,
 		                'car_class_id', tariff.car_class_id,
 		                'pricing_mode', tariff.pricing_mode,
+		                'fare_mode', tariff.fare_mode,
+		                'priority', tariff.priority,
 		                'base_price_cents', tariff.base_price_cents,
 		                'fixed_price_cents', tariff.fixed_price_cents,
 		                'price_per_km_cents', tariff.price_per_km_cents,
 		                'price_per_minute_cents', tariff.price_per_minute_cents,
 		                'minimum_price_cents', tariff.minimum_price_cents,
 		                'fixed_routes', tariff.fixed_routes,
-		                'captured_at', $3
+			            'captured_at', $3::timestamptz
 		            )
 		            FROM drivers d
 		            JOIN taxi_park_tariffs tariff ON tariff.taxi_park_id = d.taxi_park_id
 		            WHERE d.id = $2
 		              AND tariff.car_class_id = orders.car_class_id
+		              AND tariff.fare_mode = orders.fare_mode
 		              AND tariff.is_active = true
-		            ORDER BY tariff.created_at DESC, tariff.id DESC
+		            ORDER BY tariff.priority DESC, tariff.id DESC
 		            LIMIT 1
 		        ), 'null'::jsonb),
 		        true
 		    ),
 		    status = 'driver_assigned',
-		    accepted_at = $3,
+		    accepted_at = $3::timestamptz,
+		    price_confirmation_state = 'pending',
+		    proposed_price_cents = $6,
+		    price_confirmation_expires_at = $7,
 		    version = version + 1
 		WHERE id = $1
 		  AND status = 'searching'
+		  AND (metadata->'pricing_snapshot'->>'route_distance_meters')::bigint = $8
+		  AND (metadata->'pricing_snapshot'->>'route_duration_seconds')::bigint = $9
 		  AND driver_id IS NULL
 		  AND deleted_at IS NULL
 		  AND EXISTS (
-		  	SELECT 1
-		  	FROM drivers d
-		  	JOIN taxi_park_tariffs tariff ON tariff.taxi_park_id = d.taxi_park_id
-		  	WHERE d.id = $2
-		  	  AND tariff.car_class_id = orders.car_class_id
-		  	  AND tariff.is_active = true
-		  )`
+		    SELECT 1
+		    FROM drivers d
+		    JOIN taxi_park_tariffs tariff ON tariff.taxi_park_id = d.taxi_park_id
+		    WHERE d.id = $2
+		      AND d.status = 'online'
+		      AND d.is_verified = true
+		      AND d.verification_status = 'verified'
+		      AND d.deleted_at IS NULL
+		      AND EXISTS (
+		          SELECT 1 FROM taxi_parks tp
+		          LEFT JOIN taxi_park_settings settings ON settings.taxi_park_id = tp.id
+		          WHERE tp.id = d.taxi_park_id AND tp.deleted_at IS NULL
+		            AND COALESCE(settings.is_active, true)
+		      )
+		      AND EXISTS (
+		          SELECT 1 FROM driver_locations dl
+		          WHERE dl.driver_id = d.id
+		            AND dl.updated_at >= now() - interval '30 seconds'
+		      )
+		      AND NOT EXISTS (
+		          SELECT 1 FROM orders active_order
+		          WHERE active_order.driver_id = d.id
+		            AND active_order.status IN ('driver_assigned', 'driver_arriving', 'driver_waiting', 'in_progress')
+		            AND active_order.deleted_at IS NULL
+		      )
+		      AND EXISTS (
+		          SELECT 1 FROM cars c
+		          LEFT JOIN car_driver_assignments cda ON cda.car_id = c.id
+		          JOIN car_classes driver_class ON driver_class.code = c.car_class
+		          JOIN car_classes requested_class ON requested_class.id = orders.car_class_id
+		          WHERE c.taxi_park_id = d.taxi_park_id
+		            AND (c.driver_id = d.id OR cda.driver_id = d.id)
+		            AND c.is_active = true AND c.deleted_at IS NULL
+		            AND c.verification_status = 'verified'
+		            AND COALESCE(c.permit_expires_at, current_date + interval '1 day') >= current_date
+		            AND COALESCE(c.osago_expires_at, current_date + interval '1 day') >= current_date
+		            AND driver_class.sort_order >= requested_class.sort_order
+		      )
+		      AND tariff.car_class_id = orders.car_class_id
+		      AND tariff.fare_mode = orders.fare_mode
+		      AND tariff.is_active = true
+		      AND tariff.id = $4 AND tariff.updated_at = $5
+		      AND NOT EXISTS (
+		          SELECT 1 FROM taxi_park_tariffs higher
+		          WHERE higher.taxi_park_id = tariff.taxi_park_id
+		            AND higher.car_class_id = tariff.car_class_id
+		            AND higher.fare_mode = tariff.fare_mode AND higher.is_active
+		            AND (higher.priority > tariff.priority OR (higher.priority = tariff.priority AND higher.id > tariff.id))
+		      )
+		  )
+		RETURNING id)
+		INSERT INTO order_events (order_id, actor_driver_id, event_type, payload, created_at)
+		SELECT id, $2, 'order.updated',
+		       jsonb_build_object('event', 'price_confirmation_requested', 'driver_id', $2, 'price_cents', $6, 'expires_at', $7), $3::timestamptz
+		FROM reserved`
 
-	commandTag, err := repository.pool.Exec(ctx, query, orderID, driverID, acceptedAt)
+	commandTag, err := repository.pool.Exec(ctx, query, orderID, driverID, acceptedAt, fare.Tariff.ID, fare.Tariff.UpdatedAt, priceCents, confirmationExpiresAt, fare.DistanceMeters, fare.DurationSeconds)
 	if err != nil {
+		var postgresError *pgconn.PgError
+		if errors.As(err, &postgresError) && postgresError.Code == "23505" {
+			return false, nil
+		}
 		return false, fmt.Errorf("assign driver atomically: %w", err)
 	}
 	return commandTag.RowsAffected() == 1, nil
+}
+
+func (repository *PostgresDispatchOrderRepository) ConfirmDriverPrice(ctx context.Context, orderID uuid.UUID, passengerID uuid.UUID) (bool, error) {
+	commandTag, err := repository.pool.Exec(ctx, `
+		WITH confirmed AS (UPDATE orders
+		SET price_confirmation_state = 'confirmed',
+		    agreed_price_cents = CASE WHEN fare_mode = 'fixed_quote' THEN proposed_price_cents ELSE NULL END,
+		    version = version + 1
+		WHERE id = $1 AND passenger_id = $2 AND status = 'driver_assigned'
+		  AND price_confirmation_state = 'pending'
+		  AND price_confirmation_expires_at > now()
+		  AND proposed_price_cents > 0 AND deleted_at IS NULL
+		RETURNING id, driver_id, proposed_price_cents, fare_mode)
+		INSERT INTO order_events (order_id, event_type, payload, created_at)
+		SELECT id, 'order.updated',
+		       jsonb_build_object('event', 'price_confirmed', 'driver_id', driver_id, 'price_cents', proposed_price_cents, 'fare_mode', fare_mode), now()
+		FROM confirmed`, orderID, passengerID)
+	if err != nil {
+		return false, fmt.Errorf("confirm driver park price: %w", err)
+	}
+	return commandTag.RowsAffected() == 1, nil
+}
+
+func (repository *PostgresDispatchOrderRepository) ReleaseDriverReservation(ctx context.Context, orderID uuid.UUID, driverID uuid.UUID) (bool, error) {
+	transaction, err := repository.pool.Begin(ctx)
+	if err != nil {
+		return false, fmt.Errorf("begin driver reservation release: %w", err)
+	}
+	defer rollbackTx(ctx, transaction)
+	commandTag, err := transaction.Exec(ctx, `
+		UPDATE orders
+		SET status = 'searching', driver_id = NULL, car_id = NULL, park_id = NULL,
+		    assigned_tariff_id = NULL, accepted_at = NULL,
+		    price_confirmation_state = NULL, proposed_price_cents = NULL,
+		    price_confirmation_expires_at = NULL, agreed_price_cents = NULL,
+		    metadata = COALESCE(metadata, '{}'::jsonb) - 'assigned_tariff_snapshot',
+		    declined_driver_ids = array_append(declined_driver_ids, $2),
+		    version = version + 1
+		WHERE id = $1 AND driver_id = $2 AND status = 'driver_assigned'
+		  AND price_confirmation_state = 'pending' AND deleted_at IS NULL`, orderID, driverID)
+	if err != nil {
+		return false, fmt.Errorf("release order driver reservation: %w", err)
+	}
+	if commandTag.RowsAffected() != 1 {
+		return false, nil
+	}
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO order_events (order_id, actor_driver_id, event_type, payload, created_at)
+		VALUES ($1, $2::uuid, 'order.updated', jsonb_build_object('event', 'price_declined', 'driver_id', $2::uuid), now())`, orderID, driverID); err != nil {
+		return false, fmt.Errorf("record declined driver price: %w", err)
+	}
+	if _, err := transaction.Exec(ctx, `UPDATE drivers SET status = 'online' WHERE id = $1 AND status = 'busy' AND deleted_at IS NULL`, driverID); err != nil {
+		return false, fmt.Errorf("mark released driver online: %w", err)
+	}
+	if err := transaction.Commit(ctx); err != nil {
+		return false, fmt.Errorf("commit driver reservation release: %w", err)
+	}
+	return true, nil
 }
 
 func (repository *PostgresDispatchOrderRepository) TransitionOrderStatus(ctx context.Context, transition domain.OrderTransition) (domain.Order, bool, error) {
@@ -176,6 +346,12 @@ func (repository *PostgresDispatchOrderRepository) TransitionOrderStatus(ctx con
 		    completed_at = CASE WHEN $4 = 'completed' THEN $5 ELSE completed_at END
 		WHERE id = $1
 		  AND status = $2
+		  AND (
+		      status <> 'driver_assigned'
+		      OR fare_mode = 'metered'
+		      OR COALESCE(price_confirmation_state, 'confirmed') = 'confirmed'
+		      OR $4 = 'cancelled'
+		  )
 		  AND version = $3
 		  AND deleted_at IS NULL
 		RETURNING ` + dispatchOrderSelectColumns
@@ -245,6 +421,30 @@ func (repository *PostgresDispatchOrderRepository) AddOrderEvent(ctx context.Con
 
 func (repository *PostgresDispatchOrderRepository) AddStateEvent(ctx context.Context, event orderapp.OrderEvent) error {
 	return repository.insertOrderEvent(ctx, event.OrderID, event.ActorUserID, event.ActorDriverID, event.EventType, event.Payload, time.Now().UTC())
+}
+
+func (repository *PostgresDispatchOrderRepository) ListExpiredPriceConfirmations(ctx context.Context, limit int) ([]uuid.UUID, error) {
+	rows, err := repository.pool.Query(ctx, `
+		SELECT id FROM orders
+		WHERE status = 'driver_assigned' AND price_confirmation_state = 'pending'
+		  AND price_confirmation_expires_at <= now() AND deleted_at IS NULL
+		ORDER BY price_confirmation_expires_at LIMIT $1`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list expired price confirmations: %w", err)
+	}
+	defer rows.Close()
+	orderIDs := make([]uuid.UUID, 0)
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan expired price confirmation: %w", err)
+		}
+		orderIDs = append(orderIDs, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate expired price confirmations: %w", err)
+	}
+	return orderIDs, nil
 }
 
 func (repository *PostgresDispatchOrderRepository) ListSearchingOrders(ctx context.Context, limit int) ([]uuid.UUID, error) {
@@ -338,7 +538,13 @@ const dispatchOrderSelectColumns = `
 	version,
 	created_at,
 	updated_at,
-	deleted_at`
+	deleted_at,
+	fare_mode,
+	COALESCE(price_confirmation_state, ''),
+	proposed_price_cents,
+	agreed_price_cents,
+	price_confirmation_expires_at,
+	declined_driver_ids`
 
 func scanDispatchOrder(row pgx.Row) (domain.Order, error) {
 	var order domain.Order
@@ -362,6 +568,9 @@ func scanDispatchOrder(row pgx.Row) (domain.Order, error) {
 	var scheduledCancelledAt pgtype.Timestamptz
 	var scheduledExpiredAt pgtype.Timestamptz
 	var deletedAt pgtype.Timestamptz
+	var proposedPrice pgtype.Int8
+	var agreedPrice pgtype.Int8
+	var confirmationExpiresAt pgtype.Timestamptz
 	var scheduledStatus pgtype.Text
 	var pickupLatitude float64
 	var pickupLongitude float64
@@ -410,8 +619,23 @@ func scanDispatchOrder(row pgx.Row) (domain.Order, error) {
 		&order.CreatedAt,
 		&order.UpdatedAt,
 		&deletedAt,
+		&order.FareMode,
+		&order.PriceConfirmationState,
+		&proposedPrice,
+		&agreedPrice,
+		&confirmationExpiresAt,
+		&order.DeclinedDriverIDs,
 	); err != nil {
 		return domain.Order{}, err
+	}
+	if proposedPrice.Valid {
+		order.ProposedPriceCents = &proposedPrice.Int64
+	}
+	if agreedPrice.Valid {
+		order.AgreedPriceCents = &agreedPrice.Int64
+	}
+	if confirmationExpiresAt.Valid {
+		order.PriceConfirmationExpiresAt = &confirmationExpiresAt.Time
 	}
 
 	pickupLocation, err := domain.NewCoordinates(pickupLatitude, pickupLongitude)

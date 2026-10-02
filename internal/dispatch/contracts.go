@@ -11,11 +11,20 @@ import (
 
 type OrderRepository interface {
 	GetOrderByID(ctx context.Context, orderID uuid.UUID) (domain.Order, error)
+	GetCandidateFare(ctx context.Context, orderID uuid.UUID, driverID uuid.UUID) (CandidateFare, error)
 	MarkOrderSearching(ctx context.Context, orderID uuid.UUID) error
-	AssignDriver(ctx context.Context, orderID uuid.UUID, driverID uuid.UUID, acceptedAt time.Time) (bool, error)
+	AssignDriver(ctx context.Context, orderID uuid.UUID, driverID uuid.UUID, acceptedAt time.Time, fare CandidateFare, priceCents int64, confirmationExpiresAt time.Time) (bool, error)
+	ConfirmDriverPrice(ctx context.Context, orderID uuid.UUID, passengerID uuid.UUID) (bool, error)
+	ReleaseDriverReservation(ctx context.Context, orderID uuid.UUID, driverID uuid.UUID) (bool, error)
 	IncrementDispatchAttempt(ctx context.Context, orderID uuid.UUID) error
 	FailOrder(ctx context.Context, orderID uuid.UUID, reason string) error
 	AddOrderEvent(ctx context.Context, event OrderEvent) error
+}
+
+type CandidateFare struct {
+	Tariff          domain.TaxiParkTariff
+	DistanceMeters  int64
+	DurationSeconds int64
 }
 
 type DriverSearchRepository interface {
@@ -55,6 +64,7 @@ type TimeoutQueue interface {
 
 type RecoveryRepository interface {
 	ListSearchingOrders(ctx context.Context, limit int) ([]uuid.UUID, error)
+	ListExpiredPriceConfirmations(ctx context.Context, limit int) ([]uuid.UUID, error)
 }
 
 type Metrics interface {

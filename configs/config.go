@@ -157,6 +157,7 @@ type DispatchConfig struct {
 	AcceptLockTTL        time.Duration `mapstructure:"accept_lock_ttl"`
 	WorkerPollTimeout    time.Duration `mapstructure:"worker_poll_timeout"`
 	RecoveryInterval     time.Duration `mapstructure:"recovery_interval"`
+	ConfirmationTTL      time.Duration `mapstructure:"confirmation_ttl"`
 }
 
 type ScheduledConfig struct {
@@ -442,6 +443,7 @@ func setDefaults() {
 	viper.SetDefault("dispatch.accept_lock_ttl", "30s")
 	viper.SetDefault("dispatch.worker_poll_timeout", "5s")
 	viper.SetDefault("dispatch.recovery_interval", "30s")
+	viper.SetDefault("dispatch.confirmation_ttl", "60s")
 	viper.SetDefault("scheduled.worker_enabled", true)
 	viper.SetDefault("scheduled.tick_seconds", 30)
 	viper.SetDefault("scheduled.batch_size", 100)

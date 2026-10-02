@@ -43,6 +43,18 @@ func (repository *PostgresDriverSearchRepository) FindNearestOnlineDrivers(ctx c
 		  AND d.verification_status = 'verified'
 		  AND d.taxi_park_id IS NOT NULL
 		  AND d.deleted_at IS NULL
+		  AND ($8::uuid IS NULL OR EXISTS (
+		      SELECT 1 FROM taxi_park_tariffs tariff
+		      WHERE tariff.taxi_park_id = d.taxi_park_id
+		        AND tariff.car_class_id = $8
+		        AND tariff.fare_mode = $9 AND tariff.is_active
+		  ))
+		  AND NOT EXISTS (
+		      SELECT 1 FROM orders active_order
+		      WHERE active_order.driver_id = d.id
+		        AND active_order.status IN ('driver_assigned', 'driver_arriving', 'driver_waiting', 'in_progress')
+		        AND active_order.deleted_at IS NULL
+		  )
 		  AND EXISTS (
 		  	SELECT 1
 		  	FROM taxi_parks tp
@@ -94,6 +106,7 @@ func (repository *PostgresDriverSearchRepository) FindNearestOnlineDrivers(ctx c
 		query.Limit,
 		int(query.LocationMaxAge.Seconds()),
 		query.CarClassID,
+		query.FareMode,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("query nearest online drivers: %w", err)

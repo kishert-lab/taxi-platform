@@ -149,6 +149,7 @@ func (repository *PostgresDriverMobileRepository) GetCurrentOrderByUserID(ctx co
 		       o.status,
 		       CASE
 		           WHEN o.final_price IS NOT NULL THEN (o.final_price * 100)::bigint
+		           WHEN o.proposed_price_cents IS NOT NULL THEN o.proposed_price_cents
 		           WHEN o.estimated_price IS NOT NULL THEN (o.estimated_price * 100)::bigint
 		           ELSE NULL
 		       END AS price_amount,
@@ -156,6 +157,9 @@ func (repository *PostgresDriverMobileRepository) GetCurrentOrderByUserID(ctx co
 		       o.park_id,
 		       COALESCE(assigned_tariff.pricing_mode, '') AS pricing_mode,
 		       COALESCE(o.passenger_comment, '') AS passenger_comment,
+		       COALESCE(o.price_confirmation_state, ''),
+		       o.fare_mode,
+		       o.price_confirmation_expires_at,
 		       o.version,
 		       o.created_at
 		FROM orders o
@@ -196,6 +200,7 @@ func (repository *PostgresDriverMobileRepository) GetOrderByUserID(ctx context.C
 		       o.status,
 		       CASE
 		           WHEN o.final_price IS NOT NULL THEN (o.final_price * 100)::bigint
+		           WHEN o.proposed_price_cents IS NOT NULL THEN o.proposed_price_cents
 		           WHEN o.estimated_price IS NOT NULL THEN (o.estimated_price * 100)::bigint
 		           ELSE NULL
 		       END AS price_amount,
@@ -203,6 +208,9 @@ func (repository *PostgresDriverMobileRepository) GetOrderByUserID(ctx context.C
 		       o.park_id,
 		       COALESCE(assigned_tariff.pricing_mode, '') AS pricing_mode,
 		       COALESCE(o.passenger_comment, '') AS passenger_comment,
+		       COALESCE(o.price_confirmation_state, ''),
+		       o.fare_mode,
+		       o.price_confirmation_expires_at,
 		       o.version,
 		       o.created_at
 		FROM orders o
@@ -244,6 +252,7 @@ func (repository *PostgresDriverMobileRepository) ListOrderHistoryByUserID(ctx c
 		       o.status,
 		       CASE
 		           WHEN o.final_price IS NOT NULL THEN (o.final_price * 100)::bigint
+		           WHEN o.proposed_price_cents IS NOT NULL THEN o.proposed_price_cents
 		           WHEN o.estimated_price IS NOT NULL THEN (o.estimated_price * 100)::bigint
 		           ELSE NULL
 		       END AS price_amount,
@@ -251,6 +260,9 @@ func (repository *PostgresDriverMobileRepository) ListOrderHistoryByUserID(ctx c
 		       o.park_id,
 		       COALESCE(assigned_tariff.pricing_mode, '') AS pricing_mode,
 		       COALESCE(o.passenger_comment, '') AS passenger_comment,
+		       COALESCE(o.price_confirmation_state, ''),
+		       o.fare_mode,
+		       o.price_confirmation_expires_at,
 		       o.version,
 		       o.created_at
 		FROM orders o
@@ -301,6 +313,7 @@ func selectDriverCurrentOrderByID(ctx context.Context, transaction pgx.Tx, userI
 		       o.status,
 		       CASE
 		           WHEN o.final_price IS NOT NULL THEN (o.final_price * 100)::bigint
+		           WHEN o.proposed_price_cents IS NOT NULL THEN o.proposed_price_cents
 		           WHEN o.estimated_price IS NOT NULL THEN (o.estimated_price * 100)::bigint
 		           ELSE NULL
 		       END AS price_amount,
@@ -308,6 +321,9 @@ func selectDriverCurrentOrderByID(ctx context.Context, transaction pgx.Tx, userI
 		       o.park_id,
 		       COALESCE(assigned_tariff.pricing_mode, '') AS pricing_mode,
 		       COALESCE(o.passenger_comment, '') AS passenger_comment,
+		       COALESCE(o.price_confirmation_state, ''),
+		       o.fare_mode,
+		       o.price_confirmation_expires_at,
 		       o.version,
 		       o.created_at
 		FROM orders o
@@ -332,6 +348,7 @@ func transitionDispatchOrderStatus(ctx context.Context, transaction pgx.Tx, tran
 		    final_price = CASE WHEN $4::order_status = 'completed'::order_status THEN ($7::bigint::numeric / 100) ELSE final_price END
 		WHERE id = $1
 		  AND status = $2::order_status
+		  AND (status <> 'driver_assigned'::order_status OR COALESCE(price_confirmation_state, 'confirmed') = 'confirmed' OR $4::order_status = 'cancelled'::order_status)
 		  AND version = $3
 		  AND deleted_at IS NULL
 		RETURNING `+dispatchOrderSelectColumns,
@@ -518,14 +535,18 @@ func completedTripPrice(ctx context.Context, transaction pgx.Tx, orderID uuid.UU
 	var pricePerKMCents int64
 	var pricePerMinuteCents int64
 	var minimumPriceCents int64
-	var estimatedPriceCents int64
+	var fareMode string
+	var agreedPriceCents pgtype.Int8
 
 	err := transaction.QueryRow(ctx, `
 		WITH route_segments AS (
-			SELECT location,
-			       LAG(location) OVER (ORDER BY recorded_at, id) AS previous_location
-			FROM order_route_points
-			WHERE order_id = $1
+			SELECT points.location,
+			       LAG(points.location) OVER (ORDER BY points.recorded_at, points.id) AS previous_location
+			FROM order_route_points points
+			JOIN orders trip ON trip.id = points.order_id
+			WHERE points.order_id = $1
+			  AND trip.started_at IS NOT NULL
+			  AND points.recorded_at >= trip.started_at
 		), route_metrics AS (
 			SELECT COALESCE(ROUND(SUM(ST_Distance(location, previous_location))), 0)::bigint AS distance_meters
 			FROM route_segments
@@ -533,13 +554,14 @@ func completedTripPrice(ctx context.Context, transaction pgx.Tx, orderID uuid.UU
 		SELECT route_metrics.distance_meters,
 		       GREATEST(EXTRACT(EPOCH FROM now() - o.started_at), 0)::bigint,
 		       o.assigned_tariff_id,
-		       COALESCE(t.pricing_mode, ''),
-		       COALESCE(t.base_price_cents, 0),
-		       COALESCE(t.fixed_price_cents, 0),
-		       COALESCE(t.price_per_km_cents, 0),
-		       COALESCE(t.price_per_minute_cents, 0),
-		       COALESCE(t.minimum_price_cents, 0),
-		       COALESCE((o.estimated_price * 100)::bigint, 0)
+		       COALESCE(o.metadata->'assigned_tariff_snapshot'->>'pricing_mode', t.pricing_mode, ''),
+		       COALESCE((o.metadata->'assigned_tariff_snapshot'->>'base_price_cents')::bigint, t.base_price_cents, 0),
+		       COALESCE((o.metadata->'assigned_tariff_snapshot'->>'fixed_price_cents')::bigint, t.fixed_price_cents, 0),
+		       COALESCE((o.metadata->'assigned_tariff_snapshot'->>'price_per_km_cents')::bigint, t.price_per_km_cents, 0),
+		       COALESCE((o.metadata->'assigned_tariff_snapshot'->>'price_per_minute_cents')::bigint, t.price_per_minute_cents, 0),
+		       COALESCE((o.metadata->'assigned_tariff_snapshot'->>'minimum_price_cents')::bigint, t.minimum_price_cents, 0),
+		       o.fare_mode,
+		       o.agreed_price_cents
 		FROM orders o
 		CROSS JOIN route_metrics
 		LEFT JOIN taxi_park_tariffs t ON t.id = o.assigned_tariff_id
@@ -553,13 +575,20 @@ func completedTripPrice(ctx context.Context, transaction pgx.Tx, orderID uuid.UU
 		&pricePerKMCents,
 		&pricePerMinuteCents,
 		&minimumPriceCents,
-		&estimatedPriceCents,
+		&fareMode,
+		&agreedPriceCents,
 	)
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("calculate completed trip metrics: %w", err)
 	}
 	if !assignedTariffID.Valid {
-		return estimatedPriceCents, distanceMeters, durationSeconds, nil
+		return 0, 0, 0, fmt.Errorf("completed trip has no assigned tariff")
+	}
+	if fareMode == string(domain.FareModeFixedQuote) {
+		if !agreedPriceCents.Valid {
+			return 0, 0, 0, fmt.Errorf("fixed quote was not agreed by passenger")
+		}
+		return agreedPriceCents.Int64, distanceMeters, durationSeconds, nil
 	}
 
 	priceCents, err := domain.CalculateTripPrice(domain.TaxiParkTariff{
@@ -770,6 +799,11 @@ func (repository *PostgresDriverMobileRepository) AppendOrderRoutePoints(ctx con
 			       input.accuracy_meters,
 			       input.recorded_at
 			FROM input
+			JOIN orders trip ON trip.id = $1 AND trip.driver_id = $2
+			WHERE trip.status = 'in_progress'
+			  AND trip.started_at IS NOT NULL
+			  AND input.recorded_at >= trip.started_at
+			  AND input.recorded_at <= now() + interval '5 seconds'
 			ON CONFLICT DO NOTHING
 			RETURNING 1
 		)
@@ -862,8 +896,14 @@ func (repository *PostgresDriverMobileRepository) markOffline(ctx context.Contex
 			UPDATE drivers
 			SET status = 'offline'
 			WHERE user_id = $1
-			  AND status IN ('online', 'paused', 'offline')
 			  AND deleted_at IS NULL
+			  AND NOT EXISTS (
+				  SELECT 1
+				  FROM orders active_order
+				  WHERE active_order.driver_id = drivers.id
+					AND active_order.status IN ('driver_assigned', 'driver_arriving', 'driver_waiting', 'in_progress')
+					AND active_order.deleted_at IS NULL
+			  )
 			RETURNING id
 		)
 		`+driverMobileProfileSelect+`
@@ -1035,6 +1075,7 @@ func scanDriverMobileProfile(row pgx.Row) (driverapp.Profile, error) {
 
 func scanDriverCurrentOrder(row pgx.Row) (driverapp.CurrentOrder, error) {
 	var order driverapp.CurrentOrder
+	var confirmationExpiresAt pgtype.Timestamptz
 	var destinationLatitude pgtype.Float8
 	var destinationLongitude pgtype.Float8
 	var priceAmount pgtype.Int8
@@ -1062,10 +1103,16 @@ func scanDriverCurrentOrder(row pgx.Row) (driverapp.CurrentOrder, error) {
 		&order.AssignedTaxiParkID,
 		&order.PricingMode,
 		&order.Comment,
+		&order.PriceConfirmationState,
+		&order.FareMode,
+		&confirmationExpiresAt,
 		&order.Version,
 		&order.CreatedAt,
 	); err != nil {
 		return driverapp.CurrentOrder{}, err
+	}
+	if confirmationExpiresAt.Valid {
+		order.PriceConfirmationExpiresAt = &confirmationExpiresAt.Time
 	}
 
 	order.PickupLocation = domain.Coordinates{

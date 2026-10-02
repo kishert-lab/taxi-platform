@@ -12,6 +12,8 @@ import (
 )
 
 type PassengerOrdersUseCase interface {
+	ConfirmPassengerPrice(ctx context.Context, passengerID uuid.UUID, orderID uuid.UUID) (dto.PassengerOrderResponse, error)
+	DeclinePassengerPrice(ctx context.Context, passengerID uuid.UUID, orderID uuid.UUID) (dto.PassengerOrderResponse, error)
 	EstimatePassengerOrder(ctx context.Context, passengerID uuid.UUID, request dto.OrderEstimateRequest) (dto.OrderEstimateResponse, error)
 	CreatePassengerOrder(ctx context.Context, passengerID uuid.UUID, request dto.PassengerCreateOrderRequest) (dto.PassengerOrderResponse, error)
 	GetCurrentPassengerOrder(ctx context.Context, passengerID uuid.UUID) (dto.PassengerOrderResponse, error)
@@ -37,7 +39,53 @@ func (handler *PassengerOrdersHandler) RegisterRoutes(router gin.IRouter, passen
 	protected.GET("/orders/history", handler.OrderHistory)
 	protected.GET("/orders/:id", handler.GetOrder)
 	protected.POST("/orders/:id/cancel", handler.CancelOrder)
+	protected.POST("/orders/:id/price-confirmation", handler.ConfirmPrice)
+	protected.DELETE("/orders/:id/price-confirmation", handler.DeclinePrice)
 	protected.POST("/orders/:id/rate", handler.RateOrder)
+}
+
+// ConfirmPrice godoc
+// @Summary Confirm selected driver's fixed price or metered terms
+// @Tags passenger-orders
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Order ID"
+// @Success 200 {object} PassengerOrderSuccessResponse
+// @Failure 409 {object} response.Error
+// @Router /passenger/orders/{id}/price-confirmation [post]
+func (handler *PassengerOrdersHandler) ConfirmPrice(context *gin.Context) {
+	passengerID, orderID, ok := passengerOrderIDsFromPassengerContext(context)
+	if !ok {
+		return
+	}
+	result, err := handler.useCase.ConfirmPassengerPrice(context.Request.Context(), passengerID, orderID)
+	if err != nil {
+		failByError(context, err)
+		return
+	}
+	response.OK(context, result)
+}
+
+// DeclinePrice godoc
+// @Summary Decline selected driver's price and continue search
+// @Tags passenger-orders
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Order ID"
+// @Success 200 {object} PassengerOrderSuccessResponse
+// @Failure 409 {object} response.Error
+// @Router /passenger/orders/{id}/price-confirmation [delete]
+func (handler *PassengerOrdersHandler) DeclinePrice(context *gin.Context) {
+	passengerID, orderID, ok := passengerOrderIDsFromPassengerContext(context)
+	if !ok {
+		return
+	}
+	result, err := handler.useCase.DeclinePassengerPrice(context.Request.Context(), passengerID, orderID)
+	if err != nil {
+		failByError(context, err)
+		return
+	}
+	response.OK(context, result)
 }
 
 // EstimateOrder godoc

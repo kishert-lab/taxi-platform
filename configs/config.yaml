@@ -90,6 +90,7 @@ dispatch:
   accept_lock_ttl: 30s
   worker_poll_timeout: 5s
   recovery_interval: 30s
+  confirmation_ttl: 60s
 
 geocoder:
   pelias_url: http://127.0.0.1:4000

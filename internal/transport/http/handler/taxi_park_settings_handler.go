@@ -16,6 +16,7 @@ import (
 )
 
 type TaxiParkSettingsUseCase interface {
+	ListTariffCarClasses(ctx context.Context) ([]domain.CarClass, error)
 	EstimateOrder(context.Context, uuid.UUID, dto.TaxiParkCreateOrderRequest) (*domain.OrderPricingSnapshot, error)
 	GetSettings(ctx context.Context, ownerUserID uuid.UUID) (domain.TaxiParkSettings, error)
 	UpdateSettings(ctx context.Context, ownerUserID uuid.UUID, request dto.TaxiParkSettingsPatchRequest) (domain.TaxiParkSettings, error)
@@ -111,8 +112,34 @@ func (handler *TaxiParkSettingsHandler) RegisterRoutes(router gin.IRouter) {
 	taxiPark.POST("/cars/:id/verify", handler.VerifyCar)
 	taxiPark.GET("/cars/:id/documents", handler.ListCarDocuments)
 	taxiPark.GET("/tariffs", handler.ListTariffs)
+	taxiPark.GET("/tariff-car-classes", handler.ListTariffCarClasses)
 	taxiPark.POST("/tariffs", handler.CreateTariff)
 	taxiPark.PATCH("/tariffs/:id", handler.UpdateTariff)
+}
+
+// ListTariffCarClasses godoc
+// @Summary List active car classes available for taxi park tariffs
+// @Tags taxi-park-tariffs
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} TaxiParkTariffCarClassesResponse
+// @Router /taxi-park/tariff-car-classes [get]
+func (handler *TaxiParkSettingsHandler) ListTariffCarClasses(context *gin.Context) {
+	classes, err := handler.useCase.ListTariffCarClasses(context.Request.Context())
+	if err != nil {
+		failByError(context, err)
+		return
+	}
+	items := make([]dto.TaxiParkTariffCarClassResponse, 0, len(classes))
+	for _, class := range classes {
+		items = append(items, dto.TaxiParkTariffCarClassResponse{ID: class.ID, Code: class.Code, Name: class.Name})
+	}
+	response.OK(context, dto.TaxiParkTariffCarClassesResponse{Items: items})
+}
+
+type TaxiParkTariffCarClassesResponse struct {
+	Data dto.TaxiParkTariffCarClassesResponse `json:"data"`
+	Meta response.Meta                        `json:"meta"`
 }
 
 // CreateOrder godoc

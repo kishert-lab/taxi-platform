@@ -98,6 +98,14 @@ func (useCase *UnavailableUseCase) CreatePassengerOrder(context.Context, uuid.UU
 	return dto.PassengerOrderResponse{}, common.ErrNotImplemented
 }
 
+func (useCase *UnavailableUseCase) ConfirmPassengerPrice(context.Context, uuid.UUID, uuid.UUID) (dto.PassengerOrderResponse, error) {
+	return dto.PassengerOrderResponse{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) DeclinePassengerPrice(context.Context, uuid.UUID, uuid.UUID) (dto.PassengerOrderResponse, error) {
+	return dto.PassengerOrderResponse{}, common.ErrNotImplemented
+}
+
 func (useCase *UnavailableUseCase) GetCurrentPassengerOrder(context.Context, uuid.UUID) (dto.PassengerOrderResponse, error) {
 	return dto.PassengerOrderResponse{}, common.ErrNotImplemented
 }
@@ -332,6 +340,10 @@ func (useCase *UnavailableUseCase) GetSettings(context.Context, uuid.UUID) (doma
 
 func (useCase *UnavailableUseCase) UpdateSettings(context.Context, uuid.UUID, dto.TaxiParkSettingsPatchRequest) (domain.TaxiParkSettings, error) {
 	return domain.TaxiParkSettings{}, common.ErrNotImplemented
+}
+
+func (useCase *UnavailableUseCase) ListTariffCarClasses(context.Context) ([]domain.CarClass, error) {
+	return nil, common.ErrNotImplemented
 }
 
 func (useCase *UnavailableUseCase) ListTariffs(context.Context, uuid.UUID) ([]domain.TaxiParkTariff, error) {

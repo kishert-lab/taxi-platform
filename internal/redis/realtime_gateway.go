@@ -125,19 +125,16 @@ func (gateway *RealtimeGateway) taxiParkRealtimeRecipientUserIDs(ctx context.Con
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate taxi park realtime recipients: %w", err)
 	}
-	if len(recipients) == 0 {
-		return nil, fmt.Errorf("driver taxi park realtime recipients not found: %w", pgx.ErrNoRows)
-	}
 	return recipients, nil
 }
 
 func (gateway *RealtimeGateway) taxiParkRealtimeRecipientUserIDsByOrder(ctx context.Context, orderID uuid.UUID) ([]uuid.UUID, error) {
 	rows, err := gateway.pool.Query(ctx, `
 		WITH target_park AS (
-			SELECT (o.metadata->>'taxi_park_id')::uuid AS id
+			SELECT COALESCE(o.park_id, NULLIF(o.metadata->>'taxi_park_id', '')::uuid) AS id
 			FROM orders o
 			WHERE o.id = $1
-			  AND o.metadata ? 'taxi_park_id'
+			  AND (o.park_id IS NOT NULL OR o.metadata ? 'taxi_park_id')
 			  AND o.deleted_at IS NULL
 		)
 		SELECT tp.owner_user_id
@@ -169,9 +166,6 @@ func (gateway *RealtimeGateway) taxiParkRealtimeRecipientUserIDsByOrder(ctx cont
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate taxi park order realtime recipients: %w", err)
-	}
-	if len(recipients) == 0 {
-		return nil, fmt.Errorf("taxi park order realtime recipients not found: %w", pgx.ErrNoRows)
 	}
 	return recipients, nil
 }

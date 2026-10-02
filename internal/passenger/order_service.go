@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"reflect"
 	"strings"
 	"time"
 
@@ -25,7 +26,16 @@ var (
 	ErrPassengerCarClassRequired  = errors.New("car class is required")
 	ErrPassengerCarClassNotFound  = errors.New("car class not found")
 	ErrPassengerInactive          = errors.New("passenger is inactive")
+	ErrPriceQuoteStale            = errors.New("passenger price quote expired or changed")
+	ErrPriceQuoteRequired         = errors.New("passenger price quote is required")
 )
+
+type PriceQuoteChangedError struct {
+	Updated dto.OrderEstimateResponse
+}
+
+func (err *PriceQuoteChangedError) Error() string { return ErrPriceQuoteStale.Error() }
+func (err *PriceQuoteChangedError) Unwrap() error { return ErrPriceQuoteStale }
 
 type OrderService struct {
 	passengerRepository Repository
@@ -77,6 +87,9 @@ func (service *OrderService) ListPassengerCarClasses(ctx context.Context, passen
 }
 
 func (service *OrderService) EstimatePassengerOrder(ctx context.Context, passengerID uuid.UUID, request dto.OrderEstimateRequest) (dto.OrderEstimateResponse, error) {
+	if request.FareMode == "" {
+		request.FareMode = domain.FareModeMetered // legacy clients omitted the mode
+	}
 	if _, err := service.ensureActivePassenger(ctx, passengerID); err != nil {
 		return dto.OrderEstimateResponse{}, err
 	}
@@ -100,12 +113,13 @@ func (service *OrderService) EstimatePassengerOrder(ctx context.Context, passeng
 		return dto.OrderEstimateResponse{}, err
 	}
 
-	estimate, err := service.buildTaxiParkEstimate(ctx, carClass, cityID, pickup, destination)
+	estimate, err := service.buildTaxiParkEstimate(ctx, carClass, cityID, pickup, destination, request.FareMode)
 	if err != nil {
 		return dto.OrderEstimateResponse{}, err
 	}
 
 	responseBody := dto.OrderEstimateResponse{
+		FareMode:     request.FareMode,
 		TariffID:     carClass.ID,
 		TariffName:   carClass.Name,
 		CarClassID:   &carClass.ID,
@@ -119,12 +133,30 @@ func (service *OrderService) EstimatePassengerOrder(ctx context.Context, passeng
 	}
 	if estimate.PriceAmount != nil {
 		responseBody.Price = *estimate.PriceAmount / 100
+		responseBody.PriceCents = estimate.PriceAmount
+		quoteID := uuid.New()
+		expiresAt := time.Now().UTC().Add(2 * time.Minute)
+		if err := service.orderRepository.SavePriceQuote(ctx, PriceQuote{
+			ID: quoteID, PassengerID: passengerID, CityID: cityID, CarClassID: carClass.ID,
+			FareMode: request.FareMode, Pickup: pickup, Destination: destination,
+			Pricing: estimate.Pricing, ExpiresAt: expiresAt,
+		}); err != nil {
+			return dto.OrderEstimateResponse{}, fmt.Errorf("save passenger price quote: %w", err)
+		}
+		responseBody.QuoteID = &quoteID
+		responseBody.ExpiresAt = &expiresAt
 	}
 
 	return responseBody, nil
 }
 
 func (service *OrderService) CreatePassengerOrder(ctx context.Context, passengerID uuid.UUID, request dto.PassengerCreateOrderRequest) (dto.PassengerOrderResponse, error) {
+	if request.QuoteID == nil || *request.QuoteID == uuid.Nil {
+		return dto.PassengerOrderResponse{}, ErrPriceQuoteRequired
+	}
+	if request.FareMode == "" {
+		request.FareMode = domain.FareModeMetered // legacy clients omitted the mode
+	}
 	passengerRecord, err := service.ensureActivePassenger(ctx, passengerID)
 	if err != nil {
 		return dto.PassengerOrderResponse{}, err
@@ -148,13 +180,50 @@ func (service *OrderService) CreatePassengerOrder(ctx context.Context, passenger
 	if err != nil {
 		return dto.PassengerOrderResponse{}, err
 	}
+	quote, err := service.orderRepository.GetPriceQuote(ctx, *request.QuoteID, passengerID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return dto.PassengerOrderResponse{}, ErrPriceQuoteStale
+		}
+		return dto.PassengerOrderResponse{}, fmt.Errorf("get passenger price quote: %w", err)
+	}
+	quoteStale := quote.ConsumedOrderID != nil || !time.Now().UTC().Before(quote.ExpiresAt) ||
+		quote.CityID != cityID || quote.CarClassID != carClass.ID || quote.FareMode != request.FareMode ||
+		quote.Pickup != pickup || quote.Destination != destination
 
-	estimate, err := service.buildTaxiParkEstimate(ctx, carClass, cityID, pickup, destination)
+	estimate, err := service.buildTaxiParkEstimate(ctx, carClass, cityID, pickup, destination, request.FareMode)
 	if err != nil {
 		return dto.PassengerOrderResponse{}, err
 	}
+	if quoteStale || !estimate.Pricing.PriceAvailable || !sameQuotedTerms(quote.Pricing, estimate.Pricing) {
+		updated := dto.OrderEstimateResponse{
+			FareMode: request.FareMode, TariffID: carClass.ID, TariffName: carClass.Name,
+			CarClassID: &carClass.ID, CarClassName: carClass.Name, CarClass: carClass.Code,
+			DistanceKM: estimate.DistanceKM, DurationMin: estimate.DurationMinutes,
+			Currency: carClass.BasePrice.Currency, PriceType: "estimated",
+			Pricing: pricingResponse(&estimate.Pricing, nil, nil),
+		}
+		if estimate.PriceAmount != nil {
+			updated.PriceCents = estimate.PriceAmount
+			updated.Price = *estimate.PriceAmount / 100
+			newQuoteID := uuid.New()
+			expiresAt := time.Now().UTC().Add(2 * time.Minute)
+			if err := service.orderRepository.SavePriceQuote(ctx, PriceQuote{
+				ID: newQuoteID, PassengerID: passengerID, CityID: cityID, CarClassID: carClass.ID,
+				FareMode: request.FareMode, Pickup: pickup, Destination: destination,
+				Pricing: estimate.Pricing, ExpiresAt: expiresAt,
+			}); err != nil {
+				return dto.PassengerOrderResponse{}, fmt.Errorf("save updated passenger price quote: %w", err)
+			}
+			updated.QuoteID = &newQuoteID
+			updated.ExpiresAt = &expiresAt
+		}
+		return dto.PassengerOrderResponse{}, &PriceQuoteChangedError{Updated: updated}
+	}
 
 	createdOrder, err := service.orderRepository.CreatePassengerOrder(ctx, CreateOrderRecord{
+		QuoteID:                         quote.ID,
+		FareMode:                        request.FareMode,
 		PassengerID:                     passengerRecord.ID,
 		CityID:                          cityID,
 		CarClassID:                      carClass.ID,
@@ -164,8 +233,8 @@ func (service *OrderService) CreatePassengerOrder(ctx context.Context, passenger
 		PickupLocation:                  pickup,
 		DestinationAddress:              strings.TrimSpace(request.DestinationAddress),
 		DestinationLocation:             destination,
-		EstimatedPrice:                  estimate.estimatedMoney(carClass.BasePrice.Currency),
-		PricingSnapshot:                 &estimate.Pricing,
+		EstimatedPrice:                  &domain.Money{Amount: quote.Pricing.EstimatedPrice.Amount, Currency: carClass.BasePrice.Currency},
+		PricingSnapshot:                 &quote.Pricing,
 		PaymentMethod:                   request.PaymentType,
 		PassengerComment:                strings.TrimSpace(request.Comment),
 		PassengerLocationSharingEnabled: request.PassengerLocationSharingEnabled,
@@ -233,6 +302,32 @@ func (service *OrderService) GetPassengerOrder(ctx context.Context, passengerID 
 	return passengerOrderResponse(orderDetails), nil
 }
 
+func (service *OrderService) ConfirmPassengerPrice(ctx context.Context, passengerID uuid.UUID, orderID uuid.UUID) (dto.PassengerOrderResponse, error) {
+	if _, err := service.ensureActivePassenger(ctx, passengerID); err != nil {
+		return dto.PassengerOrderResponse{}, err
+	}
+	if service.dispatchQueue == nil {
+		return dto.PassengerOrderResponse{}, fmt.Errorf("price confirmation dispatch service unavailable")
+	}
+	if err := service.dispatchQueue.ConfirmOrderPrice(ctx, orderID, passengerID); err != nil {
+		return dto.PassengerOrderResponse{}, fmt.Errorf("confirm passenger price: %w", err)
+	}
+	return service.GetPassengerOrder(ctx, passengerID, orderID)
+}
+
+func (service *OrderService) DeclinePassengerPrice(ctx context.Context, passengerID uuid.UUID, orderID uuid.UUID) (dto.PassengerOrderResponse, error) {
+	if _, err := service.ensureActivePassenger(ctx, passengerID); err != nil {
+		return dto.PassengerOrderResponse{}, err
+	}
+	if service.dispatchQueue == nil {
+		return dto.PassengerOrderResponse{}, fmt.Errorf("price confirmation dispatch service unavailable")
+	}
+	if err := service.dispatchQueue.DeclineOrderPrice(ctx, orderID, passengerID); err != nil {
+		return dto.PassengerOrderResponse{}, fmt.Errorf("decline passenger price: %w", err)
+	}
+	return service.GetPassengerOrder(ctx, passengerID, orderID)
+}
+
 func (service *OrderService) CancelPassengerOrder(ctx context.Context, passengerID uuid.UUID, orderID uuid.UUID, request dto.CancelOrderRequest) (dto.PassengerOrderResponse, error) {
 	if _, err := service.ensureActivePassenger(ctx, passengerID); err != nil {
 		return dto.PassengerOrderResponse{}, err
@@ -264,9 +359,6 @@ func (service *OrderService) ensureActivePassenger(ctx context.Context, passenge
 }
 
 func (service *OrderService) resolveCityID(ctx context.Context, cityID *uuid.UUID, pickup geodomain.Coordinates) (uuid.UUID, error) {
-	if cityID != nil {
-		return *cityID, nil
-	}
 	if service.cityResolver == nil {
 		return uuid.Nil, fmt.Errorf("resolve passenger order city: city resolver is not configured")
 	}
@@ -364,11 +456,19 @@ func passengerOrderResponse(details OrderDetails) dto.PassengerOrderResponse {
 		DestinationPoint: dto.PointDTO{
 			Address: details.Order.DestinationAddress,
 		},
-		Status:         details.Order.Status,
-		AllowedActions: passengerAllowedActions(details.Order.Status),
-		Timeline:       []dto.OrderTimelineItem{{Status: details.Order.Status, OccurredAt: details.Order.CreatedAt}},
-		Version:        details.Order.Version,
-		Pricing:        pricingResponse(details.Pricing, details.Order.AssignedTariffID, details.Order.ParkID),
+		Status:                     details.Order.Status,
+		AllowedActions:             passengerAllowedActions(details.Order.Status),
+		Timeline:                   []dto.OrderTimelineItem{{Status: details.Order.Status, OccurredAt: details.Order.CreatedAt}},
+		Version:                    details.Order.Version,
+		Pricing:                    pricingResponse(details.Pricing, details.Order.AssignedTariffID, details.Order.ParkID),
+		PriceConfirmationState:     details.Order.PriceConfirmationState,
+		ProposedPriceCents:         details.Order.ProposedPriceCents,
+		AgreedPriceCents:           details.Order.AgreedPriceCents,
+		PriceConfirmationExpiresAt: details.Order.PriceConfirmationExpiresAt,
+	}
+	responseBody.Pricing.AssignedTariffRates = details.AssignedTariffRates
+	if details.Order.PriceConfirmationState == "pending" {
+		responseBody.AllowedActions = append(responseBody.AllowedActions, "confirm_price", "decline_price")
 	}
 
 	if details.Order.DestinationLocation != nil {
@@ -391,6 +491,11 @@ func passengerOrderResponse(details OrderDetails) dto.PassengerOrderResponse {
 			responseBody.Pricing.EstimatedPriceMax = responseBody.Pricing.EstimatedPrice
 			responseBody.Pricing.PriceAvailable = true
 		}
+	}
+	if details.Order.AgreedPriceCents != nil {
+		agreed := &dto.MoneyResponse{Amount: *details.Order.AgreedPriceCents, Currency: "RUB"}
+		responseBody.Price = agreed
+		responseBody.Pricing.AgreedPrice = agreed
 	}
 	if details.Order.FinalPrice != nil {
 		responseBody.Price = &dto.MoneyResponse{
@@ -447,53 +552,103 @@ func (details passengerEstimateDetails) estimatedMoney(currency string) *domain.
 	return &domain.Money{Amount: *details.PriceAmount, Currency: currency}
 }
 
-func (service *OrderService) buildTaxiParkEstimate(ctx context.Context, carClass domain.CarClass, cityID uuid.UUID, pickup geodomain.Coordinates, destination geodomain.Coordinates) (passengerEstimateDetails, error) {
+func sameQuotedTerms(quoted domain.OrderPricingSnapshot, current domain.OrderPricingSnapshot) bool {
+	return quoted.PriceAvailable && current.PriceAvailable &&
+		reflect.DeepEqual(quoted.EstimatedPrice, current.EstimatedPrice) &&
+		reflect.DeepEqual(quoted.EstimatedPriceMin, current.EstimatedPriceMin) &&
+		reflect.DeepEqual(quoted.EstimatedPriceMax, current.EstimatedPriceMax) &&
+		reflect.DeepEqual(quoted.RouteDistanceMeters, current.RouteDistanceMeters) &&
+		reflect.DeepEqual(quoted.RouteDurationSeconds, current.RouteDurationSeconds) &&
+		quoted.RouteSource == current.RouteSource && quoted.RouteDataVersion == current.RouteDataVersion &&
+		reflect.DeepEqual(quoted.TariffRates, current.TariffRates)
+}
+
+func (service *OrderService) buildTaxiParkEstimate(ctx context.Context, carClass domain.CarClass, cityID uuid.UUID, pickup geodomain.Coordinates, destination geodomain.Coordinates, fareMode domain.FareMode) (passengerEstimateDetails, error) {
+	if fareMode != domain.FareModeFixedQuote && fareMode != domain.FareModeMetered {
+		return passengerEstimateDetails{}, fmt.Errorf("invalid fare mode %q", fareMode)
+	}
 	route, err := service.routingService.Route(ctx, pickup, destination)
 	if err != nil {
-		return unavailableTaxiParkEstimate(route, routingUnavailableReason(err)), nil
+		return unavailableTaxiParkEstimate(route, routingUnavailableReason(err), fareMode), nil
 	}
 
-	searchRadiusMeters, tariffs, err := service.resolveTaxiParkTariffs(ctx, pickup, cityID, carClass.ID)
+	searchRadiusMeters, tariffs, err := service.resolveTaxiParkTariffs(ctx, pickup, cityID, carClass.ID, fareMode)
 	if err != nil {
 		return passengerEstimateDetails{}, err
 	}
 	if len(tariffs) == 0 {
-		return unavailableTaxiParkEstimate(route, "no_available_park_tariffs"), nil
+		availableDrivers, err := service.orderRepository.HasNearbyAvailableDrivers(ctx, pickup, cityID, carClass.ID, 10000, 30*time.Second)
+		if err != nil {
+			return passengerEstimateDetails{}, fmt.Errorf("check available drivers for unavailable estimate: %w", err)
+		}
+		if !availableDrivers {
+			return unavailableTaxiParkEstimate(route, "no_available_drivers", fareMode), nil
+		}
+		return unavailableTaxiParkEstimate(route, "no_available_park_tariffs", fareMode), nil
 	}
 
 	var totalPrice int64
 	var minimumPrice int64
 	var maximumPrice int64
-	for index, tariff := range tariffs {
+	validTariffs := make([]domain.TaxiParkTariff, 0, len(tariffs))
+	validPrices := make([]int64, 0, len(tariffs))
+	excludedTariffReasons := make([]string, 0)
+	seenParks := make(map[uuid.UUID]struct{}, len(tariffs))
+	for _, tariff := range tariffs {
+		if _, exists := seenParks[tariff.TaxiParkID]; exists {
+			continue
+		}
 		price, calculateErr := domain.CalculateTripPrice(tariff, route.DistanceMeters, route.DurationSeconds)
 		if calculateErr != nil {
-			return passengerEstimateDetails{}, fmt.Errorf("calculate tariff %s estimate: %w", tariff.ID, calculateErr)
+			excludedTariffReasons = append(excludedTariffReasons, fmt.Sprintf("tariff %s: %v", tariff.ID, calculateErr))
+			continue
 		}
-		if index == 0 || price < minimumPrice {
+		if price <= 0 {
+			excludedTariffReasons = append(excludedTariffReasons, fmt.Sprintf("tariff %s: nonpositive price", tariff.ID))
+			continue
+		}
+		seenParks[tariff.TaxiParkID] = struct{}{}
+		if len(validTariffs) == 0 || price < minimumPrice {
 			minimumPrice = price
 		}
-		if index == 0 || price > maximumPrice {
+		if len(validTariffs) == 0 || price > maximumPrice {
 			maximumPrice = price
 		}
+		if totalPrice > math.MaxInt64-price {
+			return passengerEstimateDetails{}, fmt.Errorf("sum available taxi park tariffs: overflow")
+		}
 		totalPrice += price
+		validTariffs = append(validTariffs, tariff)
+		validPrices = append(validPrices, price)
 	}
-	averagePrice := (totalPrice + int64(len(tariffs))/2) / int64(len(tariffs))
+	if len(validTariffs) == 0 {
+		unavailable := unavailableTaxiParkEstimate(route, "no_valid_park_tariffs", fareMode)
+		unavailable.Pricing.ExcludedTariffReasons = excludedTariffReasons
+		return unavailable, nil
+	}
+	averagePrice := totalPrice/int64(len(validTariffs)) + (totalPrice%int64(len(validTariffs))+int64(len(validTariffs))/2)/int64(len(validTariffs))
+	rateSnapshots := domain.SnapshotTariffRates(validTariffs)
+	for index, price := range validPrices {
+		rateSnapshots[index].ProjectedPrice = &domain.Money{Amount: price, Currency: "RUB"}
+	}
 	snapshot := domain.OrderPricingSnapshot{
-		EstimatedPrice:       &domain.Money{Amount: averagePrice, Currency: "RUB"},
-		EstimatedPriceMin:    &domain.Money{Amount: minimumPrice, Currency: "RUB"},
-		EstimatedPriceMax:    &domain.Money{Amount: maximumPrice, Currency: "RUB"},
-		EstimatedPriceSource: domain.EstimatedPriceSourceAverageParks,
-		PricingMode:          domain.PricingModeUnknown,
-		PriceAvailable:       true,
-		SearchRadiusMeters:   searchRadiusMeters,
-		RouteDistanceMeters:  &route.DistanceMeters,
-		RouteDurationSeconds: &route.DurationSeconds,
-		RouteSource:          route.Source,
-		RouteDataVersion:     route.DataVersion,
-		TariffRates:          domain.SnapshotTariffRates(tariffs),
-		RoundingRule:         "distance_nearest_kopeck;time_started_minute;average_nearest_kopeck",
-		TaxiParkCount:        len(tariffs),
-		CalculatedAt:         route.CalculatedAt,
+		EstimatedPrice:        &domain.Money{Amount: averagePrice, Currency: "RUB"},
+		EstimatedPriceMin:     &domain.Money{Amount: minimumPrice, Currency: "RUB"},
+		EstimatedPriceMax:     &domain.Money{Amount: maximumPrice, Currency: "RUB"},
+		EstimatedPriceSource:  domain.EstimatedPriceSourceAverageParks,
+		PricingMode:           domain.PricingModeUnknown,
+		FareMode:              fareMode,
+		PriceAvailable:        true,
+		SearchRadiusMeters:    searchRadiusMeters,
+		RouteDistanceMeters:   &route.DistanceMeters,
+		RouteDurationSeconds:  &route.DurationSeconds,
+		RouteSource:           route.Source,
+		RouteDataVersion:      route.DataVersion,
+		TariffRates:           rateSnapshots,
+		RoundingRule:          "distance_nearest_kopeck;time_started_minute;average_nearest_kopeck",
+		TaxiParkCount:         len(validTariffs),
+		ExcludedTariffReasons: excludedTariffReasons,
+		CalculatedAt:          route.CalculatedAt,
 	}
 	return passengerEstimateDetails{
 		DistanceKM:      float64(route.DistanceMeters) / 1000,
@@ -503,23 +658,20 @@ func (service *OrderService) buildTaxiParkEstimate(ctx context.Context, carClass
 	}, nil
 }
 
-func (service *OrderService) resolveTaxiParkTariffs(ctx context.Context, pickup geodomain.Coordinates, cityID uuid.UUID, carClassID uuid.UUID) (*int, []domain.TaxiParkTariff, error) {
-	for _, radius := range []int{5000, 10000} {
-		tariffs, err := service.orderRepository.ListAvailableTaxiParkTariffs(ctx, pickup, cityID, carClassID, radius, 2*time.Minute)
-		if err != nil {
-			return nil, nil, fmt.Errorf("list available taxi park tariffs for estimate: %w", err)
-		}
-		if len(tariffs) > 0 {
-			return &radius, tariffs, nil
-		}
+func (service *OrderService) resolveTaxiParkTariffs(ctx context.Context, pickup geodomain.Coordinates, cityID uuid.UUID, carClassID uuid.UUID, fareMode domain.FareMode) (*int, []domain.TaxiParkTariff, error) {
+	radius := 10000
+	tariffs, err := service.orderRepository.ListAvailableTaxiParkTariffs(ctx, pickup, cityID, carClassID, fareMode, radius, 30*time.Second)
+	if err != nil {
+		return nil, nil, fmt.Errorf("list available taxi park tariffs for estimate: %w", err)
 	}
-	return nil, nil, nil
+	return &radius, tariffs, nil
 }
 
-func unavailableTaxiParkEstimate(route routing.Route, reason string) passengerEstimateDetails {
+func unavailableTaxiParkEstimate(route routing.Route, reason string, fareMode domain.FareMode) passengerEstimateDetails {
 	snapshot := domain.OrderPricingSnapshot{
 		EstimatedPriceSource: domain.EstimatedPriceSourceUnavailable,
 		PricingMode:          domain.PricingModeUnknown,
+		FareMode:             fareMode,
 		Message:              "Price is unavailable",
 		UnavailableReason:    reason,
 		RouteSource:          route.Source,

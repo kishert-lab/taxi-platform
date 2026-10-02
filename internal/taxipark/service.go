@@ -31,6 +31,7 @@ var (
 	ErrInvalidDriverCreateFields = errors.New("invalid driver create fields")
 	ErrInvalidDriverPassword     = errors.New("invalid driver password")
 	ErrInvalidOrderFields        = errors.New("invalid taxi park order fields")
+	ErrTariffPriorityConflict    = errors.New("active tariff priority conflicts with another tariff")
 	ErrOrderTariffNotFound       = errors.New("taxi park order tariff not found")
 	ErrScheduledOrdersDisabled   = errors.New("scheduled orders disabled")
 	ErrInvalidScheduledOrder     = errors.New("invalid scheduled order")
@@ -79,6 +80,10 @@ func (service *Service) UpdateSettings(ctx context.Context, ownerUserID uuid.UUI
 
 func (service *Service) ListTariffs(ctx context.Context, ownerUserID uuid.UUID) ([]domain.TaxiParkTariff, error) {
 	return service.repository.ListTariffsByOwnerUserID(ctx, ownerUserID)
+}
+
+func (service *Service) ListTariffCarClasses(ctx context.Context) ([]domain.CarClass, error) {
+	return service.repository.ListTariffCarClasses(ctx)
 }
 
 func (service *Service) CreateTariff(ctx context.Context, ownerUserID uuid.UUID, request dto.TaxiParkTariffRequest) (domain.TaxiParkTariff, error) {
@@ -593,6 +598,9 @@ func orderRecordFromRequest(request dto.TaxiParkCreateOrderRequest) (CreateOrder
 	if strings.TrimSpace(request.DestinationAddress) == "" {
 		return CreateOrderRecord{}, fmt.Errorf("%w: destination_address is required", ErrInvalidOrderFields)
 	}
+	if request.DestinationLocation == nil {
+		return CreateOrderRecord{}, fmt.Errorf("%w: destination_location is required", ErrInvalidOrderFields)
+	}
 	if err := validateOrderCoordinates(*request.PickupLocation); err != nil {
 		return CreateOrderRecord{}, fmt.Errorf("pickup_location: %w", err)
 	}
@@ -600,15 +608,15 @@ func orderRecordFromRequest(request dto.TaxiParkCreateOrderRequest) (CreateOrder
 		return CreateOrderRecord{}, fmt.Errorf("%w: pickup_location must be geocoded", ErrInvalidOrderFields)
 	}
 
-	var destinationLocation *domain.Coordinates
-	if request.DestinationLocation != nil && !isZeroOrderCoordinates(*request.DestinationLocation) {
-		if err := validateOrderCoordinates(*request.DestinationLocation); err != nil {
-			return CreateOrderRecord{}, fmt.Errorf("destination_location: %w", err)
-		}
-		destinationLocation = &domain.Coordinates{
-			Latitude:  request.DestinationLocation.Latitude,
-			Longitude: request.DestinationLocation.Longitude,
-		}
+	if isZeroOrderCoordinates(*request.DestinationLocation) {
+		return CreateOrderRecord{}, fmt.Errorf("%w: destination_location must be geocoded", ErrInvalidOrderFields)
+	}
+	if err := validateOrderCoordinates(*request.DestinationLocation); err != nil {
+		return CreateOrderRecord{}, fmt.Errorf("destination_location: %w", err)
+	}
+	destinationLocation := &domain.Coordinates{
+		Latitude:  request.DestinationLocation.Latitude,
+		Longitude: request.DestinationLocation.Longitude,
 	}
 
 	paymentMethod := request.PaymentMethod
@@ -693,6 +701,9 @@ func scheduledOrderRecordFromRequest(request dto.TaxiParkCreateScheduledOrderReq
 	if strings.TrimSpace(request.DestinationAddress) == "" {
 		return CreateScheduledOrderRecord{}, fmt.Errorf("%w: destination_address is required", ErrInvalidOrderFields)
 	}
+	if request.DestinationLocation == nil {
+		return CreateScheduledOrderRecord{}, fmt.Errorf("%w: destination_location is required", ErrInvalidOrderFields)
+	}
 	if err := validateOrderCoordinates(*request.PickupLocation); err != nil {
 		return CreateScheduledOrderRecord{}, fmt.Errorf("pickup_location: %w", err)
 	}
@@ -700,15 +711,15 @@ func scheduledOrderRecordFromRequest(request dto.TaxiParkCreateScheduledOrderReq
 		return CreateScheduledOrderRecord{}, fmt.Errorf("%w: pickup_location must be geocoded", ErrInvalidOrderFields)
 	}
 
-	var destinationLocation *domain.Coordinates
-	if request.DestinationLocation != nil && !isZeroOrderCoordinates(*request.DestinationLocation) {
-		if err := validateOrderCoordinates(*request.DestinationLocation); err != nil {
-			return CreateScheduledOrderRecord{}, fmt.Errorf("destination_location: %w", err)
-		}
-		destinationLocation = &domain.Coordinates{
-			Latitude:  request.DestinationLocation.Latitude,
-			Longitude: request.DestinationLocation.Longitude,
-		}
+	if isZeroOrderCoordinates(*request.DestinationLocation) {
+		return CreateScheduledOrderRecord{}, fmt.Errorf("%w: destination_location must be geocoded", ErrInvalidOrderFields)
+	}
+	if err := validateOrderCoordinates(*request.DestinationLocation); err != nil {
+		return CreateScheduledOrderRecord{}, fmt.Errorf("destination_location: %w", err)
+	}
+	destinationLocation := &domain.Coordinates{
+		Latitude:  request.DestinationLocation.Latitude,
+		Longitude: request.DestinationLocation.Longitude,
 	}
 
 	paymentMethod := request.PaymentMethod

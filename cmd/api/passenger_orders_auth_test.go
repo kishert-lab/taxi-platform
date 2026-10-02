@@ -164,6 +164,13 @@ func (useCase fakePassengerOrdersUseCase) CreatePassengerOrder(context.Context, 
 	return dto.PassengerOrderResponse{}, nil
 }
 
+func (useCase fakePassengerOrdersUseCase) ConfirmPassengerPrice(context.Context, uuid.UUID, uuid.UUID) (dto.PassengerOrderResponse, error) {
+	return dto.PassengerOrderResponse{}, nil
+}
+func (useCase fakePassengerOrdersUseCase) DeclinePassengerPrice(context.Context, uuid.UUID, uuid.UUID) (dto.PassengerOrderResponse, error) {
+	return dto.PassengerOrderResponse{}, nil
+}
+
 func (useCase fakePassengerOrdersUseCase) GetCurrentPassengerOrder(context.Context, uuid.UUID) (dto.PassengerOrderResponse, error) {
 	return useCase.currentResponse, nil
 }

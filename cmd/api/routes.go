@@ -286,6 +286,7 @@ func dispatchConfigFromApplication(config configs.DispatchConfig) dispatchapp.Co
 		AcceptLockTTL:        config.AcceptLockTTL,
 		WorkerPollTimeout:    config.WorkerPollTimeout,
 		RecoveryInterval:     config.RecoveryInterval,
+		ConfirmationTTL:      config.ConfirmationTTL,
 	}
 }
 

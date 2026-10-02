@@ -123,6 +123,7 @@ func (service *Service) ProcessTask(ctx context.Context, task DispatchTask) (Dis
 		}
 		order.Status = domain.OrderStatusSearching
 	}
+	task.ExcludeDriverIDs = appendUniqueDriverIDs(task.ExcludeDriverIDs, order.DeclinedDriverIDs)
 
 	radiusMeters, ok := radiusForAttempt(config, task.Attempt)
 	if !ok {
@@ -134,6 +135,7 @@ func (service *Service) ProcessTask(ctx context.Context, task DispatchTask) (Dis
 
 	candidates, err := service.driverSearchRepository.FindNearestOnlineDrivers(ctx, NearestDriversQuery{
 		CityID:         order.CityID,
+		FareMode:       order.FareMode,
 		CarClassID:     order.CarClassID,
 		Pickup:         order.PickupLocation,
 		RadiusMeters:   radiusMeters,
@@ -176,6 +178,9 @@ func (service *Service) ProcessTask(ctx context.Context, task DispatchTask) (Dis
 }
 
 func (service *Service) HandleOfferTimeout(ctx context.Context, task DispatchTask) error {
+	if task.Attempt == -1 {
+		return service.expirePriceConfirmation(ctx, task)
+	}
 	config := service.configForTask(task)
 	order, err := service.orderRepository.GetOrderByID(ctx, task.OrderID)
 	if err != nil {
@@ -245,12 +250,25 @@ func (service *Service) AcceptOffer(ctx context.Context, orderID uuid.UUID, driv
 	}()
 
 	acceptedAt := time.Now().UTC()
-	accepted, err := service.orderRepository.AssignDriver(ctx, orderID, driverID, acceptedAt)
+	fare, err := service.orderRepository.GetCandidateFare(ctx, orderID, driverID)
+	if err != nil {
+		return fmt.Errorf("get candidate fare before driver reservation: %w", err)
+	}
+	priceCents, err := domain.CalculateTripPrice(fare.Tariff, fare.DistanceMeters, fare.DurationSeconds)
+	if err != nil || priceCents <= 0 {
+		return fmt.Errorf("calculate candidate fare for driver: %w", err)
+	}
+	confirmationExpiresAt := acceptedAt.Add(service.config.ConfirmationTTL)
+	accepted, err := service.orderRepository.AssignDriver(ctx, orderID, driverID, acceptedAt, fare, priceCents, confirmationExpiresAt)
 	if err != nil {
 		return fmt.Errorf("assign driver to order: %w", err)
 	}
 	if !accepted {
 		return fmt.Errorf("%w: %w", ErrOfferNotAccepted, ErrOrderAlreadyAssigned)
+	}
+	confirmationTask := DispatchTask{OrderID: orderID, Attempt: -1, QueuedAt: acceptedAt, ExcludeDriverIDs: []uuid.UUID{driverID}}
+	if err := service.timeoutQueue.Schedule(ctx, confirmationTask, confirmationExpiresAt); err != nil {
+		return fmt.Errorf("schedule passenger price confirmation expiry: %w", err)
 	}
 
 	if service.metrics != nil {
@@ -272,21 +290,21 @@ func (service *Service) AcceptOffer(ctx context.Context, orderID uuid.UUID, driv
 	if err != nil {
 		return fmt.Errorf("get accepted order: %w", err)
 	}
-	if err := service.realtimeGateway.SendToDriver(ctx, driverID, EventOrderAssigned, map[string]any{"order_id": orderID}); err != nil {
-		return fmt.Errorf("send order assigned event to driver: %w", err)
+	if err := service.realtimeGateway.SendToDriver(ctx, driverID, EventPriceConfirmationRequested, map[string]any{"order_id": orderID, "confirmation_expires_at": confirmationExpiresAt}); err != nil {
+		return fmt.Errorf("send price confirmation pending event to driver: %w", err)
 	}
-	if err := service.realtimeGateway.SendToPassenger(ctx, order.PassengerID, EventPassengerDriverAssigned, wsmsg.PassengerDriverAssignedPayload{
-		OrderID:  orderID,
-		DriverID: driverID,
+	if err := service.realtimeGateway.SendToPassenger(ctx, order.PassengerID, EventPriceConfirmationRequested, map[string]any{
+		"order_id": orderID, "driver_id": driverID, "fare_mode": fare.Tariff.FareMode,
+		"proposed_price_cents": priceCents, "confirmation_expires_at": confirmationExpiresAt,
 	}); err != nil {
-		return fmt.Errorf("send driver assigned event to passenger: %w", err)
+		return fmt.Errorf("send price confirmation request to passenger: %w", err)
 	}
 	if service.passengerNotifier != nil {
 		if err := service.passengerNotifier.NotifyPassenger(ctx, order.PassengerID, PassengerNotification{
 			Title: "Водитель найден",
 			Body:  "Водитель принял ваш заказ.",
 			Data: map[string]string{
-				"event":     "order.driver_assigned",
+				"event":     EventPriceConfirmationRequested,
 				"order_id":  orderID.String(),
 				"driver_id": driverID.String(),
 			},
@@ -294,12 +312,96 @@ func (service *Service) AcceptOffer(ctx context.Context, orderID uuid.UUID, driv
 			return fmt.Errorf("send driver assigned push to passenger: %w", err)
 		}
 	}
-	if err := service.realtimeGateway.SendToTaxiParkByOrder(ctx, orderID, "order.driver_assigned", map[string]any{"order_id": orderID, "driver_id": driverID}); err != nil {
-		return fmt.Errorf("send driver assigned event to taxi park: %w", err)
+	if err := service.realtimeGateway.SendToTaxiParkByOrder(ctx, orderID, EventPriceConfirmationRequested, map[string]any{"order_id": orderID, "driver_id": driverID}); err != nil {
+		return fmt.Errorf("send pending price confirmation event to taxi park: %w", err)
 	}
 
 	service.logger.Info("offer accepted", zap.String("order_id", orderID.String()), zap.String("driver_id", driverID.String()))
 	return nil
+}
+
+func (service *Service) ConfirmOrderPrice(ctx context.Context, orderID uuid.UUID, passengerID uuid.UUID) error {
+	confirmed, err := service.orderRepository.ConfirmDriverPrice(ctx, orderID, passengerID)
+	if err != nil {
+		return fmt.Errorf("confirm order price: %w", err)
+	}
+	order, err := service.orderRepository.GetOrderByID(ctx, orderID)
+	if err != nil {
+		return fmt.Errorf("get order after price confirmation: %w", err)
+	}
+	if order.PassengerID != passengerID || order.DriverID == nil || order.Status != domain.OrderStatusDriverAssigned {
+		return ErrOfferNotAccepted
+	}
+	if !confirmed {
+		if order.PriceConfirmationState == "confirmed" {
+			return nil
+		}
+		return ErrOfferNotAccepted
+	}
+	if err := service.realtimeGateway.SendToDriver(ctx, *order.DriverID, EventOrderAssigned, map[string]any{"order_id": orderID}); err != nil {
+		return fmt.Errorf("send confirmed assignment to driver: %w", err)
+	}
+	if err := service.realtimeGateway.SendToPassenger(ctx, passengerID, EventPassengerDriverAssigned, wsmsg.PassengerDriverAssignedPayload{OrderID: orderID, DriverID: *order.DriverID}); err != nil {
+		return fmt.Errorf("send confirmed assignment to passenger: %w", err)
+	}
+	return service.realtimeGateway.SendToTaxiParkByOrder(ctx, orderID, "order.driver_assigned", map[string]any{"order_id": orderID, "driver_id": *order.DriverID})
+}
+
+func (service *Service) DeclineOrderPrice(ctx context.Context, orderID uuid.UUID, passengerID uuid.UUID) error {
+	order, err := service.orderRepository.GetOrderByID(ctx, orderID)
+	if err != nil {
+		return fmt.Errorf("get order before price decline: %w", err)
+	}
+	if order.PassengerID != passengerID || order.DriverID == nil || order.PriceConfirmationState != "pending" {
+		return ErrOfferNotAccepted
+	}
+	return service.releasePriceConfirmation(ctx, orderID, *order.DriverID)
+}
+
+func (service *Service) expirePriceConfirmation(ctx context.Context, task DispatchTask) error {
+	if err := service.ExpireOrderPrice(ctx, task.OrderID); err != nil {
+		return err
+	}
+	return service.timeoutQueue.Remove(ctx, task)
+}
+
+func (service *Service) ExpireOrderPrice(ctx context.Context, orderID uuid.UUID) error {
+	order, err := service.orderRepository.GetOrderByID(ctx, orderID)
+	if err != nil {
+		return fmt.Errorf("get order before price confirmation expiry: %w", err)
+	}
+	if order.PriceConfirmationState == "pending" && order.DriverID != nil && order.PriceConfirmationExpiresAt != nil && !time.Now().UTC().Before(*order.PriceConfirmationExpiresAt) {
+		if err := service.releasePriceConfirmation(ctx, orderID, *order.DriverID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (service *Service) releasePriceConfirmation(ctx context.Context, orderID uuid.UUID, driverID uuid.UUID) error {
+	released, err := service.orderRepository.ReleaseDriverReservation(ctx, orderID, driverID)
+	if err != nil {
+		return fmt.Errorf("release declined driver reservation: %w", err)
+	}
+	if !released {
+		return ErrOfferNotAccepted
+	}
+	if err := service.realtimeGateway.SendToDriver(ctx, driverID, EventPriceConfirmationExpired, map[string]any{"order_id": orderID}); err != nil {
+		return fmt.Errorf("send price decline to driver: %w", err)
+	}
+	order, err := service.orderRepository.GetOrderByID(ctx, orderID)
+	if err != nil {
+		return fmt.Errorf("get order after price decline: %w", err)
+	}
+	if err := service.realtimeGateway.SendToPassenger(ctx, order.PassengerID, EventPriceConfirmationExpired, map[string]any{"order_id": orderID}); err != nil {
+		return fmt.Errorf("send price decline to passenger: %w", err)
+	}
+	if service.dispatchStateStore != nil {
+		if _, err := service.dispatchStateStore.BeginDispatch(ctx, orderID, 30*time.Minute); err != nil {
+			return fmt.Errorf("restart dispatch after price decline: %w", err)
+		}
+	}
+	return service.taskQueue.Publish(ctx, DispatchTask{OrderID: orderID, Attempt: 0, QueuedAt: time.Now().UTC(), ExcludeDriverIDs: []uuid.UUID{driverID}})
 }
 
 func (service *Service) RejectOffer(ctx context.Context, orderID uuid.UUID, driverID uuid.UUID, reason string) error {
@@ -351,7 +453,21 @@ func (service *Service) ListDriverOffers(ctx context.Context, driverID uuid.UUID
 		if order.Status != domain.OrderStatusSearching {
 			continue
 		}
-		result = append(result, DriverOrderOffer{Offer: offer, Order: order})
+		fare, err := service.orderRepository.GetCandidateFare(ctx, order.ID, driverID)
+		if err != nil {
+			return nil, fmt.Errorf("get driver offer park fare: %w", err)
+		}
+		priceCents, err := domain.CalculateTripPrice(fare.Tariff, fare.DistanceMeters, fare.DurationSeconds)
+		if err != nil {
+			return nil, fmt.Errorf("calculate driver offer park fare: %w", err)
+		}
+		if priceCents <= 0 {
+			return nil, fmt.Errorf("calculate driver offer park fare: nonpositive price")
+		}
+		result = append(result, DriverOrderOffer{
+			Offer: offer, Order: order, ProposedPrice: &domain.Money{Amount: priceCents, Currency: "RUB"},
+			FareMode: fare.Tariff.FareMode, TariffRates: domain.SnapshotTariffRates([]domain.TaxiParkTariff{fare.Tariff}),
+		})
 	}
 	return result, nil
 }
@@ -624,6 +740,9 @@ func normalizeConfig(config Config) Config {
 	}
 	if config.RecoveryInterval <= 0 {
 		config.RecoveryInterval = 30 * time.Second
+	}
+	if config.ConfirmationTTL <= 0 {
+		config.ConfirmationTTL = 60 * time.Second
 	}
 
 	return config
