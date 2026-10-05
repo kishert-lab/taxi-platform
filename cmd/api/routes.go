@@ -21,6 +21,7 @@ import (
 	chatapp "github.com/kishert-lab/taxi-platform/internal/chat"
 	dispatchapp "github.com/kishert-lab/taxi-platform/internal/dispatch"
 	driverapp "github.com/kishert-lab/taxi-platform/internal/driver"
+	"github.com/kishert-lab/taxi-platform/internal/driverinvite"
 	financeapp "github.com/kishert-lab/taxi-platform/internal/finance"
 	geoapp "github.com/kishert-lab/taxi-platform/internal/geo"
 	dadataclient "github.com/kishert-lab/taxi-platform/internal/geocoder/client/dadata"
@@ -45,6 +46,7 @@ import (
 )
 
 type applicationRoutes struct {
+	driverInvites           *handler.DriverParkInviteHandler
 	maps                    *handler.MapHandler
 	auth                    *handler.AuthHandler
 	mobileAuth              *handler.MobileAuthHandler
@@ -81,6 +83,7 @@ func newApplicationRoutes(postgresPool *pgxpool.Pool, redisClient *goredis.Clien
 	passengerAuthCodeRepository := repository.NewPostgresPassengerAuthCodeRepository(postgresPool)
 	passengerRefreshTokenRepository := repository.NewPostgresPassengerRefreshTokenRepository(postgresPool)
 	passengerPushTokenRepository := repository.NewPostgresPassengerPushTokenRepository(postgresPool)
+	driverParkInviteRepository := repository.NewPostgresDriverParkInviteRepository(postgresPool)
 	userConsentEventRepository := repository.NewPostgresUserConsentEventRepository(postgresPool)
 	passwordHasher := security.NewBCryptPasswordHasher(config.Security.BCryptCost)
 	codeHasher := security.NewBCryptCodeHasher(config.Security.BCryptCost)
@@ -247,8 +250,11 @@ func newApplicationRoutes(postgresPool *pgxpool.Pool, redisClient *goredis.Clien
 	mapService := mapsapp.New(config.Maps, passengerRoutingService, config.Maps.DataVersion != "" && config.Geocoder.PeliasURL != "", config.Routing.DataVersion != "" && config.Routing.OSRMURL != "")
 	mapService.WithReverseGeocoder(peliasclient.New(config.Geocoder.PeliasURL, &http.Client{Timeout: 3 * time.Second}))
 	passengerOrderService := passengerapp.NewOrderService(passengerRepository, passengerOrderRepository, dispatchService, geocoderService, passengerRoutingService)
+	driverParkInviteNotifier := pushapp.NewDriverInviteNotifier(driverParkInviteRepository, realtimeGateway, buildPassengerPushService(config, logger, passengerPushTokenRepository))
+	driverParkInviteService := driverinvite.NewService(driverParkInviteRepository, driverParkInviteNotifier, config.DriverInviteTTL, logger)
 
 	return applicationRoutes{
+		driverInvites:           handler.NewDriverParkInviteHandler(driverParkInviteService),
 		maps:                    handler.NewMapHandler(mapService),
 		auth:                    handler.NewAuthHandler(registrationService),
 		mobileAuth:              handler.NewMobileAuthHandler(mobileAuthService),
@@ -304,6 +310,9 @@ func (routes applicationRoutes) Register(api gin.IRouter) {
 	routes.order.RegisterRoutes(api)
 	routes.passenger.RegisterRoutes(api)
 	routes.driver.RegisterRoutes(api)
+	if routes.driverInvites != nil {
+		routes.driverInvites.RegisterRoutes(api)
+	}
 	routes.finance.RegisterRoutes(api)
 	routes.taxiPark.RegisterRoutes(api)
 	routes.legal.RegisterRoutes(api)

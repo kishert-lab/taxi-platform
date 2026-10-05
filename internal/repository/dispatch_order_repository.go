@@ -266,13 +266,25 @@ func (repository *PostgresDispatchOrderRepository) AssignDriver(ctx context.Cont
 		       jsonb_build_object('event', 'price_confirmation_requested', 'driver_id', $2, 'price_cents', $6, 'expires_at', $7), $3::timestamptz
 		FROM reserved`
 
-	commandTag, err := repository.pool.Exec(ctx, query, orderID, driverID, acceptedAt, fare.Tariff.ID, fare.Tariff.UpdatedAt, priceCents, confirmationExpiresAt, fare.DistanceMeters, fare.DurationSeconds)
+	transaction, err := repository.pool.Begin(ctx)
+	if err != nil {
+		return false, fmt.Errorf("begin driver assignment: %w", err)
+	}
+	defer rollbackTx(ctx, transaction)
+	var lockedDriver uuid.UUID
+	if err := transaction.QueryRow(ctx, `SELECT id FROM drivers WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, driverID).Scan(&lockedDriver); err != nil {
+		return false, fmt.Errorf("lock assigned driver: %w", err)
+	}
+	commandTag, err := transaction.Exec(ctx, query, orderID, driverID, acceptedAt, fare.Tariff.ID, fare.Tariff.UpdatedAt, priceCents, confirmationExpiresAt, fare.DistanceMeters, fare.DurationSeconds)
 	if err != nil {
 		var postgresError *pgconn.PgError
 		if errors.As(err, &postgresError) && postgresError.Code == "23505" {
 			return false, nil
 		}
 		return false, fmt.Errorf("assign driver atomically: %w", err)
+	}
+	if err := transaction.Commit(ctx); err != nil {
+		return false, fmt.Errorf("commit driver assignment: %w", err)
 	}
 	return commandTag.RowsAffected() == 1, nil
 }

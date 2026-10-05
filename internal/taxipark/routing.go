@@ -20,7 +20,7 @@ func (service *Service) EstimateOrder(ctx context.Context, actorID uuid.UUID, re
 	if err != nil {
 		return nil, err
 	}
-	if _, err := service.repository.GetSettingsByOwnerUserID(ctx, actorID); err != nil {
+	if _, err := service.repository.GetSettingsByActorUserID(ctx, actorID); err != nil {
 		return nil, err
 	}
 	return service.estimateRoadPrice(ctx, actorID, record.TariffID, record.PickupLocation, record.DestinationLocation)

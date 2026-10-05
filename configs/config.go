@@ -15,21 +15,22 @@ import (
 )
 
 type Config struct {
-	App       AppConfig       `mapstructure:"app"`
-	Server    ServerConfig    `mapstructure:"server"`
-	HTTP      HTTPConfig      `mapstructure:"http"`
-	Database  DatabaseConfig  `mapstructure:"database"`
-	Redis     RedisConfig     `mapstructure:"redis"`
-	JWT       JWTConfig       `mapstructure:"jwt"`
-	Auth      AuthConfig      `mapstructure:"auth"`
-	Push      PushConfig      `mapstructure:"push"`
-	Logger    LoggerConfig    `mapstructure:"logger"`
-	Security  SecurityConfig  `mapstructure:"security"`
-	Dispatch  DispatchConfig  `mapstructure:"dispatch"`
-	Scheduled ScheduledConfig `mapstructure:"scheduled"`
-	Geocoder  GeocoderConfig  `mapstructure:"geocoder"`
-	Routing   RoutingConfig   `mapstructure:"routing"`
-	Maps      MapsConfig      `mapstructure:"maps"`
+	DriverInviteTTL time.Duration   `mapstructure:"driver_invite_ttl"`
+	App             AppConfig       `mapstructure:"app"`
+	Server          ServerConfig    `mapstructure:"server"`
+	HTTP            HTTPConfig      `mapstructure:"http"`
+	Database        DatabaseConfig  `mapstructure:"database"`
+	Redis           RedisConfig     `mapstructure:"redis"`
+	JWT             JWTConfig       `mapstructure:"jwt"`
+	Auth            AuthConfig      `mapstructure:"auth"`
+	Push            PushConfig      `mapstructure:"push"`
+	Logger          LoggerConfig    `mapstructure:"logger"`
+	Security        SecurityConfig  `mapstructure:"security"`
+	Dispatch        DispatchConfig  `mapstructure:"dispatch"`
+	Scheduled       ScheduledConfig `mapstructure:"scheduled"`
+	Geocoder        GeocoderConfig  `mapstructure:"geocoder"`
+	Routing         RoutingConfig   `mapstructure:"routing"`
+	Maps            MapsConfig      `mapstructure:"maps"`
 }
 
 type AppConfig struct {
@@ -313,6 +314,9 @@ func bindEnvironmentAliases() error {
 }
 
 func (config Config) Validate() error {
+	if config.DriverInviteTTL <= 0 {
+		return errors.New("driver_invite_ttl must be positive")
+	}
 	if config.Maps.PublicURL != "" {
 		endpoint, err := url.Parse(config.Maps.PublicURL)
 		if err != nil || endpoint.Scheme != "https" || endpoint.Host == "" || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" {
@@ -367,6 +371,7 @@ func (config Config) Validate() error {
 }
 
 func setDefaults() {
+	viper.SetDefault("driver_invite_ttl", "168h")
 	viper.SetDefault("routing.data_version", "")
 	viper.SetDefault("routing.max_snap_meters", 500)
 	viper.SetDefault("routing.cache_ttl", "5m")

@@ -108,7 +108,7 @@ func (repository *PostgresFinanceRepository) GetTaxiParkDriverBalance(ctx contex
 		SELECT db.driver_id, db.available_balance_cents, db.pending_balance_cents, db.currency, db.updated_at
 		FROM driver_balances db
 		JOIN drivers d ON d.id = db.driver_id
-		JOIN taxi_parks tp ON tp.id = d.taxi_park_id
+		JOIN taxi_parks tp ON tp.id = db.taxi_park_id
 		WHERE db.driver_id = $1 AND tp.owner_user_id = $2 AND d.deleted_at IS NULL AND tp.deleted_at IS NULL`
 
 	var balance domain.DriverBalance
@@ -159,9 +159,8 @@ func (repository *PostgresFinanceRepository) CreateDriverPayout(ctx context.Cont
 	var currentBalance int64
 	if err := tx.QueryRow(ctx, `
 		SELECT COALESCE(db.available_balance_cents, 0)
-		FROM drivers d
-		LEFT JOIN driver_balances db ON db.driver_id = d.id
-		WHERE d.id = $1 AND d.taxi_park_id = $2 AND d.deleted_at IS NULL`, driverID, taxiParkID).Scan(&currentBalance); err != nil {
+		FROM driver_balances db
+		WHERE db.driver_id = $1 AND db.taxi_park_id = $2 FOR UPDATE`, driverID, taxiParkID).Scan(&currentBalance); err != nil {
 		return finance.DriverPayout{}, fmt.Errorf("select driver payout balance: %w", err)
 	}
 	if currentBalance < input.AmountCents {
@@ -207,15 +206,19 @@ func (repository *PostgresFinanceRepository) MarkDriverPayoutPaid(ctx context.Co
 		return finance.DriverPayout{}, err
 	}
 
-	if _, err := tx.Exec(ctx, `
+	balanceUpdate, err := tx.Exec(ctx, `
 		UPDATE driver_balances
 		SET available_balance_cents = available_balance_cents - $2,
 		    version = version + 1
-		WHERE driver_id = $1`, payout.DriverID, payout.Amount.Amount); err != nil {
+		WHERE driver_id = $1 AND taxi_park_id=$3 AND available_balance_cents >= $2`, payout.DriverID, payout.Amount.Amount, payout.TaxiParkID)
+	if err != nil {
 		return finance.DriverPayout{}, fmt.Errorf("update driver balance after payout: %w", err)
 	}
 
-	balanceAfter, err := nextLedgerBalance(ctx, tx, "driver_balance_ledger", "driver_id", payout.DriverID, payout.Amount.Amount, false)
+	if balanceUpdate.RowsAffected() != 1 {
+		return finance.DriverPayout{}, finance.ErrInsufficientDriverBalance
+	}
+	balanceAfter, err := driverParkBalanceInTransaction(ctx, tx, payout.DriverID, &payout.TaxiParkID)
 	if err != nil {
 		return finance.DriverPayout{}, fmt.Errorf("resolve driver payout ledger balance: %w", err)
 	}
@@ -612,6 +615,7 @@ func (repository *PostgresFinanceRepository) updateDriverPayoutStatusTx(ctx cont
 		SET status = $2, paid_at = %s, updated_at = now()
 		FROM taxi_parks tp
 		WHERE p.id = $1 AND tp.id = p.taxi_park_id AND tp.owner_user_id = $3
+		  AND p.status IN ('created', 'approved')
 		RETURNING p.id, p.driver_id, p.taxi_park_id, (p.amount * 100)::bigint, p.currency, p.status,
 		          p.period_from, p.period_to, COALESCE(p.payment_method, ''), COALESCE(p.payment_document_number, ''),
 		          COALESCE(p.comment, ''), p.created_by, p.created_at, p.paid_at, p.updated_at`, paidAtClause)

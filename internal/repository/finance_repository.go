@@ -30,7 +30,7 @@ func (repository *PostgresFinanceRepository) GetOrderSnapshot(ctx context.Contex
 		SELECT
 			o.id,
 			o.driver_id,
-			d.taxi_park_id,
+			COALESCE(o.park_id, NULLIF(o.metadata->>'taxi_park_id', '')::uuid),
 			o.city_id,
 			o.tariff_id,
 			o.status,
@@ -39,7 +39,7 @@ func (repository *PostgresFinanceRepository) GetOrderSnapshot(ctx context.Contex
 			COALESCE((tpf.platform_service_fee_percent * 100)::integer, 100)
 		FROM orders o
 		LEFT JOIN drivers d ON d.id = o.driver_id
-		LEFT JOIN taxi_parks tp ON tp.id = d.taxi_park_id
+		LEFT JOIN taxi_parks tp ON tp.id = COALESCE(o.park_id, NULLIF(o.metadata->>'taxi_park_id', '')::uuid)
 		LEFT JOIN taxi_park_finance_settings tpf ON tpf.taxi_park_id = tp.id AND tpf.is_active = TRUE
 		WHERE o.id = $1 AND o.deleted_at IS NULL`
 
@@ -157,14 +157,15 @@ func (repository *PostgresFinanceRepository) CreateOrderSettlement(ctx context.C
 	}
 
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO driver_balances (driver_id, available_balance_cents, pending_balance_cents, currency)
-		VALUES ($1, $2, 0, $3)
-		ON CONFLICT (driver_id) DO UPDATE
+		INSERT INTO driver_balances (driver_id, available_balance_cents, pending_balance_cents, currency, taxi_park_id)
+		VALUES ($1, $2, 0, $3, $4)
+		ON CONFLICT (driver_id,taxi_park_id) DO UPDATE
 		SET available_balance_cents = driver_balances.available_balance_cents + EXCLUDED.available_balance_cents,
 		    version = driver_balances.version + 1`,
 		settlement.DriverID,
 		settlement.NetAmount.Amount,
 		settlement.NetAmount.Currency,
+		settlement.TaxiParkID,
 	); err != nil {
 		return domain.OrderSettlement{}, fmt.Errorf("upsert driver balance: %w", err)
 	}
@@ -225,7 +226,7 @@ func (repository *PostgresFinanceRepository) GetDriverBalance(ctx context.Contex
 	const query = `
 		SELECT driver_id, available_balance_cents, pending_balance_cents, currency, updated_at
 		FROM driver_balances
-		WHERE driver_id = $1`
+		WHERE driver_id = $1 AND taxi_park_id IS NOT DISTINCT FROM (SELECT taxi_park_id FROM drivers WHERE id=$1)`
 
 	var balance domain.DriverBalance
 	var currency string
@@ -473,16 +474,7 @@ func (repository *PostgresFinanceRepository) ListTaxiParkOrders(ctx context.Cont
 			o.created_at,
 			o.completed_at
 		FROM taxi_parks tp
-		JOIN orders o ON (
-			o.metadata->>'taxi_park_id' = tp.id::text
-			OR EXISTS (
-				SELECT 1
-				FROM drivers d
-				WHERE d.id = o.driver_id
-				  AND d.taxi_park_id = tp.id
-				  AND d.deleted_at IS NULL
-			)
-		)
+		JOIN orders o ON COALESCE(o.park_id,NULLIF(o.metadata->>'taxi_park_id','')::uuid)=tp.id
 		WHERE tp.owner_user_id = $1
 		  AND tp.deleted_at IS NULL
 		  AND o.deleted_at IS NULL
@@ -647,7 +639,7 @@ func insertFinanceAudit(ctx context.Context, tx pgx.Tx, transactionID uuid.UUID,
 }
 
 func insertDriverBalanceLedger(ctx context.Context, tx pgx.Tx, settlement domain.OrderSettlement) error {
-	balanceAfter, err := nextLedgerBalance(ctx, tx, "driver_balance_ledger", "driver_id", settlement.DriverID, settlement.NetAmount.Amount, true)
+	balanceAfter, err := driverParkBalanceInTransaction(ctx, tx, settlement.DriverID, settlement.TaxiParkID)
 	if err != nil {
 		return fmt.Errorf("resolve driver balance ledger: %w", err)
 	}

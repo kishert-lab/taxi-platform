@@ -91,8 +91,7 @@ func (service *MobileService) StartLogin(ctx context.Context, request dto.AuthLo
 			}
 			return dto.AuthTokenResponse{}, fmt.Errorf("get driver login access: %w", err)
 		}
-		if access.TaxiParkID == nil ||
-			!access.TaxiParkActive ||
+		if (access.TaxiParkID != nil && !access.TaxiParkActive) ||
 			access.VerificationStatus == domain.ComplianceStatusBlocked ||
 			access.VerificationStatus == domain.ComplianceStatusArchived {
 			return dto.AuthTokenResponse{}, ErrDriverAccessDenied

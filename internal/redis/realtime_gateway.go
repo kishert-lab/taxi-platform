@@ -22,6 +22,10 @@ func NewRealtimeGateway(client *goredis.Client, pool *pgxpool.Pool) *RealtimeGat
 	return &RealtimeGateway{client: client, pool: pool}
 }
 
+func (gateway *RealtimeGateway) SendToUser(ctx context.Context, userID uuid.UUID, eventName string, payload any) error {
+	return gateway.publishToUser(ctx, userID, eventName, payload)
+}
+
 func (gateway *RealtimeGateway) SendToDriver(ctx context.Context, driverID uuid.UUID, eventName string, payload any) error {
 	userID, err := gateway.driverUserID(ctx, driverID)
 	if err != nil {

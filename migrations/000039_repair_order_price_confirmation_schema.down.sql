@@ -1,0 +1,2 @@
+-- Intentionally no-op. The repaired objects logically belong to migration
+-- 000038 and may have existed before this corrective migration.

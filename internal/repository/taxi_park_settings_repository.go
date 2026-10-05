@@ -41,6 +41,35 @@ func (repository *PostgresTaxiParkSettingsRepository) GetSettingsByOwnerUserID(c
 	return settings, nil
 }
 
+func (repository *PostgresTaxiParkSettingsRepository) GetSettingsByActorUserID(ctx context.Context, actorUserID uuid.UUID) (domain.TaxiParkSettings, error) {
+	settings, err := scanTaxiParkSettings(repository.pool.QueryRow(ctx, `SELECT `+taxiParkSettingsColumns+`
+		FROM taxi_park_settings s
+		JOIN taxi_parks p ON p.id = s.taxi_park_id
+		JOIN cities c ON c.id = p.city_id
+		WHERE p.id = (
+			SELECT id
+			FROM taxi_parks
+			WHERE owner_user_id = $1 AND deleted_at IS NULL
+			UNION
+			SELECT staff.taxi_park_id
+			FROM taxi_park_staff staff
+			JOIN taxi_parks staff_park ON staff_park.id = staff.taxi_park_id
+			WHERE staff.user_id = $1
+			  AND staff.is_active = true
+			  AND staff.deleted_at IS NULL
+			  AND staff.role IN ('dispatcher', 'taxi_park')
+			  AND staff_park.deleted_at IS NULL
+			LIMIT 1
+		)`, actorUserID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.TaxiParkSettings{}, taxiparkapp.ErrTaxiParkNotFound
+	}
+	if err != nil {
+		return domain.TaxiParkSettings{}, fmt.Errorf("select taxi park settings by actor: %w", err)
+	}
+	return settings, nil
+}
+
 func (repository *PostgresTaxiParkSettingsRepository) UpdateSettingsByOwnerUserID(ctx context.Context, ownerUserID uuid.UUID, request dto.TaxiParkSettingsPatchRequest) (domain.TaxiParkSettings, error) {
 	if err := repository.ensureSettings(ctx, ownerUserID); err != nil {
 		return domain.TaxiParkSettings{}, err
@@ -325,17 +354,9 @@ func (repository *PostgresTaxiParkSettingsRepository) CreateOrderByOwnerUserID(c
 		return domain.Order{}, fmt.Errorf("select taxi park for order creation: %w", err)
 	}
 
-	passengerID := ownerUserID
-	if record.PassengerPhone != "" {
-		if err := transaction.QueryRow(ctx, `
-			INSERT INTO passengers (phone, name, is_active, phone_verified_at)
-			VALUES ($1, NULLIF($2, ''), true, now())
-			ON CONFLICT (phone) DO UPDATE
-			SET name = COALESCE(NULLIF(EXCLUDED.name, ''), passengers.name),
-			    updated_at = now()
-			RETURNING id`, record.PassengerPhone, record.PassengerName).Scan(&passengerID); err != nil {
-			return domain.Order{}, fmt.Errorf("upsert passenger for taxi park order: %w", err)
-		}
+	passengerID, err := resolveTaxiParkOrderPassenger(ctx, transaction, taxiParkID, record.PassengerPhone, record.PassengerName)
+	if err != nil {
+		return domain.Order{}, err
 	}
 
 	metadata, err := json.Marshal(map[string]any{
@@ -487,17 +508,9 @@ func (repository *PostgresTaxiParkSettingsRepository) CreateScheduledOrderByActo
 		}
 	}
 
-	passengerID := actorUserID
-	if record.PassengerPhone != "" {
-		if err := transaction.QueryRow(ctx, `
-			INSERT INTO passengers (phone, name, is_active, phone_verified_at)
-			VALUES ($1, NULLIF($2, ''), true, now())
-			ON CONFLICT (phone) DO UPDATE
-			SET name = COALESCE(NULLIF(EXCLUDED.name, ''), passengers.name),
-			    updated_at = now()
-			RETURNING id`, record.PassengerPhone, record.PassengerName).Scan(&passengerID); err != nil {
-			return taxiparkapp.ScheduledOrder{}, fmt.Errorf("upsert passenger for scheduled order: %w", err)
-		}
+	passengerID, err := resolveTaxiParkOrderPassenger(ctx, transaction, taxiParkID, record.PassengerPhone, record.PassengerName)
+	if err != nil {
+		return taxiparkapp.ScheduledOrder{}, err
 	}
 
 	metadata, err := json.Marshal(map[string]any{
@@ -1146,10 +1159,13 @@ func (repository *PostgresTaxiParkSettingsRepository) CreateDriverByOwnerUserID(
 	}
 
 	if _, err := transaction.Exec(ctx, `
-		INSERT INTO driver_balances (driver_id, available_balance_cents, pending_balance_cents, currency)
-		VALUES ($1, 0, 0, 'RUB')
-		ON CONFLICT (driver_id) DO NOTHING`, result.DriverID); err != nil {
+		INSERT INTO driver_balances (driver_id, available_balance_cents, pending_balance_cents, currency,taxi_park_id)
+		VALUES ($1, 0, 0, 'RUB',$2)
+		ON CONFLICT (driver_id,taxi_park_id) DO NOTHING`, result.DriverID, taxiParkID); err != nil {
 		return taxiparkapp.CreateDriverResult{}, fmt.Errorf("insert taxi park driver balance: %w", err)
+	}
+	if _, err := transaction.Exec(ctx, `INSERT INTO driver_park_history(driver_id,taxi_park_id,joined_at) VALUES($1,$2,now())`, result.DriverID, taxiParkID); err != nil {
+		return taxiparkapp.CreateDriverResult{}, fmt.Errorf("insert initial driver park history: %w", err)
 	}
 	if record.AttachedCarID != nil {
 		if err := repository.assignCarToDriver(ctx, transaction, taxiParkID, *record.AttachedCarID, result.DriverID); err != nil {
@@ -2616,6 +2632,33 @@ func taxiParkIDAndCityByActor(ctx context.Context, transaction pgx.Tx, actorUser
 	return taxiParkID, cityID, nil
 }
 
+func resolveTaxiParkOrderPassenger(ctx context.Context, transaction pgx.Tx, taxiParkID uuid.UUID, passengerPhone, passengerName string) (uuid.UUID, error) {
+	if passengerPhone == "" {
+		if err := transaction.QueryRow(ctx, `
+			SELECT owner.phone, trim(concat_ws(' ', owner.first_name, owner.last_name))
+			FROM taxi_parks park
+			JOIN users owner ON owner.id = park.owner_user_id
+			WHERE park.id = $1 AND park.deleted_at IS NULL`, taxiParkID).Scan(&passengerPhone, &passengerName); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return uuid.Nil, taxiparkapp.ErrTaxiParkNotFound
+			}
+			return uuid.Nil, fmt.Errorf("select taxi park owner passenger fallback: %w", err)
+		}
+	}
+
+	var passengerID uuid.UUID
+	if err := transaction.QueryRow(ctx, `
+		INSERT INTO passengers (phone, name, is_active, phone_verified_at)
+		VALUES ($1, NULLIF($2, ''), true, now())
+		ON CONFLICT (phone) DO UPDATE
+		SET name = COALESCE(NULLIF(EXCLUDED.name, ''), passengers.name),
+		    updated_at = now()
+		RETURNING id`, passengerPhone, passengerName).Scan(&passengerID); err != nil {
+		return uuid.Nil, fmt.Errorf("upsert passenger for taxi park order: %w", err)
+	}
+	return passengerID, nil
+}
+
 func taxiParkOrderForUpdate(ctx context.Context, transaction pgx.Tx, taxiParkID uuid.UUID, orderID uuid.UUID) (domain.Order, error) {
 	order, err := scanDispatchOrder(transaction.QueryRow(ctx, `
 		SELECT `+dispatchOrderSelectColumns+`
@@ -2708,19 +2751,12 @@ func insertTaxiParkOrderEvent(ctx context.Context, transaction pgx.Tx, order dom
 }
 
 func ensureDriverBelongsToTaxiPark(ctx context.Context, transaction pgx.Tx, taxiParkID uuid.UUID, driverID uuid.UUID) error {
-	var exists bool
-	if err := transaction.QueryRow(ctx, `
-		SELECT EXISTS (
-			SELECT 1
-			FROM drivers
-			WHERE id = $2
-			  AND taxi_park_id = $1
-			  AND deleted_at IS NULL
-		)`, taxiParkID, driverID).Scan(&exists); err != nil {
-		return fmt.Errorf("check scheduled order driver ownership: %w", err)
-	}
-	if !exists {
-		return taxiparkapp.ErrTaxiParkResourceNotFound
+	var id uuid.UUID
+	if err := transaction.QueryRow(ctx, `SELECT id FROM drivers WHERE id=$2 AND taxi_park_id=$1 AND deleted_at IS NULL FOR UPDATE`, taxiParkID, driverID).Scan(&id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return taxiparkapp.ErrTaxiParkResourceNotFound
+		}
+		return fmt.Errorf("lock scheduled order driver ownership: %w", err)
 	}
 	return nil
 }

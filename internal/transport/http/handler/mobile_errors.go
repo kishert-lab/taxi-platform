@@ -152,7 +152,7 @@ func failByError(context *gin.Context, err error) {
 	case errors.Is(err, taxiparkapp.ErrInvalidDriverPassword):
 		response.Fail(context, http.StatusBadRequest, response.CodeValidationError, "Driver password must contain at least 8 characters", nil)
 	case errors.Is(err, taxiparkapp.ErrDriverPhoneAlreadyExists):
-		response.Fail(context, http.StatusConflict, response.CodeValidationError, "Driver with this phone already exists", nil)
+		response.Fail(context, http.StatusConflict, "DRIVER_ALREADY_REGISTERED", "Водитель уже зарегистрирован. Вы можете отправить ему приглашение в свой таксопарк.", nil)
 	case errors.Is(err, taxiparkapp.ErrCarAlreadyExists):
 		response.Fail(context, http.StatusConflict, response.CodeValidationError, "Car with this plate or VIN already exists", nil)
 	case errors.Is(err, common.ErrNotImplemented):

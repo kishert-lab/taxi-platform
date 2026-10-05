@@ -45,6 +45,7 @@ const (
 	PermissionDispatcherCancelOrder   Permission = "dispatcher.orders.cancel"
 	PermissionDispatcherContactDriver Permission = "dispatcher.drivers.contact"
 
+	PermissionTaxiParkInviteDrivers Permission = "taxi_park.drivers.invite"
 	PermissionTaxiParkManageProfile Permission = "taxi_park.profile.manage"
 	PermissionTaxiParkCreateDrivers Permission = "taxi_park.drivers.create"
 	PermissionTaxiParkManageDrivers Permission = "taxi_park.drivers.manage"
@@ -106,6 +107,7 @@ var rolePermissions = map[UserRole][]Permission{
 		PermissionAdminViewRatings,
 	},
 	UserRoleDispatcher: {
+		PermissionTaxiParkInviteDrivers,
 		PermissionPassengerCreateOrder,
 		PermissionPassengerViewCurrentOrder,
 		PermissionPassengerViewOrderHistory,
@@ -120,6 +122,7 @@ var rolePermissions = map[UserRole][]Permission{
 		PermissionDispatcherContactDriver,
 	},
 	UserRoleTaxiPark: {
+		PermissionTaxiParkInviteDrivers,
 		PermissionPassengerCreateOrder,
 		PermissionPassengerViewCurrentOrder,
 		PermissionPassengerViewOrderHistory,

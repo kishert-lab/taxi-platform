@@ -150,15 +150,15 @@ func TestCreateCarAcceptsRFC3339DatesAndOwnerFallback(t *testing.T) {
 	}
 }
 
-func TestCreateOrderAcceptsTaxiParkFrontendPayload(t *testing.T) {
+func TestCreateOrderAcceptsDispatcherPayloadWithoutPassengerPhone(t *testing.T) {
 	repository := &fakeRepository{}
 	service := NewService(repository, fakePasswordHasher{})
 	tariffID := uuid.MustParse("76f71789-9fb1-4945-8b5f-0f358b70aae3")
+	dispatcherID := uuid.New()
 
-	_, err := service.CreateOrder(context.Background(), uuid.New(), dto.TaxiParkCreateOrderRequest{
-		TariffID:       tariffID,
-		PassengerPhone: "+79124966456",
-		PickupAddress:  "ADR 1",
+	_, err := service.CreateOrder(context.Background(), dispatcherID, dto.TaxiParkCreateOrderRequest{
+		TariffID:      tariffID,
+		PickupAddress: "ADR 1",
 		PickupLocation: &dto.TaxiParkOrderCoordinatesRequest{
 			Latitude:  56.80586,
 			Longitude: 60.575867,
@@ -178,6 +178,12 @@ func TestCreateOrderAcceptsTaxiParkFrontendPayload(t *testing.T) {
 	}
 	if repository.createdOrderRecord.DestinationLocation == nil {
 		t.Fatal("expected destination location")
+	}
+	if repository.settingsActorID != dispatcherID {
+		t.Fatalf("settings actor id=%s want %s", repository.settingsActorID, dispatcherID)
+	}
+	if repository.createdOrderRecord.PassengerPhone != "" {
+		t.Fatalf("passenger phone=%q want empty fallback", repository.createdOrderRecord.PassengerPhone)
 	}
 }
 
@@ -216,6 +222,7 @@ type fakeRepository struct {
 	createdOrderRecord          CreateOrderRecord
 	createdScheduledOrderRecord CreateScheduledOrderRecord
 	unblockDispatcherID         uuid.UUID
+	settingsActorID             uuid.UUID
 }
 
 func (repository *fakeRepository) GetSettingsByOwnerUserID(context.Context, uuid.UUID) (domain.TaxiParkSettings, error) {
@@ -225,6 +232,11 @@ func (repository *fakeRepository) GetSettingsByOwnerUserID(context.Context, uuid
 		ScheduledActivationBeforeMinutes: 20,
 		CityTimezone:                     "Asia/Yekaterinburg",
 	}, nil
+}
+
+func (repository *fakeRepository) GetSettingsByActorUserID(ctx context.Context, actorUserID uuid.UUID) (domain.TaxiParkSettings, error) {
+	repository.settingsActorID = actorUserID
+	return repository.GetSettingsByOwnerUserID(ctx, actorUserID)
 }
 
 func (repository *fakeRepository) UpdateSettingsByOwnerUserID(context.Context, uuid.UUID, dto.TaxiParkSettingsPatchRequest) (domain.TaxiParkSettings, error) {

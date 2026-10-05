@@ -99,7 +99,7 @@ func (service *Service) CreateOrder(ctx context.Context, ownerUserID uuid.UUID, 
 	if err != nil {
 		return domain.Order{}, err
 	}
-	settings, err := service.repository.GetSettingsByOwnerUserID(ctx, ownerUserID)
+	settings, err := service.repository.GetSettingsByActorUserID(ctx, ownerUserID)
 	if err != nil {
 		return domain.Order{}, err
 	}
@@ -124,7 +124,7 @@ func (service *Service) CreateScheduledOrder(ctx context.Context, actorUserID uu
 	if err != nil {
 		return ScheduledOrder{}, err
 	}
-	settings, err := service.repository.GetSettingsByOwnerUserID(ctx, actorUserID)
+	settings, err := service.repository.GetSettingsByActorUserID(ctx, actorUserID)
 	if err != nil {
 		return ScheduledOrder{}, err
 	}
@@ -155,7 +155,7 @@ func (service *Service) UpdateScheduledOrder(ctx context.Context, actorUserID uu
 		return ScheduledOrder{}, err
 	}
 	if record.ScheduledAt != nil {
-		settings, settingsErr := service.repository.GetSettingsByOwnerUserID(ctx, actorUserID)
+		settings, settingsErr := service.repository.GetSettingsByActorUserID(ctx, actorUserID)
 		if settingsErr != nil {
 			return ScheduledOrder{}, settingsErr
 		}
