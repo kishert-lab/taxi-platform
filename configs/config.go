@@ -395,7 +395,7 @@ func setDefaults() {
 	viper.SetDefault("server.write_timeout", "15s")
 	viper.SetDefault("server.idle_timeout", "60s")
 	viper.SetDefault("server.shutdown_timeout", "15s")
-	viper.SetDefault("http.cors.allowed_origins", []string{"http://localhost:3000", "http://localhost:5173", "http://192.168.0.50:5173"})
+	viper.SetDefault("http.cors.allowed_origins", []string{"http://localhost:3000", "http://localhost:5173", "http://192.168.0.50:5173", "https://taxi.dev.wkfc.ru"})
 	viper.SetDefault("database.host", "localhost")
 	viper.SetDefault("database.port", 5432)
 	viper.SetDefault("database.user", "taxi")

@@ -99,10 +99,17 @@ type TaxiParkDriver struct {
 type TaxiParkOrder struct {
 	ID          uuid.UUID
 	DriverID    *uuid.UUID
+	Driver      *TaxiParkOrderDriver
 	Status      domain.OrderStatus
 	GrossAmount domain.Money
 	CreatedAt   time.Time
 	CompletedAt *time.Time
+}
+
+type TaxiParkOrderDriver struct {
+	ID    uuid.UUID
+	Name  string
+	Phone string
 }
 
 type AdminOverview struct {

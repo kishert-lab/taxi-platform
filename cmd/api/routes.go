@@ -361,7 +361,7 @@ type dispatchPassengerNotifier struct {
 	service *pushapp.Service
 }
 
-func newDispatchPassengerNotifier(service *pushapp.Service) *dispatchPassengerNotifier {
+func newDispatchPassengerNotifier(service *pushapp.Service) dispatchapp.PassengerNotifier {
 	if service == nil {
 		return nil
 	}
@@ -380,7 +380,7 @@ type driverPassengerNotifier struct {
 	service *pushapp.Service
 }
 
-func newDriverPassengerNotifier(service *pushapp.Service) *driverPassengerNotifier {
+func newDriverPassengerNotifier(service *pushapp.Service) driverapp.PassengerNotifier {
 	if service == nil {
 		return nil
 	}

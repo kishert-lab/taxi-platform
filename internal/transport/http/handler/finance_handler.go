@@ -960,14 +960,18 @@ func taxiParkDriversResponse(drivers []finance.TaxiParkDriver) dto.TaxiParkDrive
 func taxiParkOrdersResponse(orders []finance.TaxiParkOrder) dto.TaxiParkOrdersResponse {
 	responseBody := dto.TaxiParkOrdersResponse{Orders: make([]dto.TaxiParkOrderResponse, 0, len(orders))}
 	for _, order := range orders {
-		responseBody.Orders = append(responseBody.Orders, dto.TaxiParkOrderResponse{
+		responseOrder := dto.TaxiParkOrderResponse{
 			ID:          order.ID,
 			DriverID:    order.DriverID,
 			Status:      order.Status,
 			GrossAmount: dto.MoneyCentsFromDomain(order.GrossAmount),
 			CreatedAt:   order.CreatedAt,
 			CompletedAt: order.CompletedAt,
-		})
+		}
+		if order.Driver != nil {
+			responseOrder.Driver = &dto.TaxiParkOrderDriverResponse{ID: order.Driver.ID, Name: order.Driver.Name, Phone: order.Driver.Phone}
+		}
+		responseBody.Orders = append(responseBody.Orders, responseOrder)
 	}
 	return responseBody
 }

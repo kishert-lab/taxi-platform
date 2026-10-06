@@ -864,6 +864,25 @@ func (repository *PostgresTaxiParkSettingsRepository) GetOrderByActorUserID(ctx 
 	if err != nil {
 		return domain.Order{}, mapTaxiParkOrderScanError("select taxi park order", err)
 	}
+	var driverID, passengerID pgtype.UUID
+	var driverName, driverPhone, passengerName, passengerPhone string
+	err = transaction.QueryRow(ctx, `
+		SELECT d.id, COALESCE(TRIM(CONCAT_WS(' ', u.first_name, u.last_name)), ''), COALESCE(u.phone, ''),
+		       p.id, COALESCE(p.name, ''), COALESCE(p.phone, '')
+		FROM orders o
+		LEFT JOIN drivers d ON d.id = o.driver_id AND d.deleted_at IS NULL
+		LEFT JOIN users u ON u.id = d.user_id AND u.deleted_at IS NULL
+		LEFT JOIN passengers p ON p.id = o.passenger_id AND p.deleted_at IS NULL
+		WHERE o.id = $1`, orderID).Scan(&driverID, &driverName, &driverPhone, &passengerID, &passengerName, &passengerPhone)
+	if err != nil {
+		return domain.Order{}, fmt.Errorf("select taxi park order participants: %w", err)
+	}
+	if driverID.Valid {
+		order.Driver = &domain.OrderParticipant{ID: uuid.UUID(driverID.Bytes), Name: driverName, Phone: driverPhone}
+	}
+	if passengerID.Valid {
+		order.Passenger = &domain.OrderParticipant{ID: uuid.UUID(passengerID.Bytes), Name: passengerName, Phone: passengerPhone}
+	}
 	if err := transaction.Commit(ctx); err != nil {
 		return domain.Order{}, fmt.Errorf("commit taxi park order get transaction: %w", err)
 	}
@@ -945,14 +964,16 @@ func (repository *PostgresTaxiParkSettingsRepository) UpdateOrderByActorUserID(c
 }
 
 func (repository *PostgresTaxiParkSettingsRepository) CancelOrderByActorUserID(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID, reason string) (domain.Order, error) {
-	return repository.transitionOrderByActorUserID(ctx, actorUserID, orderID, domain.OrderStatusCancelled, reason, nil)
+	return repository.transitionOrderByActorUserID(ctx, actorUserID, orderID, domain.OrderStatusCancelled, reason)
 }
 
 func (repository *PostgresTaxiParkSettingsRepository) CompleteOrderByActorUserID(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID, finalPriceCents int64) (domain.Order, error) {
-	return repository.transitionOrderByActorUserID(ctx, actorUserID, orderID, domain.OrderStatusCompleted, "", &finalPriceCents)
+	// The amount was fixed when the order was created; a dashboard must not overwrite it.
+	_ = finalPriceCents
+	return repository.transitionOrderByActorUserID(ctx, actorUserID, orderID, domain.OrderStatusCompleted, "")
 }
 
-func (repository *PostgresTaxiParkSettingsRepository) transitionOrderByActorUserID(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID, toStatus domain.OrderStatus, reason string, finalPriceCents *int64) (domain.Order, error) {
+func (repository *PostgresTaxiParkSettingsRepository) transitionOrderByActorUserID(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID, toStatus domain.OrderStatus, reason string) (domain.Order, error) {
 	transaction, err := repository.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return domain.Order{}, fmt.Errorf("begin taxi park order transition transaction: %w", err)
@@ -978,7 +999,7 @@ func (repository *PostgresTaxiParkSettingsRepository) transitionOrderByActorUser
 		    cancelled_at = CASE WHEN $4::order_status = 'cancelled'::order_status THEN $5 ELSE cancelled_at END,
 		    cancellation_reason = CASE WHEN $4::order_status = 'cancelled'::order_status THEN $6::text ELSE cancellation_reason END,
 		    completed_at = CASE WHEN $4::order_status = 'completed'::order_status THEN $5 ELSE completed_at END,
-		    final_price = CASE WHEN $4::order_status = 'completed'::order_status THEN ($7::bigint::numeric / 100) ELSE final_price END
+		    final_price = CASE WHEN $4::order_status = 'completed'::order_status THEN COALESCE(final_price, estimated_price) ELSE final_price END
 		WHERE id = $1
 		  AND status = $2::order_status
 		  AND version = $3
@@ -990,7 +1011,6 @@ func (repository *PostgresTaxiParkSettingsRepository) transitionOrderByActorUser
 		transition.ToStatus,
 		transition.OccurredAt,
 		nullableString(transition.Reason),
-		finalPriceCents,
 	))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

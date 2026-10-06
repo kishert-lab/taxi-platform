@@ -44,7 +44,7 @@ func (gateway *RealtimeGateway) SendDriverPresenceToTaxiPark(ctx context.Context
 		return err
 	}
 	for _, userID := range recipientUserIDs {
-		if err := gateway.publishToUser(ctx, userID, "driver.status_changed", payload); err != nil {
+		if err := gateway.publishToUser(ctx, userID, wsmsg.EventDriverStatusUpdated, payload); err != nil {
 			return err
 		}
 	}

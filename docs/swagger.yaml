@@ -496,8 +496,8 @@ definitions:
         example: RUB
         type: string
       final_price:
-        description: 'Deprecated: final price is calculated by the server from trip
-          telemetry and tariff.'
+        description: 'Deprecated: the price is fixed when the order is created and
+          the client cannot change it.'
         example: 26000
         type: integer
     type: object
@@ -1214,6 +1214,15 @@ definitions:
           $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.PassengerOrderResponse'
         type: array
     type: object
+  github_com_kishert-lab_taxi-platform_internal_dto.OrderParticipantResponse:
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+      phone:
+        type: string
+    type: object
   github_com_kishert-lab_taxi-platform_internal_dto.OrderPricingResponse:
     properties:
       agreed_price:
@@ -1280,6 +1289,8 @@ definitions:
         type: string
       destination_address:
         type: string
+      driver:
+        $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.OrderParticipantResponse'
       driver_id:
         type: string
       estimated_price:
@@ -1288,6 +1299,8 @@ definitions:
         $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.MoneyResponse'
       id:
         type: string
+      passenger:
+        $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.OrderParticipantResponse'
       passenger_id:
         type: string
       payment_method:
@@ -2329,15 +2342,16 @@ definitions:
   github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkCompleteOrderRequest:
     properties:
       currency:
+        description: 'Deprecated: the order currency is retained by the server and
+          this field is ignored.'
         example: RUB
         type: string
       final_price:
+        description: 'Deprecated: the price is fixed when the order is created and
+          this field is ignored.'
         example: 25000
         minimum: 0
         type: integer
-    required:
-    - currency
-    - final_price
     type: object
   github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkCreateDispatcherRequest:
     properties:
@@ -3070,6 +3084,18 @@ definitions:
         example: 60.598698
         type: number
     type: object
+  github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkOrderDriverResponse:
+    properties:
+      id:
+        example: 22222222-2222-2222-2222-222222222222
+        type: string
+      name:
+        example: Ivan Petrov
+        type: string
+      phone:
+        example: "+79990000001"
+        type: string
+    type: object
   github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkOrderResponse:
     properties:
       completed_at:
@@ -3078,6 +3104,8 @@ definitions:
       created_at:
         example: "2026-05-12T12:00:00Z"
         type: string
+      driver:
+        $ref: '#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkOrderDriverResponse'
       driver_id:
         example: 22222222-2222-2222-2222-222222222222
         type: string
@@ -5546,6 +5574,9 @@ paths:
       - driver-location
   /driver/offline:
     post:
+      description: Updates the driver status and publishes driver.status.updated to
+        connected taxi park dashboards. The event payload includes driver_id, user_id,
+        status=offline and changed_at.
       produces:
       - application/json
       responses:
@@ -5568,6 +5599,9 @@ paths:
       - driver
   /driver/online:
     post:
+      description: Updates the driver status and publishes driver.status.updated to
+        connected taxi park dashboards. The event payload includes driver_id, user_id,
+        status=online and changed_at.
       produces:
       - application/json
       responses:
@@ -5890,8 +5924,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Final price is calculated by the server from recorded trip telemetry
-        and the assigned tariff. final_price and currency in legacy clients are ignored.
+      description: The price calculated when the order was created is retained as
+        the final price. final_price and currency in legacy clients are ignored.
       parameters:
       - description: Order ID
         in: path
@@ -9251,8 +9285,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: Completes an in-progress order from dispatcher dashboard, stores
-        final price, settles finance, and publishes order.completed.
+      description: Completes an in-progress order using the price fixed when it was
+        created, settles finance, and publishes order.completed. Legacy final_price
+        and currency fields are ignored.
       parameters:
       - description: Order ID
         in: path
@@ -9781,9 +9816,14 @@ paths:
       - finance-taxi-park
   /ws:
     get:
-      description: Mobile realtime endpoint. JWT can be passed in Authorization header
-        or token query parameter. After reconnect the server emits sync.required and
-        the client must call the current order REST endpoint.
+      description: 'Realtime endpoint for authenticated mobile and taxi park clients.
+        JWT can be passed in Authorization header or token query parameter. Every
+        message has event, request_id, occurred_at and payload. After reconnect the
+        server emits sync.required and the client must call the current order REST
+        endpoint. Taxi park users receive driver.status.updated after POST /driver/online
+        or POST /driver/offline; payload includes driver_id, user_id, status (online
+        or offline), changed_at, city_id and taxi_park_id. Example: {"event":"driver.status.updated","request_id":"uuid","occurred_at":"2026-10-06T12:00:00Z","payload":{"driver_id":"uuid","user_id":"uuid","status":"online","changed_at":"2026-10-06T12:00:00Z"}}.
+        Driver location updates are delivered separately as driver.location_updated.'
       parameters:
       - description: JWT token fallback for mobile clients
         in: query

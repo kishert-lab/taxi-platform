@@ -456,7 +456,7 @@ func (handler *TaxiParkSettingsHandler) CancelOrder(context *gin.Context) {
 
 // CompleteOrder godoc
 // @Summary Complete taxi park order
-// @Description Completes an in-progress order from dispatcher dashboard, stores final price, settles finance, and publishes order.completed.
+// @Description Completes an in-progress order using the price fixed when it was created, settles finance, and publishes order.completed. Legacy final_price and currency fields are ignored.
 // @Tags taxi-park-orders
 // @Accept json
 // @Produce json

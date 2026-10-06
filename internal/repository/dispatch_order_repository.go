@@ -124,8 +124,7 @@ func (repository *PostgresDispatchOrderRepository) GetCandidateFare(ctx context.
 	return fare, nil
 }
 
-func (repository *PostgresDispatchOrderRepository) AssignDriver(ctx context.Context, orderID uuid.UUID, driverID uuid.UUID, acceptedAt time.Time, fare dispatch.CandidateFare, priceCents int64, confirmationExpiresAt time.Time) (bool, error) {
-	const query = `
+const assignDriverQuery = `
 		WITH reserved AS (UPDATE orders
 		SET driver_id = $2,
 		    car_id = (
@@ -199,9 +198,10 @@ func (repository *PostgresDispatchOrderRepository) AssignDriver(ctx context.Cont
 		    ),
 		    status = 'driver_assigned',
 		    accepted_at = $3::timestamptz,
-		    price_confirmation_state = 'pending',
-		    proposed_price_cents = $6,
-		    price_confirmation_expires_at = $7,
+		    price_confirmation_state = CASE WHEN $10::boolean THEN 'pending' ELSE 'confirmed' END,
+		    proposed_price_cents = $6::bigint,
+		    agreed_price_cents = CASE WHEN $10::boolean OR fare_mode <> 'fixed_quote' THEN NULL ELSE $6::bigint END,
+		    price_confirmation_expires_at = CASE WHEN $10::boolean THEN $7::timestamptz ELSE NULL END,
 		    version = version + 1
 		WHERE id = $1
 		  AND status = 'searching'
@@ -263,8 +263,15 @@ func (repository *PostgresDispatchOrderRepository) AssignDriver(ctx context.Cont
 		RETURNING id)
 		INSERT INTO order_events (order_id, actor_driver_id, event_type, payload, created_at)
 		SELECT id, $2, 'order.updated',
-		       jsonb_build_object('event', 'price_confirmation_requested', 'driver_id', $2, 'price_cents', $6, 'expires_at', $7), $3::timestamptz
+		       jsonb_build_object(
+		           'event', CASE WHEN $10::boolean THEN 'price_confirmation_requested' ELSE 'price_confirmed' END,
+		           'driver_id', $2,
+		           'price_cents', $6::bigint,
+		           'expires_at', CASE WHEN $10::boolean THEN $7::timestamptz ELSE NULL END
+		       ), $3::timestamptz
 		FROM reserved`
+
+func (repository *PostgresDispatchOrderRepository) AssignDriver(ctx context.Context, orderID uuid.UUID, driverID uuid.UUID, acceptedAt time.Time, fare dispatch.CandidateFare, priceCents int64, confirmationExpiresAt time.Time, requiresPassengerPriceConfirmation bool) (bool, error) {
 
 	transaction, err := repository.pool.Begin(ctx)
 	if err != nil {
@@ -275,7 +282,7 @@ func (repository *PostgresDispatchOrderRepository) AssignDriver(ctx context.Cont
 	if err := transaction.QueryRow(ctx, `SELECT id FROM drivers WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, driverID).Scan(&lockedDriver); err != nil {
 		return false, fmt.Errorf("lock assigned driver: %w", err)
 	}
-	commandTag, err := transaction.Exec(ctx, query, orderID, driverID, acceptedAt, fare.Tariff.ID, fare.Tariff.UpdatedAt, priceCents, confirmationExpiresAt, fare.DistanceMeters, fare.DurationSeconds)
+	commandTag, err := transaction.Exec(ctx, assignDriverQuery, orderID, driverID, acceptedAt, fare.Tariff.ID, fare.Tariff.UpdatedAt, priceCents, confirmationExpiresAt, fare.DistanceMeters, fare.DurationSeconds, requiresPassengerPriceConfirmation)
 	if err != nil {
 		var postgresError *pgconn.PgError
 		if errors.As(err, &postgresError) && postgresError.Code == "23505" {
@@ -542,6 +549,8 @@ const dispatchOrderSelectColumns = `
 	scheduled_expired_at,
 	COALESCE(cancellation_reason, '') AS cancellation_reason,
 	COALESCE(scheduled_cancel_reason, '') AS scheduled_cancel_reason,
+	CASE WHEN estimated_price IS NULL THEN NULL ELSE (estimated_price * 100)::bigint END AS estimated_price_cents,
+	CASE WHEN final_price IS NULL THEN NULL ELSE (final_price * 100)::bigint END AS final_price_cents,
 	payment_method,
 	COALESCE(passenger_comment, '') AS passenger_comment,
 	passenger_location_sharing_enabled,
@@ -556,7 +565,8 @@ const dispatchOrderSelectColumns = `
 	proposed_price_cents,
 	agreed_price_cents,
 	price_confirmation_expires_at,
-	declined_driver_ids`
+	declined_driver_ids,
+	COALESCE(metadata->>'created_by_role', '') AS created_by_role`
 
 func scanDispatchOrder(row pgx.Row) (domain.Order, error) {
 	var order domain.Order
@@ -583,6 +593,8 @@ func scanDispatchOrder(row pgx.Row) (domain.Order, error) {
 	var proposedPrice pgtype.Int8
 	var agreedPrice pgtype.Int8
 	var confirmationExpiresAt pgtype.Timestamptz
+	var estimatedPrice pgtype.Int8
+	var finalPrice pgtype.Int8
 	var scheduledStatus pgtype.Text
 	var pickupLatitude float64
 	var pickupLongitude float64
@@ -622,6 +634,8 @@ func scanDispatchOrder(row pgx.Row) (domain.Order, error) {
 		&scheduledExpiredAt,
 		&order.CancellationReason,
 		&order.ScheduledCancelReason,
+		&estimatedPrice,
+		&finalPrice,
 		&order.PaymentMethod,
 		&order.PassengerComment,
 		&order.PassengerLocationSharingEnabled,
@@ -637,6 +651,7 @@ func scanDispatchOrder(row pgx.Row) (domain.Order, error) {
 		&agreedPrice,
 		&confirmationExpiresAt,
 		&order.DeclinedDriverIDs,
+		&order.CreatedByRole,
 	); err != nil {
 		return domain.Order{}, err
 	}
@@ -648,6 +663,12 @@ func scanDispatchOrder(row pgx.Row) (domain.Order, error) {
 	}
 	if confirmationExpiresAt.Valid {
 		order.PriceConfirmationExpiresAt = &confirmationExpiresAt.Time
+	}
+	if estimatedPrice.Valid {
+		order.EstimatedPrice = &domain.Money{Amount: estimatedPrice.Int64, Currency: "RUB"}
+	}
+	if finalPrice.Valid {
+		order.FinalPrice = &domain.Money{Amount: finalPrice.Int64, Currency: "RUB"}
 	}
 
 	pickupLocation, err := domain.NewCoordinates(pickupLatitude, pickupLongitude)

@@ -69,7 +69,10 @@ const (
 type Order struct {
 	ID                              uuid.UUID
 	PassengerID                     uuid.UUID
+	CreatedByRole                   UserRole
 	DriverID                        *uuid.UUID
+	Driver                          *OrderParticipant
+	Passenger                       *OrderParticipant
 	CarID                           *uuid.UUID
 	ParkID                          *uuid.UUID
 	PreassignedDriverID             *uuid.UUID
@@ -118,6 +121,12 @@ type Order struct {
 	CreatedAt                       time.Time
 	UpdatedAt                       time.Time
 	DeletedAt                       *time.Time
+}
+
+type OrderParticipant struct {
+	ID    uuid.UUID
+	Name  string
+	Phone string
 }
 
 type OrderRating struct {

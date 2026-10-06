@@ -213,8 +213,8 @@ func (service *Service) CancelOrder(ctx context.Context, actorUserID uuid.UUID, 
 	return order, nil
 }
 
-func (service *Service) CompleteOrder(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID, request dto.TaxiParkCompleteOrderRequest) (domain.Order, error) {
-	order, err := service.repository.CompleteOrderByActorUserID(ctx, actorUserID, orderID, request.FinalPrice)
+func (service *Service) CompleteOrder(ctx context.Context, actorUserID uuid.UUID, orderID uuid.UUID, _ dto.TaxiParkCompleteOrderRequest) (domain.Order, error) {
+	order, err := service.repository.CompleteOrderByActorUserID(ctx, actorUserID, orderID, 0)
 	if err != nil {
 		return domain.Order{}, err
 	}

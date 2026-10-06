@@ -90,6 +90,12 @@ func orderToResponse(order domain.Order) dto.OrderResponse {
 	if order.FinalPrice != nil {
 		response.FinalPrice = &dto.MoneyResponse{Amount: order.FinalPrice.Amount, Currency: order.FinalPrice.Currency}
 	}
+	if order.Driver != nil {
+		response.Driver = &dto.OrderParticipantResponse{ID: order.Driver.ID, Name: order.Driver.Name, Phone: order.Driver.Phone}
+	}
+	if order.Passenger != nil {
+		response.Passenger = &dto.OrderParticipantResponse{ID: order.Passenger.ID, Name: order.Passenger.Name, Phone: order.Passenger.Phone}
+	}
 
 	return response
 }

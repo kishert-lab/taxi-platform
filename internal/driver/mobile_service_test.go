@@ -15,6 +15,98 @@ import (
 	wsmsg "github.com/kishert-lab/taxi-platform/internal/ws"
 )
 
+func TestDriverAssignedActionsFollowPriceConfirmation(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name          string
+		confirmation  string
+		expectedFirst string
+	}{
+		{name: "pending", confirmation: "pending", expectedFirst: "cancel"},
+		{name: "confirmed", confirmation: "confirmed", expectedFirst: "arriving"},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			actions := driverAllowedActionsForOrder(CurrentOrder{
+				Status:                 domain.OrderStatusDriverAssigned,
+				PriceConfirmationState: testCase.confirmation,
+			})
+			if len(actions) == 0 || actions[0] != testCase.expectedFirst {
+				t.Fatalf("actions=%v, want first action %q", actions, testCase.expectedFirst)
+			}
+		})
+	}
+}
+
+func TestMarkDriverStatusPublishesTaxiParkPresence(t *testing.T) {
+	for _, testCase := range []struct {
+		name   string
+		status domain.DriverStatus
+		mark   func(*MobileService, context.Context, uuid.UUID) (dto.DriverProfileResponse, error)
+	}{
+		{name: "online", status: domain.DriverStatusOnline, mark: (*MobileService).MarkDriverOnline},
+		{name: "offline", status: domain.DriverStatusOffline, mark: (*MobileService).MarkDriverOffline},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			driverID := uuid.New()
+			userID := uuid.New()
+			taxiParkID := uuid.New()
+			repository := &fakeMobileRepository{statusProfile: Profile{
+				DriverID:   driverID,
+				UserID:     userID,
+				CityID:     uuid.New(),
+				TaxiParkID: &taxiParkID,
+				FirstName:  "Ivan",
+				LastName:   "Ivanov",
+			}}
+			presence := &fakePresenceStore{}
+			gateway := &fakeRealtimeGateway{}
+			service := NewMobileServiceWithDispatch(repository, presence, nil, nil, zap.NewNop(), gateway)
+
+			if _, err := testCase.mark(service, context.Background(), userID); err != nil {
+				t.Fatalf("mark driver %s: %v", testCase.status, err)
+			}
+			if gateway.presenceDriverID != driverID {
+				t.Fatalf("presence driver id = %s, want %s", gateway.presenceDriverID, driverID)
+			}
+			payload, ok := gateway.presencePayload.(map[string]any)
+			if !ok {
+				t.Fatalf("unexpected presence payload: %#v", gateway.presencePayload)
+			}
+			if payload["user_id"] != userID || payload["status"] != testCase.status {
+				t.Fatalf("unexpected presence payload: %#v", payload)
+			}
+			if _, ok := payload["changed_at"].(time.Time); !ok {
+				t.Fatalf("changed_at is missing from presence payload: %#v", payload)
+			}
+		})
+	}
+}
+
+func TestDriverOrderStatusPipelineActions(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		status domain.OrderStatus
+		action string
+	}{
+		{status: domain.OrderStatusDriverAssigned, action: "arriving"},
+		{status: domain.OrderStatusDriverArriving, action: "arrived"},
+		{status: domain.OrderStatusDriverWaiting, action: "start"},
+		{status: domain.OrderStatusInProgress, action: "complete"},
+	}
+
+	for _, testCase := range testCases {
+		actions := driverAllowedActions(testCase.status)
+		if len(actions) == 0 || actions[0] != testCase.action {
+			t.Fatalf("status=%s actions=%v, want first action %q", testCase.status, actions, testCase.action)
+		}
+	}
+}
+
 func TestCancelDriverOrderNotifiesPassengerWithDriverCancellationPayload(t *testing.T) {
 	driverUserID := uuid.New()
 	driverID := uuid.New()
@@ -176,6 +268,7 @@ func TestCompleteDriverTripIgnoresClientFinalPrice(t *testing.T) {
 
 type fakeMobileRepository struct {
 	profile               Profile
+	statusProfile         Profile
 	currentOrder          CurrentOrder
 	transitionOrderResult CurrentOrder
 	completionOrderResult CurrentOrder
@@ -193,8 +286,10 @@ func (repository *fakeMobileRepository) UpdateProfileByUserID(context.Context, u
 	return Profile{}, nil
 }
 
-func (repository *fakeMobileRepository) SetStatusByUserID(context.Context, uuid.UUID, domain.DriverStatus) (Profile, error) {
-	return Profile{}, nil
+func (repository *fakeMobileRepository) SetStatusByUserID(_ context.Context, _ uuid.UUID, status domain.DriverStatus) (Profile, error) {
+	profile := repository.statusProfile
+	profile.Status = status
+	return profile, nil
 }
 
 func (repository *fakeMobileRepository) ListCarsByUserID(context.Context, uuid.UUID) ([]domain.Car, error) {
@@ -262,7 +357,8 @@ func formatCoordinate(value float64) string {
 }
 
 type fakePresenceStore struct {
-	markedOnline bool
+	markedOnline  bool
+	markedOffline bool
 }
 
 func (store *fakePresenceStore) MarkOnline(context.Context, uuid.UUID, uuid.UUID, time.Duration) error {
@@ -271,10 +367,13 @@ func (store *fakePresenceStore) MarkOnline(context.Context, uuid.UUID, uuid.UUID
 }
 
 func (store *fakePresenceStore) MarkOffline(context.Context, uuid.UUID, uuid.UUID) error {
+	store.markedOffline = true
 	return nil
 }
 
 type fakeRealtimeGateway struct {
+	presenceDriverID uuid.UUID
+	presencePayload  any
 	passengerEvent   string
 	passengerPayload any
 }
@@ -288,7 +387,9 @@ func (notifier *fakePassengerNotifier) NotifyPassenger(_ context.Context, _ uuid
 	return nil
 }
 
-func (gateway *fakeRealtimeGateway) SendDriverPresenceToTaxiPark(context.Context, uuid.UUID, any) error {
+func (gateway *fakeRealtimeGateway) SendDriverPresenceToTaxiPark(_ context.Context, driverID uuid.UUID, payload any) error {
+	gateway.presenceDriverID = driverID
+	gateway.presencePayload = payload
 	return nil
 }
 

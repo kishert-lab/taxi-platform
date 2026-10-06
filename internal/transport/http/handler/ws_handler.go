@@ -63,7 +63,7 @@ func (handler *WebSocketHandler) RegisterRoutes(router gin.IRouter) {
 
 // Connect godoc
 // @Summary Connect mobile WebSocket
-// @Description Mobile realtime endpoint. JWT can be passed in Authorization header or token query parameter. After reconnect the server emits sync.required and the client must call the current order REST endpoint.
+// @Description Realtime endpoint for authenticated mobile and taxi park clients. JWT can be passed in Authorization header or token query parameter. Every message has event, request_id, occurred_at and payload. After reconnect the server emits sync.required and the client must call the current order REST endpoint. Taxi park users receive driver.status.updated after POST /driver/online or POST /driver/offline; payload includes driver_id, user_id, status (online or offline), changed_at, city_id and taxi_park_id. Example: {"event":"driver.status.updated","request_id":"uuid","occurred_at":"2026-10-06T12:00:00Z","payload":{"driver_id":"uuid","user_id":"uuid","status":"online","changed_at":"2026-10-06T12:00:00Z"}}. Driver location updates are delivered separately as driver.location_updated.
 // @Tags websocket
 // @Produce json
 // @Security BearerAuth

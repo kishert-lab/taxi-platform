@@ -468,6 +468,9 @@ func (repository *PostgresFinanceRepository) ListTaxiParkOrders(ctx context.Cont
 		SELECT
 			o.id,
 			o.driver_id,
+			d.id,
+			COALESCE(TRIM(CONCAT_WS(' ', u.first_name, u.last_name)), ''),
+			COALESCE(u.phone, ''),
 			o.status,
 			COALESCE((COALESCE(o.final_price, o.estimated_price) * 100)::bigint, 0),
 			'RUB'::text,
@@ -475,6 +478,8 @@ func (repository *PostgresFinanceRepository) ListTaxiParkOrders(ctx context.Cont
 			o.completed_at
 		FROM taxi_parks tp
 		JOIN orders o ON COALESCE(o.park_id,NULLIF(o.metadata->>'taxi_park_id','')::uuid)=tp.id
+		LEFT JOIN drivers d ON d.id = o.driver_id AND d.deleted_at IS NULL
+		LEFT JOIN users u ON u.id = d.user_id AND u.deleted_at IS NULL
 		WHERE tp.owner_user_id = $1
 		  AND tp.deleted_at IS NULL
 		  AND o.deleted_at IS NULL
@@ -491,14 +496,20 @@ func (repository *PostgresFinanceRepository) ListTaxiParkOrders(ctx context.Cont
 	for rows.Next() {
 		var order finance.TaxiParkOrder
 		var driverID pgtype.UUID
+		var driverProfileID pgtype.UUID
+		var driverName string
+		var driverPhone string
 		var currency string
 		var completedAt pgtype.Timestamptz
-		if err := rows.Scan(&order.ID, &driverID, &order.Status, &order.GrossAmount.Amount, &currency, &order.CreatedAt, &completedAt); err != nil {
+		if err := rows.Scan(&order.ID, &driverID, &driverProfileID, &driverName, &driverPhone, &order.Status, &order.GrossAmount.Amount, &currency, &order.CreatedAt, &completedAt); err != nil {
 			return nil, fmt.Errorf("scan taxi park order: %w", err)
 		}
 		if driverID.Valid {
 			value := uuid.UUID(driverID.Bytes)
 			order.DriverID = &value
+		}
+		if driverProfileID.Valid {
+			order.Driver = &finance.TaxiParkOrderDriver{ID: uuid.UUID(driverProfileID.Bytes), Name: driverName, Phone: driverPhone}
 		}
 		order.GrossAmount.Currency = currency
 		if completedAt.Valid {

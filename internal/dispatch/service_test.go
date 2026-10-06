@@ -272,6 +272,62 @@ func TestAcceptOfferAssignsDriverAndCancelsRemainingOffers(t *testing.T) {
 	}
 }
 
+func TestTaxiParkMeteredOrderAcceptConfirmsPriceAndStartsDriverWorkflow(t *testing.T) {
+	t.Parallel()
+
+	order := testOrder()
+	order.Status = domain.OrderStatusSearching
+	order.CreatedByRole = domain.UserRoleTaxiPark
+	driverID := uuid.New()
+	orderRepository := &fakeOrderRepository{
+		order: order,
+		candidateFare: &CandidateFare{
+			Tariff: domain.TaxiParkTariff{
+				ID:             uuid.New(),
+				FareMode:       domain.FareModeMetered,
+				PricingMode:    domain.PricingModeDistanceTime,
+				BasePrice:      domain.Money{Amount: 10000, Currency: "RUB"},
+				PricePerKM:     domain.Money{Amount: 1200, Currency: "RUB"},
+				PricePerMinute: domain.Money{Amount: 600, Currency: "RUB"},
+				MinimumPrice:   domain.Money{Amount: 10000, Currency: "RUB"},
+			},
+			DistanceMeters:  1226376,
+			DurationSeconds: 7003,
+		},
+	}
+	offerStore := newFakeOfferStore()
+	offerStore.saveTestOffer(order.ID, driverID)
+	timeoutQueue := &fakeTimeoutQueue{}
+	realtimeGateway := &fakeRealtimeGateway{}
+	service := newTestService(orderRepository, &fakeDriverSearchRepository{}, offerStore, &fakeTaskQueue{}, timeoutQueue, realtimeGateway)
+
+	if err := service.AcceptOffer(context.Background(), order.ID, driverID); err != nil {
+		t.Fatalf("accept taxi park order: %v", err)
+	}
+
+	if orderRepository.order.PriceConfirmationState != "confirmed" {
+		t.Fatalf("price confirmation state=%q, want confirmed", orderRepository.order.PriceConfirmationState)
+	}
+	if orderRepository.order.ProposedPriceCents == nil || *orderRepository.order.ProposedPriceCents <= 0 {
+		t.Fatalf("proposed price=%v, want positive value", orderRepository.order.ProposedPriceCents)
+	}
+	if orderRepository.order.AgreedPriceCents != nil {
+		t.Fatalf("metered order agreed price=%v, want nil", orderRepository.order.AgreedPriceCents)
+	}
+	if orderRepository.order.PriceConfirmationExpiresAt != nil {
+		t.Fatalf("taxi park order has confirmation expiry: %v", orderRepository.order.PriceConfirmationExpiresAt)
+	}
+	if len(timeoutQueue.scheduled) != 0 {
+		t.Fatalf("scheduled %d passenger confirmation timeouts, want 0", len(timeoutQueue.scheduled))
+	}
+	if !realtimeGateway.hasDriverEvent(driverID, EventOrderAssigned) {
+		t.Fatal("driver did not receive confirmed assignment event")
+	}
+	if realtimeGateway.hasPassengerEvent(order.PassengerID, EventPriceConfirmationRequested) {
+		t.Fatal("taxi park order requested passenger price confirmation")
+	}
+}
+
 func TestPassengerConfirmsDriverFareOnce(t *testing.T) {
 	order := testOrder()
 	order.Status = domain.OrderStatusSearching
@@ -379,10 +435,14 @@ func candidatesFromIDs(driverIDs []uuid.UUID) []DriverCandidate {
 }
 
 type fakeOrderRepository struct {
-	order domain.Order
+	order         domain.Order
+	candidateFare *CandidateFare
 }
 
 func (repository *fakeOrderRepository) GetCandidateFare(context.Context, uuid.UUID, uuid.UUID) (CandidateFare, error) {
+	if repository.candidateFare != nil {
+		return *repository.candidateFare, nil
+	}
 	return CandidateFare{Tariff: domain.TaxiParkTariff{
 		ID: uuid.New(), FareMode: domain.FareModeFixedQuote, PricingMode: domain.PricingModeFixed,
 		FixedPrice: domain.Money{Amount: 36000, Currency: "RUB"},
@@ -398,7 +458,7 @@ func (repository *fakeOrderRepository) MarkOrderSearching(_ context.Context, _ u
 	return nil
 }
 
-func (repository *fakeOrderRepository) AssignDriver(_ context.Context, _ uuid.UUID, driverID uuid.UUID, acceptedAt time.Time, fare CandidateFare, priceCents int64, expiresAt time.Time) (bool, error) {
+func (repository *fakeOrderRepository) AssignDriver(_ context.Context, _ uuid.UUID, driverID uuid.UUID, acceptedAt time.Time, fare CandidateFare, priceCents int64, expiresAt time.Time, requiresPassengerPriceConfirmation bool) (bool, error) {
 	if repository.order.DriverID != nil {
 		return false, nil
 	}
@@ -406,9 +466,17 @@ func (repository *fakeOrderRepository) AssignDriver(_ context.Context, _ uuid.UU
 	repository.order.Status = domain.OrderStatusDriverAssigned
 	repository.order.AcceptedAt = &acceptedAt
 	repository.order.FareMode = fare.Tariff.FareMode
-	repository.order.PriceConfirmationState = "pending"
 	repository.order.ProposedPriceCents = &priceCents
-	repository.order.PriceConfirmationExpiresAt = &expiresAt
+	if requiresPassengerPriceConfirmation {
+		repository.order.PriceConfirmationState = "pending"
+		repository.order.PriceConfirmationExpiresAt = &expiresAt
+	} else {
+		repository.order.PriceConfirmationState = "confirmed"
+		if fare.Tariff.FareMode == domain.FareModeFixedQuote {
+			repository.order.AgreedPriceCents = &priceCents
+		}
+		repository.order.PriceConfirmationExpiresAt = nil
+	}
 	return true, nil
 }
 

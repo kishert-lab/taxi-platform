@@ -169,6 +169,15 @@ func TestMobileAndFinanceRoutesAreRegistered(t *testing.T) {
 	}
 }
 
+func TestPassengerNotifiersAreNilWithoutPushService(t *testing.T) {
+	if notifier := newDriverPassengerNotifier(nil); notifier != nil {
+		t.Fatal("driver passenger notifier must be nil when push service is disabled")
+	}
+	if notifier := newDispatchPassengerNotifier(nil); notifier != nil {
+		t.Fatal("dispatch passenger notifier must be nil when push service is disabled")
+	}
+}
+
 func testConfig() *configs.Config {
 	return &configs.Config{
 		App: configs.AppConfig{Name: "taxi-platform"},

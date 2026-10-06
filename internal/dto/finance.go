@@ -223,12 +223,19 @@ type TaxiParkDriversResponse struct {
 }
 
 type TaxiParkOrderResponse struct {
-	ID          uuid.UUID          `json:"id" example:"55555555-5555-5555-5555-555555555555"`
-	DriverID    *uuid.UUID         `json:"driver_id,omitempty" example:"22222222-2222-2222-2222-222222222222"`
-	Status      domain.OrderStatus `json:"status" example:"completed"`
-	GrossAmount MoneyCentsResponse `json:"gross_amount"`
-	CreatedAt   time.Time          `json:"created_at" example:"2026-05-12T12:00:00Z"`
-	CompletedAt *time.Time         `json:"completed_at,omitempty" example:"2026-05-12T12:30:00Z"`
+	ID          uuid.UUID                    `json:"id" example:"55555555-5555-5555-5555-555555555555"`
+	DriverID    *uuid.UUID                   `json:"driver_id,omitempty" example:"22222222-2222-2222-2222-222222222222"`
+	Driver      *TaxiParkOrderDriverResponse `json:"driver,omitempty"`
+	Status      domain.OrderStatus           `json:"status" example:"completed"`
+	GrossAmount MoneyCentsResponse           `json:"gross_amount"`
+	CreatedAt   time.Time                    `json:"created_at" example:"2026-05-12T12:00:00Z"`
+	CompletedAt *time.Time                   `json:"completed_at,omitempty" example:"2026-05-12T12:30:00Z"`
+}
+
+type TaxiParkOrderDriverResponse struct {
+	ID    uuid.UUID `json:"id" example:"22222222-2222-2222-2222-222222222222"`
+	Name  string    `json:"name" example:"Ivan Petrov"`
+	Phone string    `json:"phone" example:"+79990000001"`
 }
 
 type TaxiParkOrdersResponse struct {

@@ -18,6 +18,7 @@ const (
 	EventOrderCancelled      = "order.cancelled"
 	EventOrderFailed         = "order.failed"
 	EventDriverLocation      = "driver.location_updated"
+	EventDriverStatusUpdated = "driver.status.updated"
 
 	EventOrderOffer          = "order.offer"
 	EventOrderOfferExpired   = "order.offer_expired"

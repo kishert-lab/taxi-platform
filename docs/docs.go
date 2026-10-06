@@ -1613,6 +1613,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "Updates the driver status and publishes driver.status.updated to connected taxi park dashboards. The event payload includes driver_id, user_id, status=offline and changed_at.",
                 "produces": [
                     "application/json"
                 ],
@@ -1649,6 +1650,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "Updates the driver status and publishes driver.status.updated to connected taxi park dashboards. The event payload includes driver_id, user_id, status=online and changed_at.",
                 "produces": [
                     "application/json"
                 ],
@@ -2270,7 +2272,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Final price is calculated by the server from recorded trip telemetry and the assigned tariff. final_price and currency in legacy clients are ignored.",
+                "description": "The price calculated when the order was created is retained as the final price. final_price and currency in legacy clients are ignored.",
                 "consumes": [
                     "application/json"
                 ],
@@ -7854,7 +7856,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Completes an in-progress order from dispatcher dashboard, stores final price, settles finance, and publishes order.completed.",
+                "description": "Completes an in-progress order using the price fixed when it was created, settles finance, and publishes order.completed. Legacy final_price and currency fields are ignored.",
                 "consumes": [
                     "application/json"
                 ],
@@ -8241,7 +8243,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Mobile realtime endpoint. JWT can be passed in Authorization header or token query parameter. After reconnect the server emits sync.required and the client must call the current order REST endpoint.",
+                "description": "Realtime endpoint for authenticated mobile and taxi park clients. JWT can be passed in Authorization header or token query parameter. Every message has event, request_id, occurred_at and payload. After reconnect the server emits sync.required and the client must call the current order REST endpoint. Taxi park users receive driver.status.updated after POST /driver/online or POST /driver/offline; payload includes driver_id, user_id, status (online or offline), changed_at, city_id and taxi_park_id. Example: {\"event\":\"driver.status.updated\",\"request_id\":\"uuid\",\"occurred_at\":\"2026-10-06T12:00:00Z\",\"payload\":{\"driver_id\":\"uuid\",\"user_id\":\"uuid\",\"status\":\"online\",\"changed_at\":\"2026-10-06T12:00:00Z\"}}. Driver location updates are delivered separately as driver.location_updated.",
                 "produces": [
                     "application/json"
                 ],
@@ -8951,7 +8953,7 @@ const docTemplate = `{
                     "example": "RUB"
                 },
                 "final_price": {
-                    "description": "Deprecated: final price is calculated by the server from trip telemetry and tariff.",
+                    "description": "Deprecated: the price is fixed when the order is created and the client cannot change it.",
                     "type": "integer",
                     "example": 26000
                 }
@@ -9999,6 +10001,20 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_kishert-lab_taxi-platform_internal_dto.OrderParticipantResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "phone": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_kishert-lab_taxi-platform_internal_dto.OrderPricingResponse": {
             "type": "object",
             "properties": {
@@ -10093,6 +10109,9 @@ const docTemplate = `{
                 "destination_address": {
                     "type": "string"
                 },
+                "driver": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.OrderParticipantResponse"
+                },
                 "driver_id": {
                     "type": "string"
                 },
@@ -10104,6 +10123,9 @@ const docTemplate = `{
                 },
                 "id": {
                     "type": "string"
+                },
+                "passenger": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.OrderParticipantResponse"
                 },
                 "passenger_id": {
                     "type": "string"
@@ -11580,16 +11602,14 @@ const docTemplate = `{
         },
         "github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkCompleteOrderRequest": {
             "type": "object",
-            "required": [
-                "currency",
-                "final_price"
-            ],
             "properties": {
                 "currency": {
+                    "description": "Deprecated: the order currency is retained by the server and this field is ignored.",
                     "type": "string",
                     "example": "RUB"
                 },
                 "final_price": {
+                    "description": "Deprecated: the price is fixed when the order is created and this field is ignored.",
                     "type": "integer",
                     "minimum": 0,
                     "example": 25000
@@ -12634,6 +12654,23 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkOrderDriverResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "example": "22222222-2222-2222-2222-222222222222"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Ivan Petrov"
+                },
+                "phone": {
+                    "type": "string",
+                    "example": "+79990000001"
+                }
+            }
+        },
         "github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkOrderResponse": {
             "type": "object",
             "properties": {
@@ -12644,6 +12681,9 @@ const docTemplate = `{
                 "created_at": {
                     "type": "string",
                     "example": "2026-05-12T12:00:00Z"
+                },
+                "driver": {
+                    "$ref": "#/definitions/github_com_kishert-lab_taxi-platform_internal_dto.TaxiParkOrderDriverResponse"
                 },
                 "driver_id": {
                     "type": "string",

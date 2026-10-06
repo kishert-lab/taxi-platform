@@ -23,7 +23,7 @@ func TestWebSocketAcceptsQueryTokenFromAllowedOrigin(t *testing.T) {
 	NewWebSocketHandler(
 		fakeWebSocketAuth{userID: uuid.New(), role: domain.UserRoleTaxiPark},
 		nil,
-		[]string{"http://localhost:5174"},
+		[]string{"https://taxi.dev.wkfc.ru"},
 	).RegisterRoutes(api)
 
 	server := httptest.NewServer(router)
@@ -31,7 +31,7 @@ func TestWebSocketAcceptsQueryTokenFromAllowedOrigin(t *testing.T) {
 
 	url := "ws" + strings.TrimPrefix(server.URL, "http") + "/api/v1/ws?token=valid-token"
 	headers := http.Header{}
-	headers.Set("Origin", "http://localhost:5174")
+	headers.Set("Origin", "https://taxi.dev.wkfc.ru")
 
 	connection, response, err := websocket.DefaultDialer.Dial(url, headers)
 	if err != nil {

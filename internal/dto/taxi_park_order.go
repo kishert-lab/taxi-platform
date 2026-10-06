@@ -35,6 +35,8 @@ type TaxiParkUpdateOrderRequest struct {
 }
 
 type TaxiParkCompleteOrderRequest struct {
-	FinalPrice int64  `json:"final_price" binding:"required,min=0" example:"25000"`
-	Currency   string `json:"currency" binding:"required" example:"RUB"`
+	// Deprecated: the price is fixed when the order is created and this field is ignored.
+	FinalPrice *int64 `json:"final_price,omitempty" binding:"omitempty,min=0" example:"25000"`
+	// Deprecated: the order currency is retained by the server and this field is ignored.
+	Currency string `json:"currency,omitempty" example:"RUB"`
 }

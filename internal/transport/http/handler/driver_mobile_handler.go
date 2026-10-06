@@ -192,6 +192,7 @@ func (handler *DriverMobileHandler) UploadProfilePhoto(context *gin.Context) {
 
 // Online godoc
 // @Summary Put driver online
+// @Description Updates the driver status and publishes driver.status.updated to connected taxi park dashboards. The event payload includes driver_id, user_id, status=online and changed_at.
 // @Tags driver
 // @Produce json
 // @Security BearerAuth
@@ -218,6 +219,7 @@ func (handler *DriverMobileHandler) Online(context *gin.Context) {
 
 // Offline godoc
 // @Summary Put driver offline
+// @Description Updates the driver status and publishes driver.status.updated to connected taxi park dashboards. The event payload includes driver_id, user_id, status=offline and changed_at.
 // @Tags driver
 // @Produce json
 // @Security BearerAuth
@@ -635,7 +637,7 @@ func (handler *DriverMobileHandler) StartTrip(context *gin.Context) {
 
 // CompleteTrip godoc
 // @Summary Complete driver trip
-// @Description Final price is calculated by the server from recorded trip telemetry and the assigned tariff. final_price and currency in legacy clients are ignored.
+// @Description The price calculated when the order was created is retained as the final price. final_price and currency in legacy clients are ignored.
 // @Tags driver-orders
 // @Accept json
 // @Produce json

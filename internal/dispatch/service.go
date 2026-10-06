@@ -258,17 +258,24 @@ func (service *Service) AcceptOffer(ctx context.Context, orderID uuid.UUID, driv
 	if err != nil || priceCents <= 0 {
 		return fmt.Errorf("calculate candidate fare for driver: %w", err)
 	}
+	order, err := service.orderRepository.GetOrderByID(ctx, orderID)
+	if err != nil {
+		return fmt.Errorf("get order before driver reservation: %w", err)
+	}
+	requiresPassengerPriceConfirmation := order.CreatedByRole != domain.UserRoleTaxiPark
 	confirmationExpiresAt := acceptedAt.Add(service.config.ConfirmationTTL)
-	accepted, err := service.orderRepository.AssignDriver(ctx, orderID, driverID, acceptedAt, fare, priceCents, confirmationExpiresAt)
+	accepted, err := service.orderRepository.AssignDriver(ctx, orderID, driverID, acceptedAt, fare, priceCents, confirmationExpiresAt, requiresPassengerPriceConfirmation)
 	if err != nil {
 		return fmt.Errorf("assign driver to order: %w", err)
 	}
 	if !accepted {
 		return fmt.Errorf("%w: %w", ErrOfferNotAccepted, ErrOrderAlreadyAssigned)
 	}
-	confirmationTask := DispatchTask{OrderID: orderID, Attempt: -1, QueuedAt: acceptedAt, ExcludeDriverIDs: []uuid.UUID{driverID}}
-	if err := service.timeoutQueue.Schedule(ctx, confirmationTask, confirmationExpiresAt); err != nil {
-		return fmt.Errorf("schedule passenger price confirmation expiry: %w", err)
+	if requiresPassengerPriceConfirmation {
+		confirmationTask := DispatchTask{OrderID: orderID, Attempt: -1, QueuedAt: acceptedAt, ExcludeDriverIDs: []uuid.UUID{driverID}}
+		if err := service.timeoutQueue.Schedule(ctx, confirmationTask, confirmationExpiresAt); err != nil {
+			return fmt.Errorf("schedule passenger price confirmation expiry: %w", err)
+		}
 	}
 
 	if service.metrics != nil {
@@ -286,9 +293,22 @@ func (service *Service) AcceptOffer(ctx context.Context, orderID uuid.UUID, driv
 		return err
 	}
 
-	order, err := service.orderRepository.GetOrderByID(ctx, orderID)
+	order, err = service.orderRepository.GetOrderByID(ctx, orderID)
 	if err != nil {
 		return fmt.Errorf("get accepted order: %w", err)
+	}
+	if !requiresPassengerPriceConfirmation {
+		if err := service.realtimeGateway.SendToDriver(ctx, driverID, EventOrderAssigned, map[string]any{"order_id": orderID}); err != nil {
+			return fmt.Errorf("send confirmed assignment to driver: %w", err)
+		}
+		if err := service.realtimeGateway.SendToPassenger(ctx, order.PassengerID, EventPassengerDriverAssigned, wsmsg.PassengerDriverAssignedPayload{OrderID: orderID, DriverID: driverID}); err != nil {
+			return fmt.Errorf("send confirmed assignment to passenger: %w", err)
+		}
+		if err := service.realtimeGateway.SendToTaxiParkByOrder(ctx, orderID, "order.driver_assigned", map[string]any{"order_id": orderID, "driver_id": driverID}); err != nil {
+			return fmt.Errorf("send confirmed assignment to taxi park: %w", err)
+		}
+		service.logger.Info("offer accepted", zap.String("order_id", orderID.String()), zap.String("driver_id", driverID.String()))
+		return nil
 	}
 	if err := service.realtimeGateway.SendToDriver(ctx, driverID, EventPriceConfirmationRequested, map[string]any{"order_id": orderID, "confirmation_expires_at": confirmationExpiresAt}); err != nil {
 		return fmt.Errorf("send price confirmation pending event to driver: %w", err)

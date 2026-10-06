@@ -490,7 +490,11 @@ func (repository *PostgresDriverMobileRepository) CompleteOrderByUserID(ctx cont
 		return driverapp.CurrentOrder{}, err
 	}
 
-	finalPriceCents, actualDistanceMeters, actualDurationSeconds, err := completedTripPrice(ctx, transaction, orderID)
+	finalPriceCents, err := initialOrderPrice(ctx, transaction, orderID)
+	if err != nil {
+		return driverapp.CurrentOrder{}, err
+	}
+	actualDistanceMeters, actualDurationSeconds, err := completedTripMetrics(ctx, transaction, orderID)
 	if err != nil {
 		return driverapp.CurrentOrder{}, err
 	}
@@ -525,18 +529,21 @@ func (repository *PostgresDriverMobileRepository) CompleteOrderByUserID(ctx cont
 	return order, nil
 }
 
-func completedTripPrice(ctx context.Context, transaction pgx.Tx, orderID uuid.UUID) (int64, int64, int64, error) {
+func initialOrderPrice(ctx context.Context, transaction pgx.Tx, orderID uuid.UUID) (int64, error) {
+	var priceCents int64
+	if err := transaction.QueryRow(ctx, `
+		SELECT (COALESCE(final_price, estimated_price) * 100)::bigint
+		FROM orders
+		WHERE id = $1
+		  AND COALESCE(final_price, estimated_price) IS NOT NULL`, orderID).Scan(&priceCents); err != nil {
+		return 0, fmt.Errorf("get initial order price: %w", err)
+	}
+	return priceCents, nil
+}
+
+func completedTripMetrics(ctx context.Context, transaction pgx.Tx, orderID uuid.UUID) (int64, int64, error) {
 	var distanceMeters int64
 	var durationSeconds int64
-	var assignedTariffID pgtype.UUID
-	var pricingMode string
-	var basePriceCents int64
-	var fixedPriceCents int64
-	var pricePerKMCents int64
-	var pricePerMinuteCents int64
-	var minimumPriceCents int64
-	var fareMode string
-	var agreedPriceCents pgtype.Int8
 
 	err := transaction.QueryRow(ctx, `
 		WITH route_segments AS (
@@ -552,57 +559,17 @@ func completedTripPrice(ctx context.Context, transaction pgx.Tx, orderID uuid.UU
 			FROM route_segments
 		)
 		SELECT route_metrics.distance_meters,
-		       GREATEST(EXTRACT(EPOCH FROM now() - o.started_at), 0)::bigint,
-		       o.assigned_tariff_id,
-		       COALESCE(o.metadata->'assigned_tariff_snapshot'->>'pricing_mode', t.pricing_mode, ''),
-		       COALESCE((o.metadata->'assigned_tariff_snapshot'->>'base_price_cents')::bigint, t.base_price_cents, 0),
-		       COALESCE((o.metadata->'assigned_tariff_snapshot'->>'fixed_price_cents')::bigint, t.fixed_price_cents, 0),
-		       COALESCE((o.metadata->'assigned_tariff_snapshot'->>'price_per_km_cents')::bigint, t.price_per_km_cents, 0),
-		       COALESCE((o.metadata->'assigned_tariff_snapshot'->>'price_per_minute_cents')::bigint, t.price_per_minute_cents, 0),
-		       COALESCE((o.metadata->'assigned_tariff_snapshot'->>'minimum_price_cents')::bigint, t.minimum_price_cents, 0),
-		       o.fare_mode,
-		       o.agreed_price_cents
+		       GREATEST(EXTRACT(EPOCH FROM now() - o.started_at), 0)::bigint
 		FROM orders o
 		CROSS JOIN route_metrics
-		LEFT JOIN taxi_park_tariffs t ON t.id = o.assigned_tariff_id
 		WHERE o.id = $1`, orderID).Scan(
 		&distanceMeters,
 		&durationSeconds,
-		&assignedTariffID,
-		&pricingMode,
-		&basePriceCents,
-		&fixedPriceCents,
-		&pricePerKMCents,
-		&pricePerMinuteCents,
-		&minimumPriceCents,
-		&fareMode,
-		&agreedPriceCents,
 	)
 	if err != nil {
-		return 0, 0, 0, fmt.Errorf("calculate completed trip metrics: %w", err)
+		return 0, 0, fmt.Errorf("calculate completed trip metrics: %w", err)
 	}
-	if !assignedTariffID.Valid {
-		return 0, 0, 0, fmt.Errorf("completed trip has no assigned tariff")
-	}
-	if fareMode == string(domain.FareModeFixedQuote) {
-		if !agreedPriceCents.Valid {
-			return 0, 0, 0, fmt.Errorf("fixed quote was not agreed by passenger")
-		}
-		return agreedPriceCents.Int64, distanceMeters, durationSeconds, nil
-	}
-
-	priceCents, err := domain.CalculateTripPrice(domain.TaxiParkTariff{
-		PricingMode:    domain.PricingMode(pricingMode),
-		BasePrice:      domain.Money{Amount: basePriceCents, Currency: "RUB"},
-		FixedPrice:     domain.Money{Amount: fixedPriceCents, Currency: "RUB"},
-		PricePerKM:     domain.Money{Amount: pricePerKMCents, Currency: "RUB"},
-		PricePerMinute: domain.Money{Amount: pricePerMinuteCents, Currency: "RUB"},
-		MinimumPrice:   domain.Money{Amount: minimumPriceCents, Currency: "RUB"},
-	}, distanceMeters, durationSeconds)
-	if err != nil {
-		return 0, 0, 0, fmt.Errorf("calculate completed trip tariff price: %w", err)
-	}
-	return priceCents, distanceMeters, durationSeconds, nil
+	return distanceMeters, durationSeconds, nil
 }
 
 func (repository *PostgresDriverMobileRepository) ListRoutePointsByUserID(ctx context.Context, userID uuid.UUID, orderID uuid.UUID) ([]driverapp.RoutePoint, error) {

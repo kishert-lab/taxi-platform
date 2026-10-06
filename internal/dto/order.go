@@ -36,19 +36,27 @@ type CreateOrderRequest struct {
 }
 
 type OrderResponse struct {
-	ID                 uuid.UUID            `json:"id"`
-	PassengerID        uuid.UUID            `json:"passenger_id"`
-	DriverID           *uuid.UUID           `json:"driver_id,omitempty"`
-	CityID             uuid.UUID            `json:"city_id"`
-	TariffID           *uuid.UUID           `json:"tariff_id,omitempty"`
-	Status             domain.OrderStatus   `json:"status" example:"searching"`
-	Version            int                  `json:"version" example:"2"`
-	PickupAddress      string               `json:"pickup_address"`
-	PickupLocation     CoordinatesResponse  `json:"pickup_location"`
-	DestinationAddress string               `json:"destination_address"`
-	EstimatedPrice     *MoneyResponse       `json:"estimated_price,omitempty"`
-	FinalPrice         *MoneyResponse       `json:"final_price,omitempty"`
-	PaymentMethod      domain.PaymentMethod `json:"payment_method" example:"cash"`
+	ID                 uuid.UUID                 `json:"id"`
+	PassengerID        uuid.UUID                 `json:"passenger_id"`
+	DriverID           *uuid.UUID                `json:"driver_id,omitempty"`
+	Driver             *OrderParticipantResponse `json:"driver,omitempty"`
+	Passenger          *OrderParticipantResponse `json:"passenger,omitempty"`
+	CityID             uuid.UUID                 `json:"city_id"`
+	TariffID           *uuid.UUID                `json:"tariff_id,omitempty"`
+	Status             domain.OrderStatus        `json:"status" example:"searching"`
+	Version            int                       `json:"version" example:"2"`
+	PickupAddress      string                    `json:"pickup_address"`
+	PickupLocation     CoordinatesResponse       `json:"pickup_location"`
+	DestinationAddress string                    `json:"destination_address"`
+	EstimatedPrice     *MoneyResponse            `json:"estimated_price,omitempty"`
+	FinalPrice         *MoneyResponse            `json:"final_price,omitempty"`
+	PaymentMethod      domain.PaymentMethod      `json:"payment_method" example:"cash"`
+}
+
+type OrderParticipantResponse struct {
+	ID    uuid.UUID `json:"id"`
+	Name  string    `json:"name"`
+	Phone string    `json:"phone"`
 }
 
 type CurrentOrderResponse struct {

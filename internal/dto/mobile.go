@@ -315,7 +315,7 @@ type DriverLocationBatchRequest struct {
 }
 
 type CompleteOrderRequest struct {
-	// Deprecated: final price is calculated by the server from trip telemetry and tariff.
+	// Deprecated: the price is fixed when the order is created and the client cannot change it.
 	FinalPrice *int64 `json:"final_price,omitempty" example:"26000"`
 	// Deprecated: the server uses the order tariff currency.
 	Currency string `json:"currency,omitempty" example:"RUB"`
